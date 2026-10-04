@@ -7,7 +7,8 @@ according to whom. It is one capability of this project, not the whole of it. Th
 `kb` command, part of Kent the Clerk. Kent is installed outside this repository, in the folder named
 by the environment variable `KENT_HOME`; the knowledge base is the folder named by `KENT_KB`. Both
 are set per user in this project's `.claude/settings.local.json`. Run `kb` as
-`python "$KENT_HOME/kb.py" <command>` (in PowerShell, `python "$env:KENT_HOME/kb.py" <command>`).
+`python "$KENT_HOME/kb.py" <command>` (in PowerShell, `python "$env:KENT_HOME/kb.py" <command>`),
+in exactly that form with nothing before it, since the project's permissions allow that form.
 `kb where` prints both folders; below, `<kent>/` and `<kb>/` stand for them. Kent's rules are in
 `<kent>/rules/`, one file per topic. Read a file when its topic comes up, not before.
 

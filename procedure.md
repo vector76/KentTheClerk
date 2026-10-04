@@ -4,9 +4,14 @@
 operates on the knowledge base named by the environment variable `KENT_KB`, or, if that is unset, the
 one found in the current folder or above; `kb where` prints both folders. Paths to the record in
 these files, such as `attested/` or `off-record/drafts/`, are inside the knowledge base, and a
-relative draft path given to `kb` is read from there. Set `PYTHONIOENCODING=utf-8` on Windows. The
-human's id comes from `--user`, `KB_USER`, or `~/.kenttheclerk.json` (`{"user": "<id>"}`); use stable
-ids, never display names.
+relative draft path given to `kb` is read from there. The human's id comes from `--user`, `KB_USER`,
+or `~/.kenttheclerk.json` (`{"user": "<id>"}`); use stable ids, never display names.
+
+Run `kb` exactly as the CLAUDE.md block writes it, `python "$KENT_HOME/kb.py" <command>` (or the
+PowerShell form), with nothing before it: the project's permissions allow that form, and a prefix such
+as `export ...;` makes each command ask the human again. `PYTHONIOENCODING` is already set in the
+project's settings. Write drafts with your file-writing tool, not through the shell; the permissions
+allow writing in `off-record/drafts/` and forbid editing `attested/`, `evidence/` and `agent/`.
 
 ## Attesting a statement
 
@@ -18,8 +23,8 @@ ids, never display names.
    turn, after any tool calls. Text written before a tool call in the same turn may not reach the
    session file, and a proposal the snapshot does not contain cannot be attested.
 3. After the human agrees, snapshot the session so both turns are recorded: `kb snapshot`. With no
-   session given, it snapshots this conversation, and prints its last human turn with that turn's
-   pointer; check that it is the human's agreement.
+   session given, it snapshots this conversation. It prints the pointer of the last human turn and of
+   your last text before it; check that they are the agreement and your proposal.
 4. Attest:
    `kb attest <draft> --proposed <session>#<your-turn-uuid> --turn <session>#<their-turn-uuid>`.
    Add `--form agreed-with-modification` when they agreed subject to a change (apply it to the draft

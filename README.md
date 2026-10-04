@@ -164,7 +164,8 @@ them like any other statement.
   repository of its own; it can also sit inside the code repository. To start, create it with empty
   `attested/` and `evidence/` folders; `kb` looks for them to find the record. The record fills
   them, and `agent/`, as you go.
-- **Tell your project where both are,** in the code repository's `.claude/settings.local.json`:
+- **Tell your project where both are, and what the agent may do there,** in the code repository's
+  `.claude/settings.local.json`:
 
   ```json
   {
@@ -172,6 +173,19 @@ them like any other statement.
       "KENT_HOME": "C:/tools/KentTheClerk",
       "KENT_KB": "C:/work/myproject-knowledge",
       "PYTHONIOENCODING": "utf-8"
+    },
+    "permissions": {
+      "additionalDirectories": ["C:/tools/KentTheClerk", "C:/work/myproject-knowledge"],
+      "allow": [
+        "Bash(python \"$KENT_HOME/kb.py\" *)",
+        "PowerShell(python \"$env:KENT_HOME/kb.py\" *)",
+        "Edit(//c/work/myproject-knowledge/off-record/drafts/**)"
+      ],
+      "deny": [
+        "Edit(//c/work/myproject-knowledge/attested/**)",
+        "Edit(//c/work/myproject-knowledge/evidence/**)",
+        "Edit(//c/work/myproject-knowledge/agent/**)"
+      ]
     }
   }
   ```
@@ -180,6 +194,14 @@ them like any other statement.
   those would point every project at the same knowledge base. The file is yours and not committed,
   so each person on a team keeps their own paths. Claude Code keeps it out of git when Claude Code
   creates it; if you create it yourself, add `.claude/settings.local.json` to your `.gitignore`.
+
+  The permissions let the agent read Kent's rules and the knowledge base, run `kb`, and write
+  drafts without asking you each time. The deny rules stop it from editing the record's files
+  directly, so only `kb` writes there. Permission rules take paths in their own form and don't
+  expand variables, so write your folders out in full: `C:\work\myproject-knowledge` becomes
+  `//c/work/myproject-knowledge`, and on macOS or Linux `/home/you/knowledge` becomes
+  `//home/you/knowledge`. Even with these, Claude Code asks before other commands and before editing
+  your code. We recommend working in auto mode, with these rules as a safety net.
 - Paste the block in `front-ends/claude-code/CLAUDE.md` into your project's CLAUDE.md. It tells the
   agent how to run `kb`, where the rules are, and which two hold before anything else. It names no
   folders of yours, so it can be committed.

@@ -35,8 +35,10 @@ def claude_projects_dir() -> Path:
 
 
 # Claude Code sets CLAUDE_CODE_SESSION_ID for the commands it runs. It is undocumented, and whether it
-# follows /clear is unknown, so it is trusted only when its file is being written right now: the agent's
-# own tool call reaches the file before kb runs, and a conversation left behind by /clear goes quiet.
+# follows /clear is unknown, so it is trusted only when its file looks like the live conversation: the
+# most recently written session file in its project, or written within the last minute. The agent's own
+# tool call reaches the file before kb runs; a conversation left behind by /clear goes quiet, and the
+# conversation that replaced it is newer.
 SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 CURRENT_WITHIN_SECONDS = 60
 
@@ -46,10 +48,13 @@ def current_session_source() -> Path:
     if not sid:
         die(f"no session given, and {SESSION_ENV} is not set; pass the session id")
     src = locate_source(sid)
-    age = datetime.now().timestamp() - src.stat().st_mtime
-    if age > CURRENT_WITHIN_SECONDS:
-        die(f"{SESSION_ENV} names session {sid[:8]}, but its file was last written {int(age)}s ago, so it may "
-            f"not be this conversation (for example after /clear); pass the session id")
+    mtime = src.stat().st_mtime
+    age = datetime.now().timestamp() - mtime
+    newest = all(p.stat().st_mtime <= mtime for p in src.parent.glob("*.jsonl"))
+    if age > CURRENT_WITHIN_SECONDS and not newest:
+        die(f"{SESSION_ENV} names session {sid[:8]}, but its file was last written {int(age)}s ago and a newer "
+            f"session file exists beside it, so it may not be this conversation (for example after /clear); "
+            f"pass the session id")
     return src
 
 
@@ -318,11 +323,19 @@ def run(args) -> None:
     rel = dest.relative_to(root)
     print(f"wrote {rel}: {len(turns)} turns ({info['human_turns']} human, {info['agent_turns']} agent, "
           f"{info['client_turns']} client), mode={args.mode}, filter={args.filter}")
-    last_human = next((t for t in reversed(turns) if t["role"] == "user" and t["author"] not in ("client", "tool")), None)
-    if last_human:
-        text = " ".join(b.get("text", "") for b in last_human["content"] if b.get("type") == "text")
-        text = " ".join(text.split())
-        print(f"last human turn: {session_id[:8]}#{last_human['uuid']}: {text[:100]}{'...' if len(text) > 100 else ''}")
+    # The two pointers kb attest needs: the human's latest turn, and the agent's last text before it.
+    def excerpt(t: dict) -> str:
+        text = " ".join(" ".join(b.get("text", "") for b in t["content"] if b.get("type") == "text").split())
+        return text[:100] + ("..." if len(text) > 100 else "")
+
+    hi = next((i for i in range(len(turns) - 1, -1, -1)
+               if turns[i]["role"] == "user" and turns[i]["author"] not in ("client", "tool")), None)
+    if hi is not None:
+        print(f"last human turn: {session_id[:8]}#{turns[hi]['uuid']}: {excerpt(turns[hi])}")
+        ai = next((i for i in range(hi - 1, -1, -1) if turns[i]["role"] == "assistant"
+                   and any(b.get("type") == "text" for b in turns[i]["content"])), None)
+        if ai is not None:
+            print(f"agent text before it: {session_id[:8]}#{turns[ai]['uuid']}: {excerpt(turns[ai])}")
     if args.mode == "off-record":
         print("note: off-record/ is gitignored; this snapshot is at risk of loss by design", file=sys.stderr)
 
