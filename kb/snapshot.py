@@ -185,6 +185,21 @@ def project(records: list[dict], profile: str, human_user: str) -> tuple[list[di
     return turns, info
 
 
+def resolve_branch_point(records: list[dict], turns: list[dict]) -> str | None:
+    """The parent-session turn this session forked from, or None. The first kept turn's parent may be
+    a record of this same session that the filter dropped, such as the output of /clear; follow the
+    chain through those, so that only a parent outside this session's records counts as a fork."""
+    if not turns:
+        return None
+    own = {r["uuid"]: r for r in records if r.get("uuid")}
+    p = turns[0].get("parent")
+    seen = set()
+    while p and p in own and p not in seen:
+        seen.add(p)
+        p = own[p].get("parentUuid")
+    return p or None
+
+
 def read_source(path: Path) -> list[dict]:
     recs = []
     with path.open(encoding="utf-8") as fh:
@@ -231,6 +246,7 @@ def run(args) -> None:
         records = [r for r in records if r.get("sessionId") in (session_id, None)]
 
     turns, info = project(records, args.filter, user)
+    branch_point = resolve_branch_point(records, turns)
     if info["human_turns"] == 0:
         die("no human turns survived the filter; refusing to write an empty snapshot")
 
@@ -274,6 +290,7 @@ def run(args) -> None:
         "source": str(src),
         "snapshot_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         **system_stamp(root),
+        "branch_point": branch_point,
         "turn_count": len(turns),
         "human_turns": info["human_turns"],
         "dropped": info["dropped"],

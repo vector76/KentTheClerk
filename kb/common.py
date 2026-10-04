@@ -195,7 +195,10 @@ class Session:
 
     @property
     def branch_point(self) -> str | None:
-        """Uuid of the parent-session turn this session forked from (the first turn's parent), else None."""
+        """Uuid of the parent-session turn this session forked from, else None. Snapshots record it in
+        the header; older ones fall back to the first turn's parent."""
+        if "branch_point" in self.header:
+            return self.header["branch_point"] or None
         if not self.turns:
             return None
         return self.turns[0].get("parent") or None
