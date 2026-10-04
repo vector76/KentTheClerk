@@ -195,13 +195,15 @@ them like any other statement.
   so each person on a team keeps their own paths. Claude Code keeps it out of git when Claude Code
   creates it; if you create it yourself, add `.claude/settings.local.json` to your `.gitignore`.
 
-  The permissions let the agent read Kent's rules and the knowledge base, run `kb`, and write
-  drafts without asking you each time. The deny rules stop it from editing the record's files
-  directly, so only `kb` writes there. Permission rules take paths in their own form and don't
-  expand variables, so write your folders out in full: `C:\work\myproject-knowledge` becomes
+  The deny rules stop the agent from editing the record's files directly, so only `kb` writes
+  there. The other permissions let it read Kent's rules and the knowledge base, run `kb` and write
+  drafts. Permission rules take paths in their own form and don't expand variables, so write your
+  folders out in full: `C:\work\myproject-knowledge` becomes
   `//c/work/myproject-knowledge`, and on macOS or Linux `/home/you/knowledge` becomes
-  `//home/you/knowledge`. Even with these, Claude Code asks before other commands and before editing
-  your code. We recommend working in auto mode, with these rules as a safety net.
+  `//home/you/knowledge`.
+- **Work in Claude Code's auto mode.** It is required: without it, the agent asks for your approval
+  all the time, and the permissions above don't prevent that. The deny rules stay in place as a
+  safety net.
 - Paste the block in `front-ends/claude-code/CLAUDE.md` into your project's CLAUDE.md. It tells the
   agent how to run `kb`, where the rules are, and which two hold before anything else. It names no
   folders of yours, so it can be committed.
