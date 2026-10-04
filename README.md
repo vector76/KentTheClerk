@@ -183,6 +183,9 @@ them like any other statement.
 - Paste the block in `front-ends/claude-code/CLAUDE.md` into your project's CLAUDE.md. It tells the
   agent how to run `kb`, where the rules are, and which two hold before anything else. It names no
   folders of yours, so it can be committed.
+- The settings take effect right away, even in the session that wrote them. The CLAUDE.md block
+  takes effect when a conversation starts, so after setting up, start a new conversation, or run
+  `/clear`, before talking with the agent about anything you want recorded.
 - Keep the knowledge base in git, with `off-record/`, `index.db` and `render/` left out: the first
   is outside the record by design, and the other two are rebuilt from the record whenever needed.
   `kb` does not commit for you; commit when it suits you, or ask your agent to.

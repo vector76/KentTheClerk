@@ -14,9 +14,12 @@ ids, never display names.
    answers and the role it plays), and `cites` (background pointers). A draft that changes an
    existing statement also carries `supersedes: S-####`, `amends: S-####` or `clarifies: S-####`,
    each naming a single statement. It may carry `rests_on` (statement ids it depends on).
-2. Post the exact final text as a clean block and ask for agreement.
-3. After the human agrees, snapshot the session so both turns are recorded:
-   `kb snapshot <session>`.
+2. Post the exact final text as a clean block and ask for agreement, in the last message of your
+   turn, after any tool calls. Text written before a tool call in the same turn may not reach the
+   session file, and a proposal the snapshot does not contain cannot be attested.
+3. After the human agrees, snapshot the session so both turns are recorded: `kb snapshot`. With no
+   session given, it snapshots this conversation, and prints its last human turn with that turn's
+   pointer; check that it is the human's agreement.
 4. Attest:
    `kb attest <draft> --proposed <session>#<your-turn-uuid> --turn <session>#<their-turn-uuid>`.
    Add `--form agreed-with-modification` when they agreed subject to a change (apply it to the draft
@@ -25,21 +28,26 @@ ids, never display names.
    attestation to an existing statement.
 5. `kb check`, then `kb index`.
 
-To find turn uuids, `kb show <session>` prints every turn with its pointer.
+To find turn uuids, `kb show <session>` prints every turn with its pointer. `kb snapshot` takes this
+conversation's id from `CLAUDE_CODE_SESSION_ID`, which Claude Code sets but does not document, and
+refuses if that conversation's file is not being written right now, as can happen after `/clear`.
+If it refuses, find this conversation's file by searching the project's session files for words
+from the human's latest message, and pass its id.
 
 ## Recording an agent statement
 
-1. State the choice in a turn of your own, in an on-record session.
+1. State the choice in a turn of your own, in an on-record session, in the last message of that
+   turn, for the same reason as above.
 2. Draft it in `off-record/drafts/` with `title`, `answers`, optional `rests_on` and `cites`. A
    revision of an agent statement carries `supersedes: A-####`.
-3. `kb snapshot <session>`, then `kb record <draft> --turn <session>#<your-turn-uuid>`.
+3. `kb snapshot`, then `kb record <draft> --turn <session>#<your-turn-uuid>`.
 4. When a human is later shown one in full: `kb seen A-#### --turn <ptr>`. To retire one with nothing
    in its place: `kb withdraw A-#### --turn <ptr> --reason <text>`.
 
 ## Commands
 
 ```
-kb snapshot <session-id|path> [--mode on-record|off-record] [--filter human-visible-v1|full-v1]
+kb snapshot [<session-id|path>] [--mode on-record|off-record] [--filter human-visible-v1|full-v1]
 kb ingest <file> [--mode on-record|off-record] [--extractor text-v1|html-v1|pdf-v1|docx-v1|opaque-v1] [--title T] [--caption C]
 kb show [<session>[#<uuid>] ...] [--human-only]
 kb attest <draft> --turn <ptr> [--proposed <ptr>] [--form proposed-and-agreed|agreed-with-modification|self|endorsement] [--statement S-####]

@@ -34,6 +34,25 @@ def claude_projects_dir() -> Path:
     return Path(os.environ.get("CLAUDE_PROJECTS_DIR", Path.home() / ".claude" / "projects"))
 
 
+# Claude Code sets CLAUDE_CODE_SESSION_ID for the commands it runs. It is undocumented, and whether it
+# follows /clear is unknown, so it is trusted only when its file is being written right now: the agent's
+# own tool call reaches the file before kb runs, and a conversation left behind by /clear goes quiet.
+SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
+CURRENT_WITHIN_SECONDS = 60
+
+
+def current_session_source() -> Path:
+    sid = os.environ.get(SESSION_ENV)
+    if not sid:
+        die(f"no session given, and {SESSION_ENV} is not set; pass the session id")
+    src = locate_source(sid)
+    age = datetime.now().timestamp() - src.stat().st_mtime
+    if age > CURRENT_WITHIN_SECONDS:
+        die(f"{SESSION_ENV} names session {sid[:8]}, but its file was last written {int(age)}s ago, so it may "
+            f"not be this conversation (for example after /clear); pass the session id")
+    return src
+
+
 def locate_source(session_id: str) -> Path:
     p = Path(session_id)
     if p.suffix == ".jsonl" and p.exists():
@@ -230,7 +249,7 @@ def run(args) -> None:
         die(f"mode must be one of {MODES}")
     if args.filter not in FILTER_PROFILES:
         die(f"filter must be one of {FILTER_PROFILES}")
-    src = locate_source(args.session)
+    src = locate_source(args.session) if args.session else current_session_source()
     records = read_source(src)
     session_ids = {r.get("sessionId") for r in records if r.get("sessionId")}
     if len(session_ids) == 1:
@@ -238,7 +257,7 @@ def run(args) -> None:
     else:
         # A forked/resumed session file carries the parent session's records under the parent's
         # sessionId. Snapshot only the requested session; the parent is snapshotted from its own file.
-        wanted = [s for s in session_ids if s.startswith(args.session)]
+        wanted = [s for s in session_ids if s.startswith(args.session or src.stem)]
         if len(wanted) != 1:
             die(f"multiple sessionIds in {src}: {sorted(session_ids)}; "
                 f"pass the id of the one to snapshot")
@@ -299,13 +318,19 @@ def run(args) -> None:
     rel = dest.relative_to(root)
     print(f"wrote {rel}: {len(turns)} turns ({info['human_turns']} human, {info['agent_turns']} agent, "
           f"{info['client_turns']} client), mode={args.mode}, filter={args.filter}")
+    last_human = next((t for t in reversed(turns) if t["role"] == "user" and t["author"] not in ("client", "tool")), None)
+    if last_human:
+        text = " ".join(b.get("text", "") for b in last_human["content"] if b.get("type") == "text")
+        text = " ".join(text.split())
+        print(f"last human turn: {session_id[:8]}#{last_human['uuid']}: {text[:100]}{'...' if len(text) > 100 else ''}")
     if args.mode == "off-record":
         print("note: off-record/ is gitignored; this snapshot is at risk of loss by design", file=sys.stderr)
 
 
 def add_parser(sub) -> None:
     p = sub.add_parser("snapshot", help="copy a session JSONL into evidence with a filter")
-    p.add_argument("session", help="session id (or prefix), or path to a .jsonl")
+    p.add_argument("session", nargs="?",
+                   help=f"session id (or prefix), or path to a .jsonl; default: this conversation, from {SESSION_ENV}")
     p.add_argument("--mode", default="on-record", help="on-record (evidence/) or off-record (off-record/sessions/)")
     p.add_argument("--filter", default="human-visible-v1", help="|".join(FILTER_PROFILES))
     p.add_argument("--user", help="human participant id (else KB_USER / ~/.kenttheclerk.json)")
