@@ -1,6 +1,6 @@
 # Parity run
 
-- commit: 44f40bc (with uncommitted changes)
+- commit: 2aa4bd2
 - OS: Windows-11-10.0.26300-SP0; Python 3.13.1; pypdf 6.14.2; Python's SQLite 3.45.3
 - go version go1.25.3 windows/amd64; Go kb: system_version: 0.7.0, system_hash: sha256:a09120f33f644ccd659d56869c7324615da7d4b95a9673d9cc5ab2bd78a21c17
 - knowledge base copied from `convkb`: 15 sessions, 1 document(s)
@@ -367,7 +367,7 @@
 - same: refused: amends an agent statement — rc=1; 1 file(s) written
 - same: refused: rests_on a missing statement — rc=1; 1 file(s) written
 - same: refused: rests_on written as a scalar — rc=1; 1 file(s) written
-- EXPECTED: crash: draft file missing — both raised FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Vector\\AppData\\Local\\Temp\\kp8\\kb\\off-record\\drafts\\missing.md' (Python prints a traceback, Go one line)
+- EXPECTED: crash: draft file missing — both raised FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Vector\\AppData\\Local\\Temp\\kp9\\kb\\off-record\\drafts\\missing.md' (Python prints a traceback, Go one line)
 - same: refused: snapshot mode change — rc=1; 0 file(s) written
 - same: record (seen in the turn it was made) — rc=0; 1 file(s) written
 - same: record (not yet seen) — rc=0; 1 file(s) written
