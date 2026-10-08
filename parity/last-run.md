@@ -1,6 +1,6 @@
 # Parity run
 
-- commit: 4a830b1 (with uncommitted changes)
+- commit: 529e304
 - OS: Windows-11-10.0.26300-SP0; Python 3.13.1; pypdf 6.14.2; Python's SQLite 3.45.3
 - go version go1.25.3 windows/amd64; Go kb: system_version: 0.7.0, system_hash: sha256:01dedd4e02ba22bd46a9fa889d7b6766c43ef787a652d739524a47b575758880
 - knowledge base copied from `convkb`: 15 sessions, 1 document(s)
