@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -13,6 +14,9 @@ func TestJSONAgainstPython(t *testing.T) {
 	py, err := exec.LookPath("python")
 	if err != nil {
 		t.Skip("python not available")
+	}
+	if v, _ := exec.Command(py, "-I", "-c", "import sys; print(sys.version_info[:2] == (3, 13))").Output(); !strings.HasPrefix(string(v), "True") {
+		t.Skip("python is not 3.13; its JSON error messages (trailing commas) are 3.13 behaviour")
 	}
 	cmd := exec.Command(py, "-I", "testdata/jsoncases.py")
 	cmd.Env = append(os.Environ(), "PYTHONIOENCODING=utf-8")

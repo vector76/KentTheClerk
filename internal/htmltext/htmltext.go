@@ -12,8 +12,8 @@ import (
 // raw bytes -> decode (utf-8-sig, else latin-1) -> _HTMLText feed -> post-processing -> lines.
 // title is p.title, and hasTitle is false when Python's `(p.title or None)` would be None.
 //
-// For the inputs on which Python's feed() raises AssertionError (see ExtractErr), Extract
-// panics with that *AssertionError, the counterpart of the uncaught Python exception.
+// For the inputs on which Python's feed() raises (see ExtractErr), Extract panics with the
+// *AssertionError or *ValueError, the counterpart of the uncaught Python exception.
 func Extract(raw []byte) (lines []string, title string, hasTitle bool) {
 	lines, title, hasTitle, err := ExtractErr(raw)
 	if err != nil {
@@ -22,13 +22,18 @@ func Extract(raw []byte) (lines []string, title string, hasTitle bool) {
 	return lines, title, hasTitle
 }
 
-// ExtractErr is Extract, returning *AssertionError instead of panicking for the markup on
-// which CPython's html.parser raises AssertionError out of feed() (a "<![" that is not
-// followed by a name, or whose name is not one of temp/cdata/ignore/include/rcdata/if/
-// else/endif, before the input ends).
+// ExtractErr is Extract, returning an error instead of panicking in exactly the cases where
+// CPython's feed() raises:
+//   - *AssertionError: a "<![" that is not followed by a name, or whose name is not one of
+//     temp/cdata/ignore/include/rcdata/if/else/endif, before the input ends;
+//   - *ValueError: a decimal character reference of more than 4300 digits that html.unescape
+//     converts (in text, or in an attribute value of a complete start tag).
+//
+// Msg carries Python's exception message.
 func ExtractErr(raw []byte) (lines []string, title string, hasTitle bool, err error) {
 	h := &htmlText{}
-	p := &parser{raw: decode(raw), h: h}
+	src := decode(raw)
+	p := &parser{raw: src, h: h, sc: scanner{s: src}}
 	if err := run(p); err != nil {
 		return nil, "", false, err
 	}
@@ -39,8 +44,12 @@ func ExtractErr(raw []byte) (lines []string, title string, hasTitle bool, err er
 func run(p *parser) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			if ae, ok := r.(*AssertionError); ok {
-				err = ae
+			switch e := r.(type) {
+			case *AssertionError:
+				err = e
+				return
+			case *ValueError:
+				err = e
 				return
 			}
 			panic(r)

@@ -267,6 +267,26 @@ func (d *decoder) str(i int) (any, int) {
 	}
 }
 
+// CheckEncodable raises UnicodeEncodeError where Python's strict UTF-8 encoder would: at a lone
+// surrogate (kept by Loads from an escape in the JSON).
+func CheckEncodable(s string) {
+	if i := SurrogateIndex(s); i >= 0 {
+		r, _ := decodeWTF8(s[i:])
+		Raise("UnicodeEncodeError", "'utf-8' codec can't encode character '%s' in position %d: surrogates not allowed",
+			fmt.Sprintf("%cu%04x", '\\', r), Len(s[:i]))
+	}
+}
+
+// SurrogateIndex is the byte index of the first lone surrogate in s, or -1.
+func SurrogateIndex(s string) int {
+	for i := 0; i+2 < len(s); i++ {
+		if s[i] == 0xed && s[i+1] >= 0xa0 && s[i+1] <= 0xbf {
+			return i
+		}
+	}
+	return -1
+}
+
 func encodeWTF8(r rune) string {
 	if r >= 0xd800 && r <= 0xdfff {
 		return string([]byte{0xed, byte(0xa0 | (r>>6)&0x1f), byte(0x80 | r&0x3f)})

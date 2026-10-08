@@ -169,8 +169,8 @@ func runShow(ns argparse.Namespace) int {
 				println(fmt.Sprintf("# %s  mode=%s filter=%s", titleOrID, s.Mode(), py.Str(s.Header.Get("filter"))))
 			}
 			for _, t := range s.Turns {
-				a := item(t, "author")
-				if ns.Bool("human_only") && (!py.Equal(item(t, "role"), "user") || py.Equal(a, "client") || py.Equal(a, "tool")) {
+				if ns.Bool("human_only") && (!py.Equal(item(t, "role"), "user") ||
+					py.Equal(item(t, "author"), "client") || py.Equal(item(t, "author"), "tool")) {
 					continue
 				}
 				println("")

@@ -45,4 +45,15 @@ def dump(path):
     return res
 
 
-print(json.dumps([dump(p) for p in sys.argv[1:]]))
+def run(paths):
+    return [dump(p) for p in paths]
+
+
+def main():
+    # main -> run -> dump puts pypdf at the same Python stack depth as in
+    # kb.py (main -> ingest.run -> extract_pdf), so RecursionError strikes
+    # at the same nesting levels (see frames.go).
+    print(json.dumps(run(sys.argv[1:])))
+
+
+main()

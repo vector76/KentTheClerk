@@ -1,7 +1,9 @@
-# Builds the Go kb for Windows, macOS and Linux (amd64 and arm64) on a version tag, and attaches one zip
-# per platform to a GitHub release. Each zip holds the executable beside the files the agent reads:
+# Builds the Go kb for Windows, macOS and Linux (amd64 and arm64) on a version tag vX.Y.Z, and attaches one
+# zip per platform, plus SHA256SUMS, to a GitHub release. Each zip holds the executable beside the files the
+# agent reads:
 #   kent-<version>-<os>-<arch>/kb[.exe], README.md, procedure.md, rules/, front-ends/
 # The version is the tag without its leading "v"; it is built into the executable as system_version.
+# The Go toolchain is the one go.mod names, the version the parity harness was run with.
 name: release
 
 on:
@@ -9,20 +11,31 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      # only vX.Y.Z: system_version must parse as numbers (kb check compares it to 0.3.0)
+      - name: check the tag
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "tag $GITHUB_REF_NAME is not vX.Y.Z"; exit 1; }
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      # the differential tests compare with CPython 3.13 where it is present, and skip where it is not
-      - uses: actions/setup-python@v5
+      # the differential tests compare with the exact Python and pypdf the port reproduces; without them
+      # they skip and only the golden-file tests run
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: "3.13.1"
+      - run: python -m pip install pypdf==6.14.2
       - run: go vet ./...
       - run: go test ./...
 
@@ -34,8 +47,8 @@ jobs:
         goos: [windows, darwin, linux]
         goarch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: build
@@ -61,6 +74,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -71,5 +86,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" \
+          (cd dist && sha256sum *.zip > SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" \
             --title "Kent the Clerk ${GITHUB_REF_NAME#v}" --generate-notes

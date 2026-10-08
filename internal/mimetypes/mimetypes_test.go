@@ -13,6 +13,9 @@ func TestAgainstPython(t *testing.T) {
 	if err != nil {
 		t.Skip("python not available")
 	}
+	if v, _ := exec.Command(py, "-I", "-c", "import sys; print(sys.version_info[:2] == (3, 13))").Output(); !strings.HasPrefix(string(v), "True") {
+		t.Skip("python is not 3.13; the built-in table is generated from CPython 3.13")
+	}
 	names := []string{"a.md", "a.txt", "a.html", "a.pdf", "a.docx", "a.png", "a.json", "a.jsonl", "a.csv",
 		"a.PY", "x.tar.gz", "x.tgz", "x.svgz", ".bashrc", "a.", "..md", "a.b.c.xml", "noext", "a.ts", "a.zip",
 		"a.WMD", "a.Z", "a.gz", "photo.JPG", "a.mp3", "a.xlsx", "a.pptx", "a.7z", "a.cpp", "a.webp", "a.svg"}

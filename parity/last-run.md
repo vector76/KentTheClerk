@@ -1,6 +1,9 @@
 # Parity run
 
-- Python: 3.13.1; knowledge base copied from `convkb`; 15 sessions, 1 document(s)
+- commit: 44f40bc (with uncommitted changes)
+- OS: Windows-11-10.0.26300-SP0; Python 3.13.1; pypdf 6.14.2; Python's SQLite 3.45.3
+- go version go1.25.3 windows/amd64; Go kb: system_version: 0.7.0, system_hash: sha256:a09120f33f644ccd659d56869c7324615da7d4b95a9673d9cc5ab2bd78a21c17
+- knowledge base copied from `convkb`: 15 sessions, 1 document(s)
 
 ## cli: 33 identical, 1 expected differences, 0 differing
 
@@ -35,7 +38,7 @@
 - same: kb --foo snapshot — rc=2; 0 file(s) written
 - same: kb check -h — rc=0; 0 file(s) written
 - same: kb index -h — rc=0; 0 file(s) written
-- EXPECTED: kb search -- -x --limit 2 —  both crashed (py: sqlite3.OperationalError: no such column: x | go: kb: unexpected sqlite3.OperationalError: no such column: x)
+- EXPECTED: kb search -- -x --limit 2 — both raised sqlite3.OperationalError: no such column: x (Python prints a traceback, Go one line)
 - same: kb attest -h, COLUMNS=50 — rc=0; 0 file(s) written
 - same: kb -h, COLUMNS=200 — rc=0; 0 file(s) written
 
@@ -48,7 +51,7 @@
 - same: kb where (install folder normalised) — rc=0; 0 file(s) written
 - same: kb where, KENT_KB in other case (normalised) — rc=0; 0 file(s) written
 - same: kb where, nothing found — rc=1; 0 file(s) written
-- EXPECTED: kb version — version lines equal: 'system_version: 0.7.0'; hashes differ by design (py sha256:f94c210761…, go sha256:2a0b12fd90…)
+- EXPECTED: kb version — version lines equal: 'system_version: 0.7.0'; hashes differ by design (py sha256:f94c210761…, go sha256:a09120f33f…)
 - same: no user id — rc=1; 0 file(s) written
 - same: user from ~/.kenttheclerk.json — rc=0; 2 file(s) written
 - same: user from the older ~/.convkb.json — rc=0; 2 file(s) written
@@ -109,7 +112,7 @@
 - same: default from CLAUDE_CODE_SESSION_ID (newest file) — rc=0; 1 file(s) written
 - same: default refused: stale file and a newer one beside it — rc=1; 0 file(s) written
 
-## ingest: 100 identical, 2 expected differences, 0 differing
+## ingest: 111 identical, 10 expected differences, 0 differing
 
 - same: ingest af65024150b02d16ec7be710829ce868f027450a16595edde594f577244bba93.md — rc=0; 2 file(s) written
 - same: ingest headings.md — rc=0; 2 file(s) written
@@ -135,12 +138,31 @@
 - same: ingest word-export.html — rc=0; 2 file(s) written
 - same: ingest small.html — rc=0; 2 file(s) written
 - same: ingest page.htm — rc=0; 2 file(s) written
-- EXPECTED: ingest crash.html —  both crashed (py: AssertionError: unknown status keyword 'foo' in marked section | go: kb: unexpected AssertionError: AssertionError: unknown status keyword "foo" in marked section)
+- EXPECTED: ingest crash.html — both raised AssertionError: unknown status keyword 'foo' in marked section (Python prints a traceback, Go one line)
 - same: ingest headings.docx — rc=0; 2 file(s) written
 - same: ingest table.docx — rc=0; 2 file(s) written
 - same: ingest runs.docx — rc=0; 2 file(s) written
 - same: ingest nodocxml.docx — rc=1; 0 file(s) written
 - same: ingest nobody.docx — rc=1; 0 file(s) written
+- same: ingest utf16.docx — rc=0; 2 file(s) written
+- same: ingest latin1-declared.docx — rc=0; 2 file(s) written
+- same: ingest cp1252-declared.docx — rc=0; 2 file(s) written
+- same: ingest ascii-declared.docx — rc=0; 2 file(s) written
+- same: ingest xml11.docx — rc=0; 2 file(s) written
+- same: ingest entity.docx — rc=0; 2 file(s) written
+- EXPECTED: ingest dup-attr.docx — both raised xml.etree.ElementTree.ParseError: duplicate attribute: line 2, column 104 (Python prints a traceback, Go one line)
+- EXPECTED: ingest unbound-prefix.docx — both raised xml.etree.ElementTree.ParseError: unbound prefix: line 2, column 91 (Python prints a traceback, Go one line)
+- EXPECTED: ingest junk-after-root.docx — both raised xml.etree.ElementTree.ParseError: junk after document element: line 2, column 179 (Python prints a traceback, Go one line)
+- EXPECTED: ingest second-root.docx — both raised xml.etree.ElementTree.ParseError: junk after document element: line 2, column 179 (Python prints a traceback, Go one line)
+- EXPECTED: ingest space-before-decl.docx — both raised xml.etree.ElementTree.ParseError: XML or text declaration not at start of entity: line 1, column 2 (Python prints a traceback, Go one line)
+- EXPECTED: ingest mismatched.docx — both raised xml.etree.ElementTree.ParseError: mismatched tag: line 2, column 109 (Python prints a traceback, Go one line)
+- same: ingest two-ppr.docx — rc=0; 2 file(s) written
+- same: ingest dotless-i.docx — rc=0; 2 file(s) written
+- same: ingest bzip2.docx — rc=0; 2 file(s) written
+- same: ingest backslash.docx — rc=0; 2 file(s) written
+- same: ingest badcrc.docx — rc=1; 0 file(s) written
+- EXPECTED: ingest encrypted.docx — both raised RuntimeError: File 'word/document.xml' is encrypted, password required for extraction (Python prints a traceback, Go one line)
+- EXPECTED: ingest strong-encryption.docx — both raised NotImplementedError: strong encryption (flag bit 6) (Python prints a traceback, Go one line)
 - same: ingest notazip.docx — rc=1; 0 file(s) written
 - same: ingest ascii_hex.pdf — rc=0; 2 file(s) written
 - same: ingest crlf_xref.pdf — rc=0; 2 file(s) written
@@ -184,7 +206,7 @@
 - same: ingest rand_00023.pdf — rc=0; 2 file(s) written
 - same: ingest rand_00024.pdf — rc=0; 2 file(s) written
 - same: ingest runlength.pdf — rc=0; 2 file(s) written
-- EXPECTED: ingest shifted_offsets.pdf — pypdf's repair warnings on stderr are not reproduced (stdout, exit status and files identical) /  stderr: py has 12 lines, go has 0 lines /   py: 'Ignoring wrong pointing object 2 0 (offset 72)'
+- EXPECTED: ingest shifted_offsets.pdf — pypdf's repair warnings on stderr are not reproduced (stdout, exit status and files identical) / stderr: py has 12 lines, go has 0 lines /   py: 'Ignoring wrong pointing object 2 0 (offset 72)'
 - same: ingest space_title.pdf — rc=0; 2 file(s) written
 - same: ingest title_bytes_even.pdf — rc=0; 2 file(s) written
 - same: ingest title_bytes_gbk.pdf — rc=0; 2 file(s) written
@@ -245,13 +267,13 @@
 - same: kb search snapshot NOT python — rc=0; 0 file(s) written
 - same: kb search "agent statement" — rc=0; 0 file(s) written
 - same: kb search superses* — rc=0; 0 file(s) written
-- EXPECTED: kb search S-0090 —  both crashed (py: sqlite3.OperationalError: no such column: 0090 | go: kb: unexpected sqlite3.OperationalError: no such column: 0090)
+- EXPECTED: kb search S-0090 — both raised sqlite3.OperationalError: no such column: 0090 (Python prints a traceback, Go one line)
 - same: kb search ü — rc=0; 0 file(s) written
 - same: kb search go AND pipeline — rc=0; 0 file(s) written
 - same: kb search zzzzunmatched — rc=0; 0 file(s) written
-- EXPECTED: kb search a.b —  both crashed (py: sqlite3.OperationalError: fts5: syntax error near "." | go: kb: unexpected sqlite3.OperationalError: fts5: syntax error near ".")
-- EXPECTED: kb search ( —  both crashed (py: sqlite3.OperationalError: fts5: syntax error near "" | go: kb: unexpected sqlite3.OperationalError: fts5: syntax error near "")
-- EXPECTED: kb search title:recorder —  both crashed (py: sqlite3.OperationalError: no such column: title | go: kb: unexpected sqlite3.OperationalError: no such column: title)
+- EXPECTED: kb search a.b — both raised sqlite3.OperationalError: fts5: syntax error near "." (Python prints a traceback, Go one line)
+- EXPECTED: kb search ( — both raised sqlite3.OperationalError: fts5: syntax error near "" (Python prints a traceback, Go one line)
+- EXPECTED: kb search title:recorder — both raised sqlite3.OperationalError: no such column: title (Python prints a traceback, Go one line)
 - same: kb search NEAR(kent rule) — rc=0; 0 file(s) written
 - same: kb search --limit 2 — rc=0; 0 file(s) written
 - same: kb search --limit -1 — rc=0; 0 file(s) written
@@ -282,7 +304,7 @@
 
 ## index: 7 identical, 0 expected differences, 0 differing
 
-- same: index.db contents (every table, sqlite3) — 5840 rows identical
+- same: index.db contents (every table, sqlite3) — 5861 rows identical
 - same: search 'attest': Python and Go readers on Python- and Go-built indexes — 18 rows, all four combinations equal
 - same: search 'kent rule': Python and Go readers on Python- and Go-built indexes — 11 rows, all four combinations equal
 - same: search 'python OR go': Python and Go readers on Python- and Go-built indexes — 18 rows, all four combinations equal
@@ -290,14 +312,24 @@
 - same: search '"agent statement"': Python and Go readers on Python- and Go-built indexes — 18 rows, all four combinations equal
 - same: search 'superses*': Python and Go readers on Python- and Go-built indexes — 15 rows, all four combinations equal
 
-## serve: 3 identical, 1 expected differences, 0 differing
+## serve: 13 identical, 1 expected differences, 0 differing
 
-- same: GET 133 pages (status, content type, body) — 133/133 identical
-- same: POST / (unsupported method) — {'py': (501, b'<!DOCTYPE HTML>\n<html lang="en">\n    <head>\n        <meta charset="utf-8">\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method (\'POST\').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n'), 'go': (501, b'<!DOCTYPE HTML>\n<html lang="en">\n    <head>\n        <meta charset="utf-8">\n        <title>E
-- same: GET /reindex (redirect) — {'py': (302, '/'), 'go': (302, '/')}
-- EXPECTED: HTTP framing — Python answers HTTP/1.0 with Server/Date headers from http.server; Go answers HTTP/1.1 with its own headers. Status, Content-Type and body are compared above.
+- same: GET 162 pages: whole response (status line, headers, body; Server and Date values blanked) — 162/162 identical
+- same: POST (unsupported method) — 
+- same: HEAD (unsupported method) — 
+- same: HTTP/0.9 request — 
+- same: HTTP/0.9 with another method — 
+- same: HTTP/2.0 request line — 
+- same: bad version — 
+- same: too many words — 
+- same: empty request line — 
+- same: raw UTF-8 in the path — 
+- same: 101 header lines — 
+- same: long header line — 
+- same: redirect after /reindex — 
+- EXPECTED: Server header — the Server header names the implementation (Python: BaseHTTP/0.6 Python/x.y.z; Go: BaseHTTP/0.6 kb/<version>); its value and the Date value are blanked in the comparisons above
 
-## acts: 53 identical, 1 expected differences, 0 differing
+## acts: 56 identical, 3 expected differences, 0 differing
 
 - same: proposed-and-agreed — rc=0; 1 file(s) written
 - same: --keep-draft — rc=0; 2 file(s) written
@@ -311,7 +343,9 @@
 - same: refused: agreement before the proposal — rc=1; 1 file(s) written
 - same: refused: proposal in another session — rc=1; 1 file(s) written
 - same: refused: re-attestation (endorsing what I attested) — rc=1; 0 file(s) written
-- same: endorsement (another user's own turn is required) — rc=1; 0 file(s) written
+- same: refused: endorsement from a turn the endorser did not write — rc=1; 0 file(s) written
+- same: endorsement by a second person — rc=0; 2 file(s) written
+- same: refused: endorsing twice — rc=1; 2 file(s) written
 - same: refused: endorsement without --statement — rc=1; 0 file(s) written
 - same: refused: endorsing an agent statement — rc=1; 0 file(s) written
 - same: refused: endorsing a missing statement — rc=1; 0 file(s) written
@@ -333,7 +367,7 @@
 - same: refused: amends an agent statement — rc=1; 1 file(s) written
 - same: refused: rests_on a missing statement — rc=1; 1 file(s) written
 - same: refused: rests_on written as a scalar — rc=1; 1 file(s) written
-- EXPECTED: crash: draft file missing —  both crashed (py: FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Vector\\AppData\\Local\\Temp\\kp4\\kb\\off-record\\drafts\\missing.md' | go: kb: unexpected FileNotFoundError: open C:\Users\Vector\AppData\Local\Temp\kp4\kb\off-record\drafts\missing.md: The system cannot find the file specified.)
+- EXPECTED: crash: draft file missing — both raised FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Vector\\AppData\\Local\\Temp\\kp8\\kb\\off-record\\drafts\\missing.md' (Python prints a traceback, Go one line)
 - same: refused: snapshot mode change — rc=1; 0 file(s) written
 - same: record (seen in the turn it was made) — rc=0; 1 file(s) written
 - same: record (not yet seen) — rc=0; 1 file(s) written
@@ -345,6 +379,7 @@
 - same: refused: record revising a missing agent statement — rc=1; 1 file(s) written
 - same: refused: record revising a withdrawn one — rc=1; 2 file(s) written
 - same: refused: record without answers — rc=1; 1 file(s) written
+- same: seen in another conversation's turn — rc=0; 2 file(s) written
 - same: refused: seen, text not shown — rc=1; 0 file(s) written
 - same: refused: seen, already recorded there — rc=1; 0 file(s) written
 - same: refused: seen of a human statement id — rc=1; 0 file(s) written
@@ -353,12 +388,14 @@
 - same: refused: withdraw twice — rc=1; 1 file(s) written
 - same: refused: withdraw with a blank reason — rc=1; 0 file(s) written
 - same: refused: withdraw from an off-record turn — rc=1; 0 file(s) written
+- EXPECTED: absolute draft path — deliberate: Python's attest crashes on an absolute draft path (load_statement is given a str and calls .read_text on it); Go attests the draft / exit status py=1 go=0 / stdout: py has 0 lines, go has 1 lines /   go: 'attested S-0094 (proposed-and-agreed) by jamie: attested\\S-0094-recorder-in-go-parity-copy.md' / changed files differ: py only ['off-record/drafts/d.md'], go only ['attested/S-0094-r
+- EXPECTED: absolute draft path (record) — deliberate: Python's record crashes the same way; Go records the draft / exit status py=1 go=0 / stdout: py has 0 lines, go has 1 lines /   go: 'recorded A-0006 by agent:claude-opus-5-5 (seen in the turn it was made): agent\\A-0006-agent-choice-parity-copy.md' / changed files differ: py only ['off-record/drafts/a.md'], go only ['agent/A-0006-agent-choice-parity-copy.md'] / stderr: py has 13 lines,
 
 ## cross: 3 identical, 0 expected differences, 0 differing
 
-- same: the same acts by each version — rc=0; 6 file(s) written
-- same: py kb check accepts the acts go made — 15 session(s), 1 document(s), 95 statement(s), 7 agent statement(s) (1 unseen): 0 error(s), 2 warning(s)
-- same: go kb check accepts the acts py made — 15 session(s), 1 document(s), 95 statement(s), 7 agent statement(s) (1 unseen): 0 error(s), 2 warning(s)
+- same: the same acts by each version — rc=0; 7 file(s) written
+- same: py kb check accepts the acts go made — 16 session(s), 1 document(s), 95 statement(s), 7 agent statement(s) (1 unseen): 0 error(s), 2 warning(s)
+- same: go kb check accepts the acts py made — 16 session(s), 1 document(s), 95 statement(s), 7 agent statement(s) (1 unseen): 0 error(s), 2 warning(s)
 
 ## re-snapshot vs the snapshot in the record
 

@@ -17,7 +17,7 @@ func resolveOnRecord(root string, ptr Pointer, what string) (*Session, *py.Dict)
 	if s == nil {
 		die(fmt.Sprintf("%s: no evidence session %s", what, ptr.Session))
 	}
-	if s.Mode() != "on-record" || !py.Equal(s.ModeValue(), "on-record") {
+	if !py.Equal(s.ModeValue(), "on-record") {
 		die(fmt.Sprintf("%s: session %s is %s; attestation evidence must be on-record (%s)", what, py.Head(s.ID(), 8), s.Mode(), rule("on-record-only")))
 	}
 	if s.Kind() == "document" {

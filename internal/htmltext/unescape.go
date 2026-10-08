@@ -2,6 +2,18 @@ package htmltext
 
 //go:generate python -I gen/gen_entities.py -o entities_gen.go
 
+import "fmt"
+
+// maxStrDigits is CPython's default sys.get_int_max_str_digits(). int() of a decimal string
+// with more digits raises ValueError (hexadecimal, a power-of-two base, is not limited).
+const maxStrDigits = 4300
+
+// ValueError is what Python raises out of feed() when html.unescape meets a decimal
+// character reference of more than 4300 digits (in text or in an attribute value).
+type ValueError struct{ Msg string }
+
+func (e *ValueError) Error() string { return "ValueError: " + e.Msg }
+
 // unescape is html.unescape from CPython 3.13 (html/__init__.py): every match of
 //
 //	&(#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[^\t\n\f <&#;]{1,32};?)
@@ -26,6 +38,10 @@ func unescape(s []rune) []rune {
 			q := p + 1
 			for q < n && isASCIIDigit(s[q]) {
 				q++
+			}
+			if nd := q - (p + 1); nd > maxStrDigits {
+				panic(&ValueError{Msg: fmt.Sprintf("Exceeds the limit (%d digits) for integer string conversion: "+
+					"value has %d digits; use sys.set_int_max_str_digits() to increase the limit", maxStrDigits, nd)})
 			}
 			num := parseNum(s[p+1:q], 10)
 			if q < n && s[q] == ';' {

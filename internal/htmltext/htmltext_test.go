@@ -25,6 +25,7 @@ type result struct {
 	Lines []string `json:"lines"`
 	Title *string  `json:"title"`
 	Error string   `json:"error,omitempty"`
+	Msg   string   `json:"message,omitempty"`
 }
 
 type namedInput struct {
@@ -34,8 +35,14 @@ type namedInput struct {
 
 func goResult(raw []byte) result {
 	lines, title, has, err := ExtractErr(raw)
-	if err != nil {
-		return result{Error: "AssertionError"}
+	switch e := err.(type) {
+	case nil:
+	case *AssertionError:
+		return result{Error: "AssertionError", Msg: e.Msg}
+	case *ValueError:
+		return result{Error: "ValueError", Msg: e.Msg}
+	default:
+		return result{Error: fmt.Sprintf("%T", err), Msg: err.Error()}
 	}
 	r := result{Lines: lines}
 	if has {
@@ -80,6 +87,42 @@ func largeInputs(files []namedInput) []namedInput {
 		{"large:many-attrs", []byte("<div " + strings.Repeat("a=1 b='2' c ", 30000) + ">x</div>y")},
 		{"large:unclosed-quote", []byte("<p a='" + strings.Repeat("word ", 50000) + "<p>z")},
 		{"large:long-text", []byte(strings.Repeat("lorem ipsum &amp; dolor sit<br>", 40000) + "&amp")},
+	}
+}
+
+// deepInputs once overflowed the stack of the recursive (continuation-passing) matcher.
+func deepInputs() []namedInput {
+	return []namedInput{
+		{"deep:400k-attrs", []byte("<p>x</p><a" + strings.Repeat(" b", 400_000) + ">hi</a>")},
+		{"deep:2.3M-spaces", []byte("<a b" + strings.Repeat(" ", 2_300_000) + ">")},
+		{"deep:2.3M-slashes", []byte("<a b" + strings.Repeat("/", 2_300_000) + ">")},
+		{"deep:unclosed-quotes", []byte("<a" + strings.Repeat(" b='x", 100_000) + ">y")},
+		{"deep:eq-runs", []byte("<a" + strings.Repeat(" b=='x", 100_000) + ">y")},
+	}
+}
+
+// digitInputs exercise CPython's 4300-digit limit on int() in html.unescape.
+func digitInputs() []namedInput {
+	d := func(n int) string { return strings.Repeat("7", n) }
+	return []namedInput{
+		{"digits:text-4300", []byte("<p>&#" + d(4300) + ";</p>")},
+		{"digits:text-4301", []byte("<p>&#" + d(4301) + ";</p>")},
+		{"digits:text-4301-nosemi", []byte("<p>&#" + d(4301) + " x</p>")},
+		{"digits:zeros-4301", []byte("<p>&#" + strings.Repeat("0", 4300) + "65;</p>")},
+		{"digits:text-at-end", []byte("x &#" + d(5000))},
+		{"digits:hex-5000", []byte("<p>&#x" + strings.Repeat("f", 5000) + ";</p>")},
+		{"digits:title", []byte("<title>&#" + d(4400) + ";</title>")},
+		{"digits:first-wins", []byte("&#" + d(4500) + "; &#" + d(4400) + ";<p>")},
+		{"digits:attr-dq", []byte("<a href=\"&#" + d(4301) + ";\">x</a>")},
+		{"digits:attr-sq", []byte("<a href='x&#" + d(4301) + "'>x</a>")},
+		{"digits:attr-bare", []byte("<a href=&#" + d(4301) + ">x</a>")},
+		{"digits:attr-4300", []byte("<a href=\"&#" + d(4300) + ";\">x</a>")},
+		{"digits:attr-junk-tag", []byte("<a href=\"&#" + d(4301) + "\" \"q>x</a>")},
+		{"digits:attr-incomplete", []byte("x<a href=\"&#" + d(4301) + "\"")},
+		{"digits:attr-eqeq", []byte("<a href=='&#" + d(4301) + ">x</a>")},
+		{"digits:script", []byte("<script>&#" + d(4301) + ";</script>ok")},
+		{"digits:comment", []byte("<!-- &#" + d(4301) + "; -->ok")},
+		{"digits:endtag", []byte("</a x='&#" + d(4301) + "'>ok")},
 	}
 }
 
@@ -263,11 +306,13 @@ func TestDifferential(t *testing.T) {
 	}
 	inputs := corpus(t)
 	all := append(append([]namedInput(nil), inputs...), largeInputs(inputs)...)
+	all = append(all, deepInputs()...)
+	all = append(all, digitInputs()...)
 	want := runPython(t, py, all)
 	if bad := compare(t, all, want); bad > 0 {
 		t.Fatalf("%d of %d corpus cases differ", bad, len(all))
 	}
-	t.Logf("%d corpus cases (%d large) identical to Python", len(all), len(all)-len(inputs))
+	t.Logf("%d corpus cases (%d large/deep/digit-limit) identical to Python", len(all), len(all)-len(inputs))
 	if *update {
 		writeGolden(t, inputs, want[:len(inputs)])
 	}
@@ -363,4 +408,48 @@ func TestExtractSimple(t *testing.T) {
 	if !reflect.DeepEqual(lines, want) || title != "T" || !has {
 		t.Fatalf("got %q %q %v", lines, title, has)
 	}
+}
+
+// TestDeepInputs runs without Python: these inputs used to overflow the goroutine stack
+// (fatal, unrecoverable) in the recursive matcher.
+func TestDeepInputs(t *testing.T) {
+	want := map[string][]string{
+		"deep:400k-attrs":      {"x", "", "hi"},
+		"deep:2.3M-spaces":     {""},
+		"deep:2.3M-slashes":    {""},
+		"deep:unclosed-quotes": {"y"},
+		"deep:eq-runs":         {"y"},
+	}
+	for _, in := range deepInputs() {
+		lines, _, _, err := ExtractErr(in.Raw)
+		if err != nil || !reflect.DeepEqual(lines, want[in.Name]) {
+			t.Errorf("%s: got %q, %v; want %q", in.Name, lines, err, want[in.Name])
+		}
+	}
+}
+
+func TestDigitLimitValueError(t *testing.T) {
+	for _, in := range digitInputs() {
+		_, _, _, err := ExtractErr(in.Raw)
+		ve, isVE := err.(*ValueError)
+		wantErr := strings.Contains(in.Name, "4301") || strings.Contains(in.Name, "at-end") ||
+			strings.Contains(in.Name, "title") || strings.Contains(in.Name, "first-wins") ||
+			strings.Contains(in.Name, "attr-") && !strings.Contains(in.Name, "4300") && !strings.Contains(in.Name, "incomplete")
+		if wantErr != isVE {
+			t.Errorf("%s: err = %v, want ValueError: %v", in.Name, err, wantErr)
+		}
+		if in.Name == "digits:first-wins" && isVE {
+			want := "Exceeds the limit (4300 digits) for integer string conversion: value has 4500 digits; " +
+				"use sys.set_int_max_str_digits() to increase the limit"
+			if ve.Msg != want {
+				t.Errorf("message %q, want %q", ve.Msg, want)
+			}
+		}
+	}
+	defer func() {
+		if _, ok := recover().(*ValueError); !ok {
+			t.Fatal("want *ValueError panic from Extract")
+		}
+	}()
+	Extract([]byte("&#" + strings.Repeat("1", 4301) + ";<p>"))
 }

@@ -2,7 +2,7 @@
 
 Usage: python -I pyextract.py INPUTS.json
 INPUTS.json is a JSON list of base64 strings (raw file bytes). Prints a JSON list, one entry
-per input: {"lines": [...], "title": str-or-null} or {"error": "<ExceptionClassName>"}.
+per input: {"lines": [...], "title": str-or-null} or {"error": "<ExceptionClassName>", "message": str(exc)}.
 
 It runs the real _HTMLText from kb/ingest.py and the body of extract_html up to chunk_units.
 """
@@ -43,7 +43,7 @@ def main() -> None:
             lines, title = extract(base64.b64decode(b))
             results.append({"lines": lines, "title": title})
         except Exception as e:  # mirrored by htmltext.ExtractErr
-            results.append({"error": type(e).__name__})
+            results.append({"error": type(e).__name__, "message": str(e)})
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stdout.write(json.dumps(results))
 

@@ -267,7 +267,7 @@ func (d *Document) prepareCM(ft *Dict) ([]byte, error) {
 type cmState struct {
 	processRg, processChar bool
 	multiline              bool
-	mlA, mlB               int64
+	mlA                    int64
 	m                      *ordMap
 	intEntry               []int
 	width                  int  // map_dict[-1]
@@ -312,6 +312,28 @@ func fields(line []byte) [][]byte {
 		}
 	}
 	return out
+}
+
+// pyBigHex is int(b, 16) with Python's unbounded integers.
+func pyBigHex(b []byte) (*big.Int, error) {
+	s := strings.TrimSpace(string(b))
+	neg := false
+	if strings.HasPrefix(s, "+") || strings.HasPrefix(s, "-") {
+		neg = s[0] == '-'
+		s = s[1:]
+	}
+	if len(s) > 2 && (s[:2] == "0x" || s[:2] == "0X") {
+		s = s[2:]
+	}
+	s = strings.ReplaceAll(s, "_", "")
+	v, ok := new(big.Int).SetString(s, 16)
+	if s == "" || !ok {
+		return nil, pyErr("ValueError", "invalid literal for int() with base 16")
+	}
+	if neg {
+		v.Neg(v)
+	}
+	return v, nil
 }
 
 // pyIntHex is int(b, 16).
@@ -449,14 +471,18 @@ func (s *cmState) parseBfrange(line []byte) error {
 	if len(lst) < 2 {
 		return pyErr("IndexError", "list index out of range")
 	}
-	a, err := pyIntHex(lst[0])
+	bigA, err := pyBigHex(lst[0])
 	if err != nil {
 		return err
 	}
-	b, err := pyIntHex(lst[1])
+	bigB, err := pyBigHex(lst[1])
 	if err != nil {
 		return err
 	}
+	// Python ints are unbounded; codes beyond int64 are only accepted here
+	// as far as the range check (see the package doc).
+	a, b := bigA.Int64(), bigB.Int64()
+	fits := bigA.IsInt64() && bigB.IsInt64()
 	nbi := len(lst[0])
 	if len(lst[1]) > nbi {
 		nbi = len(lst[1])
@@ -467,6 +493,9 @@ func (s *cmState) parseBfrange(line []byte) error {
 		return pyErr("IndexError", "list index out of range")
 	}
 	if string(lst[2]) == "[" {
+		if !fits {
+			return pyErr("ValueError", "code out of the supported range")
+		}
 		for _, sq := range lst[3:] {
 			if string(sq) == "]" {
 				closure = true
@@ -491,12 +520,18 @@ func (s *cmState) parseBfrange(line []byte) error {
 			w2 = 4
 		}
 		closure = true
-		rangeSize := b - a + 1
-		if rangeSize < 0 {
-			rangeSize = 0
+		// range_size = max(0, b - a + 1), computed without overflow
+		rangeSize := new(big.Int).Sub(bigB, bigA)
+		rangeSize.Add(rangeSize, big.NewInt(1))
+		if rangeSize.Sign() < 0 {
+			rangeSize.SetInt64(0)
 		}
-		if int64(entryCount)+rangeSize > mappingLimit {
+		rangeSize.Add(rangeSize, big.NewInt(int64(entryCount)))
+		if rangeSize.Cmp(big.NewInt(mappingLimit)) > 0 {
 			return pyErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
+		}
+		if !fits {
+			return pyErr("ValueError", "code out of the supported range")
 		}
 		for a <= b {
 			v, err := decodeValue(fmtHex(c, w2))
@@ -512,7 +547,7 @@ func (s *cmState) parseBfrange(line []byte) error {
 	}
 	if !closure {
 		s.multiline = true
-		s.mlA, s.mlB = a, b
+		s.mlA = a
 	}
 	return nil
 }

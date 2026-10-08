@@ -13,10 +13,30 @@
 // *pyError values carrying the Python class name, raised with panic/recover
 // where pypdf relies on try/except.
 //
-// Known differences from pypdf 6.14.2:
+// pypdf's resource limits are ported (75 MB per decoded filter output,
+// 4 MB predictor rows, 250,000 predictor columns, 10,000 /Contents entries
+// and 75 MB of joined content, 75 MB declared stream lengths, 100,000
+// /ToUnicode entries, the 10,000-object /Root recovery limit, token length
+// limits); where pypdf raises LimitReachedError, Extract returns an error
+// with that class.
+//
+// Deliberate deviations (pypdf would hang or exhaust memory):
+//   - An xref table whose entry realignment stops making progress near the
+//     end of the file is an error; pypdf loops forever.
+//   - Work budget: more than 250,000 form XObject executions, 50 million
+//     content operations or 50 million characters of text per document is
+//     an error (frames.go). pypdf has no such limit.
+//
+// Other known differences from pypdf 6.14.2:
 //   - Encrypted files (an /Encrypt entry) always fail. pypdf decrypts RC4
 //     files that have an empty user password (and AES ones when the
 //     "cryptography" package is installed).
+//   - Recursion depth: pypdf's RecursionError is modelled by counting the
+//     Python frames it would use (frames.go), calibrated for a fresh kb.py
+//     process. Inputs nested to within a few levels of the limits (about
+//     490 form XObjects, 496 nested arrays, 983 page-tree levels) can
+//     differ; pypdf itself shifts by a few levels when lazy imports have
+//     already run in a long-lived process.
 //   - Inline images: settings keys that are not names are ignored and an
 //     indirect reference inside the settings fails (pypdf would accept it).
 //   - The CJK codecs (gbk, gb2312, gb18030, cp950, cp932) come from
@@ -25,10 +45,13 @@
 //     string titles and fonts using predefined CJK CMaps.
 //   - Recovery from corrupt Flate data: both keep the bytes decoded before
 //     the corruption, but the amount can differ.
-//   - Damaged-file corner cases: str() of non-string titles (arrays,
-//     dictionaries) is approximated; integers beyond int64; the recursion
-//     limit for nested object loads; pypdf's size limits other than the
-//     declared stream length and token lengths.
+//   - str() of a title that is an array or dictionary: pypdf's text
+//     contains Python memory addresses; Go writes "..." there.
+//   - Integers beyond int64 (Python's are unbounded) are rejected where
+//     pypdf would accept them, e.g. huge /ToUnicode codes.
+//   - The average glyph width (used for spacing when a font has no space
+//     width) is summed in pypdf's order; floating-point corner cases of
+//     Python's sum() for exact floats are not reproduced.
 package pdftext
 
 import (
@@ -57,6 +80,8 @@ func ExtractBytes(data []byte) (pages []string, title string, hasTitle bool, err
 		if r := recover(); r != nil {
 			if rr, ok := r.(raised); ok {
 				err = rr.err
+			} else if be, ok := r.(budgetError); ok {
+				err = pyErr("LimitReachedError", "pdftext work limit: %s", be.msg)
 			} else {
 				err = fmt.Errorf("pdftext: internal error: %v", r)
 			}
@@ -73,16 +98,19 @@ func ExtractBytes(data []byte) (pages []string, title string, hasTitle bool, err
 	// title = (reader.metadata or {}).get("/Title") or None  (errors -> None)
 	var titleObj Object
 	_ = catch(func() error {
+		d.frame = frameMetadata
 		titleObj = d.titleObject()
 		return nil
 	})
 	err = catch(func() error {
 		for _, pg := range d.pages() {
-			text := d.extractText(pg, nil, true, nil)
+			text := d.extractText(pg, nil, true, nil, 0)
+			d.spend(0, 0, len(text))
 			pages = append(pages, text.goString())
 		}
 		// str(title) runs after the pages, outside any try
 		if titleObj != nil {
+			d.frame = frameTitleStr
 			title, hasTitle = d.pyStrObj(titleObj).goString(), true
 		}
 		return nil

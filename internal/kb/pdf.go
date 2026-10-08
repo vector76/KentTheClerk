@@ -23,4 +23,3 @@ func extractPDF(path string) ([]chunk, any) {
 	}
 	return chunks, t
 }
-

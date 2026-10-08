@@ -4,7 +4,6 @@ package kb
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -491,8 +490,6 @@ func containsValue(v any, x any) bool {
 	}
 	return false
 }
-
-var _ = os.Stat
 
 func addCheckParser(sub *argparse.Parser) {
 	p := sub.AddParser("check", "verify invariants over evidence/ and attested/")

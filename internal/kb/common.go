@@ -518,7 +518,7 @@ func findSession(root, sessionID string) *Session {
 // turnText is the visible text of a turn (text blocks joined).
 func turnText(t *py.Dict) string {
 	var parts []string
-	for _, b := range py.Iter(t.Get("content")) {
+	for _, b := range py.Iter(contentOrEmpty(t)) {
 		bd := py.AsDict(b)
 		if py.Equal(bd.Get("type"), "text") {
 			v, ok := bd.Lookup("text")

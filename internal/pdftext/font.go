@@ -13,16 +13,16 @@ type font struct {
 	name       string
 	enc        *encoding
 	charMap    *ordMap
-	widths     map[string]float64 // pstr key (single chars) or "default"
+	widths     *wtab // pstr key (single chars) or "default"
 	spaceWidth float64
 	spaceChar  pstr
 	flags      int64
 }
 
 func (f *font) width(c pstr) float64 {
-	w, ok := f.widths[c.key()]
+	w, ok := f.widths.has(c.key())
 	if !ok {
-		w = f.widths["default"]
+		w = f.widths.get("default")
 	}
 	if isBad(w) {
 		raise(pyErr("TypeError", "unsupported operand type(s) for +"))
@@ -52,7 +52,7 @@ func notInitializedFont() *font {
 		name:       "NotInitialized",
 		enc:        &encoding{isStr: true, name: "charmap"},
 		charMap:    newOrdMap(),
-		widths:     map[string]float64{"default": 500},
+		widths:     defaultWidths(),
 		spaceWidth: 250,
 		spaceChar:  pstr{' '},
 		flags:      32,
@@ -68,7 +68,7 @@ func unknownFont() *font {
 		name:       "Unknown",
 		enc:        e,
 		charMap:    newOrdMap(),
-		widths:     map[string]float64{"default": 500},
+		widths:     defaultWidths(),
 		spaceWidth: 250,
 		spaceChar:  pstr{' '},
 		flags:      32,
@@ -110,7 +110,7 @@ func (d *Document) fontFromResource(fd *Dict) (*font, error) {
 	if err != nil {
 		return nil, err
 	}
-	widths := map[string]float64{}
+	widths := newWtab()
 	var flags int64 = 32 // FontDescriptor() default
 	var flagsIsFloat bool
 
@@ -166,7 +166,7 @@ func (d *Document) fontFromResource(fd *Dict) (*font, error) {
 					if c < 0 || c > 0x10FFFF {
 						return nil, pyErr("ValueError", "chr() arg not in range")
 					}
-					widths[pstr{rune(c)}.key()] = v
+					widths.set(pstr{rune(c)}.key(), v, false)
 				}
 			} else if cf, ok := coreFonts[name]; ok {
 				flags = cf.flags
@@ -174,14 +174,14 @@ func (d *Document) fontFromResource(fd *Dict) (*font, error) {
 					for _, code := range enc.codes {
 						ch := enc.m[code]
 						if w, ok := cf.widths[ch.key()]; ok {
-							widths[pstr{rune(code)}.key()] = w
+							widths.set(pstr{rune(code)}.key(), w, false)
 						}
 					}
 				} else {
 					for code := 0; code < 256; code++ {
 						k := pstr{rune(code)}.key()
 						if w, ok := cf.widths[k]; ok {
-							widths[k] = w
+							widths.set(k, w, false)
 						}
 					}
 				}
@@ -197,11 +197,11 @@ func (d *Document) fontFromResource(fd *Dict) (*font, error) {
 					desc = newDict()
 				}
 				if desc.Has("/MissingWidth") {
-					v, err := d.anyWidth(desc.m["/MissingWidth"])
+					v, isF, err := d.anyWidth(desc.m["/MissingWidth"])
 					if err != nil {
 						return nil, err
 					}
-					widths["default"] = v
+					widths.set("default", v, isF)
 				}
 				f, isF, err := d.parseFontDescriptor(desc)
 				if err != nil {
@@ -245,11 +245,11 @@ func (d *Document) fontFromResource(fd *Dict) (*font, error) {
 				return nil, err
 			}
 			if df.Has("/DW") {
-				v, err := d.anyWidth(df.m["/DW"])
+				v, isF, err := d.anyWidth(df.m["/DW"])
 				if err != nil {
 					return nil, err
 				}
-				widths["default"] = v
+				widths.set("default", v, isF)
 			}
 			desc := newDict()
 			if dd, ok := df.Get("/FontDescriptor"); ok {
@@ -272,16 +272,16 @@ func (d *Document) fontFromResource(fd *Dict) (*font, error) {
 	}
 
 	spaceChar := getSpaceChar(enc, cmap)
-	if widths["default"] == 0 {
-		if flagsIsFloat && len(widths) > 0 {
-			if w, ok := widths[spaceChar.key()]; ok && w != 0 {
+	if widths.get("default") == 0 {
+		if flagsIsFloat && widths.n() > 0 {
+			if w, ok := widths.has(spaceChar.key()); ok && w != 0 {
 				return nil, pyErr("TypeError", "flags & int")
 			}
 		}
 		addDefaultWidth(widths, flags, spaceChar)
 	}
 	if flagsIsFloat {
-		if widths[spaceChar.key()] == 0 {
+		if widths.get(spaceChar.key()) == 0 {
 			return nil, pyErr("TypeError", "flags & int")
 		}
 	}
@@ -351,50 +351,55 @@ var badWidth = math.NaN()
 func isBad(v float64) bool { return math.IsNaN(v) }
 
 // rawWidth is a /W list element as stored by pypdf (unresolved).
-func rawWidth(o Object) float64 {
+func rawWidth(o Object) wval {
 	switch v := o.(type) {
 	case Int:
-		return float64(v)
+		return wval{float64(v), false}
 	case Real:
-		return float64(v)
+		return wval{float64(v), true}
 	}
-	return badWidth
+	return wval{badWidth, false}
+}
+
+type wval struct {
+	v       float64
+	isFloat bool
 }
 
 // sequenceWidths returns the elements of a /W entry that pypdf treats as a
 // width list (any Sequence), or ok=false.
-func sequenceWidths(o Object) ([]float64, bool) {
+func sequenceWidths(o Object) ([]wval, bool) {
 	switch v := o.(type) {
 	case Array:
-		out := make([]float64, len(v))
+		out := make([]wval, len(v))
 		for i, x := range v {
 			out[i] = rawWidth(x)
 		}
 		return out, true
 	case Name:
-		out := make([]float64, len([]rune(string(v))))
+		out := make([]wval, len([]rune(string(v))))
 		for i := range out {
-			out[i] = badWidth
+			out[i] = wval{badWidth, false}
 		}
 		return out, true
 	case *String:
 		if t, ok := textString(v.Raw); ok {
-			out := make([]float64, len(t))
+			out := make([]wval, len(t))
 			for i := range out {
-				out[i] = badWidth
+				out[i] = wval{badWidth, false}
 			}
 			return out, true
 		}
-		out := make([]float64, len(v.Raw))
+		out := make([]wval, len(v.Raw))
 		for i, b := range v.Raw {
-			out[i] = float64(b)
+			out[i] = wval{float64(b), false}
 		}
 		return out, true
 	}
 	return nil, false
 }
 
-func (d *Document) collectCIDWidths(df *Dict, widths map[string]float64) error {
+func (d *Document) collectCIDWidths(df *Dict, widths *wtab) error {
 	var w Array
 	if wo, ok := df.Get("/W"); ok {
 		switch v := d.resolve(wo).(type) {
@@ -434,13 +439,13 @@ func (d *Document) collectCIDWidths(df *Dict, widths map[string]float64) error {
 				if c < 0 || c > 0x10FFFF {
 					return pyErr("ValueError", "chr() arg not in range")
 				}
-				widths[pstr{rune(c)}.key()] = v
+				widths.set(pstr{rune(c)}.key(), v.v, v.isFloat)
 			}
 			skip = 1
 			continue
 		}
 		if _, _, nextNum := d.num(next); nextNum && idx+2 < len(w) {
-			if cw, _, ok := d.num(d.resolve(w[idx+2])); ok {
+			if cw, cwInt, ok := d.num(d.resolve(w[idx+2])); ok {
 				stop, stopIsInt, _ := d.num(next)
 				if !startIsInt || !stopIsInt {
 					return pyErr("TypeError", "range() float")
@@ -449,7 +454,7 @@ func (d *Document) collectCIDWidths(df *Dict, widths map[string]float64) error {
 					if c < 0 || c > 0x10FFFF {
 						return pyErr("ValueError", "chr() arg not in range")
 					}
-					widths[pstr{rune(c)}.key()] = cw
+					widths.set(pstr{rune(c)}.key(), cw, !cwInt)
 				}
 				skip = 2
 				continue
@@ -477,66 +482,132 @@ func getSpaceChar(enc *encoding, cmap *ordMap) pstr {
 	return space
 }
 
-func addDefaultWidth(widths map[string]float64, flags int64, spaceChar pstr) {
-	if len(widths) == 0 {
-		widths["default"] = 500
+func addDefaultWidth(widths *wtab, flags int64, spaceChar pstr) {
+	if widths.n() == 0 {
+		widths.set("default", 500, false)
 		return
 	}
-	if w, ok := widths[spaceChar.key()]; ok && w != 0 {
+	if w, ok := widths.has(spaceChar.key()); ok && w != 0 {
 		if flags&fixedPitch == fixedPitch {
-			widths["default"] = w
+			widths.set("default", w, widths.flt[spaceChar.key()])
 			return
 		}
 		if isBad(w) {
 			raise(pyErr("TypeError", "int() of a non-number width"))
 		}
-		widths["default"] = math.Trunc(2 * w)
+		widths.set("default", math.Trunc(2*w), false)
 		return
 	}
+	// sum(w for w in values() if w > 0) // len(...), in insertion order:
+	// ints add exactly, floats one by one (pypdf's numbers are int/float
+	// subclasses, which sum() adds without compensation).
 	sum := 0.0
+	anyFloat := false
 	n := 0
-	for _, w := range widths {
+	for _, k := range widths.order {
+		w := widths.m[k]
 		if isBad(w) {
 			raise(pyErr("TypeError", "comparison with a non-number width"))
 		}
 		if w > 0 {
 			sum += w
+			anyFloat = anyFloat || widths.flt[k]
 			n++
 		}
 	}
 	if n == 0 {
-		widths["default"] = 500
+		widths.set("default", 500, false)
 		return
 	}
-	widths["default"] = math.Floor(sum / float64(n))
+	if anyFloat {
+		widths.set("default", pyFloorDiv(sum, float64(n)), true)
+		return
+	}
+	widths.set("default", math.Floor(sum/float64(n)), false)
 }
 
-func addSpaceWidth(widths map[string]float64, flags int64, spaceChar pstr) float64 {
-	if w := widths[spaceChar.key()]; w != 0 {
+// pyFloorDiv is float // float as CPython computes it.
+func pyFloorDiv(vx, wx float64) float64 {
+	mod := math.Mod(vx, wx)
+	div := (vx - mod) / wx
+	if mod != 0 {
+		if (wx < 0) != (mod < 0) {
+			div -= 1.0
+		}
+	}
+	if div != 0 {
+		fd := math.Floor(div)
+		if div-fd > 0.5 {
+			fd += 1.0
+		}
+		return fd
+	}
+	return math.Copysign(0, vx/wx)
+}
+
+func addSpaceWidth(widths *wtab, flags int64, spaceChar pstr) float64 {
+	if w := widths.get(spaceChar.key()); w != 0 {
 		return w
 	}
 	if flags&fixedPitch == fixedPitch {
-		return widths["default"]
+		return widths.get("default")
 	}
-	if isBad(widths["default"]) {
+	if isBad(widths.get("default")) {
 		raise(pyErr("TypeError", "floor division of a non-number width"))
 	}
-	return math.Floor(widths["default"] / 2)
+	return math.Floor(widths.get("default") / 2)
 }
 
+// wtab is a font's character_widths dict: insertion-ordered, remembering
+// which values are floats.
+type wtab struct {
+	m     map[string]float64
+	order []string
+	flt   map[string]bool
+}
+
+func newWtab() *wtab { return &wtab{m: map[string]float64{}, flt: map[string]bool{}} }
+
+func defaultWidths() *wtab {
+	w := newWtab()
+	w.set("default", 500, false)
+	return w
+}
+
+func (w *wtab) set(k string, v float64, isFloat bool) {
+	if _, ok := w.m[k]; !ok {
+		w.order = append(w.order, k)
+	}
+	w.m[k] = v
+	if isFloat {
+		w.flt[k] = true
+	} else {
+		delete(w.flt, k)
+	}
+}
+
+func (w *wtab) get(k string) float64 { return w.m[k] }
+
+func (w *wtab) has(k string) (float64, bool) {
+	v, ok := w.m[k]
+	return v, ok
+}
+
+func (w *wtab) n() int { return len(w.m) }
+
 // anyWidth is cast(int, x.get_object()): any object is stored; None fails.
-func (d *Document) anyWidth(o Object) (float64, error) {
+func (d *Document) anyWidth(o Object) (float64, bool, error) {
 	r := d.resolve(o)
 	if r == nil {
-		return 0, pyErr("AttributeError", "'NoneType' object has no attribute 'get_object'")
+		return 0, false, pyErr("AttributeError", "'NoneType' object has no attribute 'get_object'")
 	}
 	switch v := r.(type) {
 	case Int:
-		return float64(v), nil
+		return float64(v), false, nil
 	case Real:
-		return float64(v), nil
+		return float64(v), true, nil
 	}
-	return badWidth, nil
+	return badWidth, false, nil
 }
 
 // removePrefixable checks that x.removeprefix("/") works (str objects).

@@ -1,6 +1,10 @@
 package htmltext
 
-import "fmt"
+import (
+	"fmt"
+
+	"kenttheclerk/internal/py"
+)
 
 // A port of CPython 3.13.1 html.parser.HTMLParser (with the parts of _markupbase.ParserBase
 // it reaches) for convert_charrefs=True, fed once and never closed: everything goahead(0)
@@ -24,6 +28,7 @@ type parser struct {
 	raw   []rune
 	cdata string // cdata_elem; "" is None
 	h     sink
+	sc    scanner // over raw
 }
 
 func (p *parser) fail(format string, a ...any) {
@@ -177,7 +182,7 @@ func (p *parser) parseMarkedSection(i int) int {
 	case "if", "else", "endif":
 		_, end = searchClose(p.raw, i+3, "]")
 	default:
-		p.fail("unknown status keyword %q in marked section", string(p.raw[i+3:j]))
+		p.fail("unknown status keyword %s in marked section", py.StrRepr(string(p.raw[i+3:j])))
 	}
 	return end
 }
@@ -190,7 +195,7 @@ func (p *parser) scanName(i, declstartpos int) (string, int) {
 		return "", -1
 	}
 	if !isASCIILetter(raw[i]) {
-		p.fail("expected name token at %q", string(slice(raw, declstartpos, declstartpos+20)))
+		p.fail("expected name token at %s", py.StrRepr(string(slice(raw, declstartpos, declstartpos+20))))
 	}
 	q := i + 1
 	for q < n {
@@ -221,9 +226,20 @@ func (p *parser) parseStarttag(i int) int {
 	nameEnd, k := tagfindTolerant(raw, i+1)
 	tag := tagLower(raw[i+1 : nameEnd])
 	for k < endpos {
-		e := matchEnd(attrfindTolerant, raw, k)
+		e, vs, ve, hasValue := p.sc.attrfind(k)
 		if e < 0 {
 			break
+		}
+		if hasValue {
+			// The attribute values are unused, but Python unescapes them, and unescape can
+			// raise ValueError (a decimal charref over 4300 digits).
+			v := raw[vs:ve]
+			if len(v) > 0 && (v[0] == '\'' || v[0] == '"') && v[len(v)-1] == v[0] {
+				v = slice(v, 1, len(v)-1) // Python's attrvalue[1:-1]
+			}
+			if len(v) > 0 {
+				unescape(v)
+			}
 		}
 		k = e
 	}
@@ -248,10 +264,7 @@ func (p *parser) parseStarttag(i int) int {
 // checkForWholeStartTag is HTMLParser.check_for_whole_start_tag.
 func (p *parser) checkForWholeStartTag(i int) int {
 	raw := p.raw
-	j := matchEnd(locateStarttagEndTolerant, raw, i)
-	if j < 0 {
-		panic("we should not get here!") // the pattern always matches after "<" + letter
-	}
+	j := p.sc.locateStarttagEnd(i) // always matches after "<" + letter
 	if j >= len(raw) {
 		return -1 // end of input
 	}

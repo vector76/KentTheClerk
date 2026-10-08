@@ -86,7 +86,9 @@ func wrap(text string, width int) []string {
 	return lines
 }
 
-func isWS(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\v' || r == '\f' || r == '\r' }
+func isWS(r rune) bool {
+	return r == ' ' || r == '\t' || r == '\n' || r == '\v' || r == '\f' || r == '\r'
+}
 
 // letter is [^\d\W]: a word character that is not a decimal digit.
 func letter(r rune) bool { return py.IsWord(r) && !py.IsDecimal(r) }

@@ -1,6 +1,8 @@
 package py
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,6 +35,12 @@ func PathStr(s string) string {
 			// UNC: \\server\share is the anchor
 			rest := s[2:]
 			parts := strings.SplitN(rest, `\`, 3)
+			if len(parts) == 1 { // a server with no share
+				return `\\` + parts[0]
+			}
+			if len(parts) == 2 && parts[1] == "" { // \\server\ with an empty share
+				return `\\` + parts[0] + `\`
+			}
 			if len(parts) >= 2 {
 				prefix = `\\` + parts[0] + `\` + parts[1] + `\`
 				if len(parts) == 3 {
@@ -65,6 +73,10 @@ func PathStr(s string) string {
 		if p != "" && p != "." {
 			parts = append(parts, p)
 		}
+	}
+	if Windows && prefix == "" && len(parts) > 0 && len(parts[0]) >= 2 && parts[0][1] == ':' {
+		// a first part that looks like a drive keeps a leading "." part, as pathlib does
+		parts = append([]string{"."}, parts...)
 	}
 	out := prefix + strings.Join(parts, sep)
 	if out == "" {
@@ -211,6 +223,8 @@ func TextLines(path string) []string {
 // WriteText is Path.write_text(s, encoding="utf-8"): in text mode, so on Windows "\n" is written as
 // "\r\n".
 func WriteText(path, s string) {
+	// Python would truncate the file and then fail to encode; refusing before opening keeps the file.
+	CheckEncodable(s)
 	if Windows {
 		s = strings.ReplaceAll(s, "\n", "\r\n")
 	}
@@ -221,12 +235,17 @@ func WriteText(path, s string) {
 
 // RaiseOS raises the OSError Python would raise for err.
 func RaiseOS(err error) {
-	typ := "OSError"
+	// str(OSError) for a file: "[Errno 2] No such file or directory: 'path'"
+	typ, errno, text := "OSError", 0, ""
 	switch {
 	case os.IsNotExist(err):
-		typ = "FileNotFoundError"
+		typ, errno, text = "FileNotFoundError", 2, "No such file or directory"
 	case os.IsPermission(err):
-		typ = "PermissionError"
+		typ, errno, text = "PermissionError", 13, "Permission denied"
+	}
+	var pe *fs.PathError
+	if errno != 0 && errors.As(err, &pe) {
+		Raise(typ, "[Errno %d] %s: %s", errno, text, StrRepr(pe.Path))
 	}
 	Raise(typ, "%v", err)
 }
@@ -266,8 +285,14 @@ func Scandir(dir string) []os.DirEntry {
 }
 
 func ntfsLess(a, b string) bool {
-	ua := utf16.Encode([]rune(strings.Map(unicode.ToUpper, a)))
-	ub := utf16.Encode([]rune(strings.Map(unicode.ToUpper, b)))
+	up := func(r rune) rune {
+		if r > 0xffff {
+			return r
+		}
+		return unicode.ToUpper(r)
+	}
+	ua := utf16.Encode([]rune(strings.Map(up, a)))
+	ub := utf16.Encode([]rune(strings.Map(up, b)))
 	for i := 0; i < len(ua) && i < len(ub); i++ {
 		if ua[i] != ub[i] {
 			return ua[i] < ub[i]
@@ -288,6 +313,13 @@ func Glob(dir, pattern string) []string {
 	for i, part := range parts {
 		last := i == len(parts)-1
 		var next []string
+		if part == ".." { // followed literally, as pathlib's glob does
+			for _, d := range paths {
+				next = append(next, d+string(filepath.Separator)+"..")
+			}
+			paths = next
+			continue
+		}
 		for _, d := range paths {
 			for _, e := range Scandir(d) {
 				if !FnMatch(e.Name(), part) {
@@ -412,6 +444,12 @@ func foldEq(a, b rune) bool {
 	if !Windows {
 		return false
 	}
+	// re.IGNORECASE: equal under case folding, including the irregular folds (ſ, ı, µ, ς, K)
+	for f := unicode.SimpleFold(a); f != a; f = unicode.SimpleFold(f) {
+		if f == b {
+			return true
+		}
+	}
 	return unicode.ToLower(a) == unicode.ToLower(b) || unicode.ToUpper(a) == unicode.ToUpper(b)
 }
 
@@ -421,6 +459,9 @@ func inClass(t fnTok, r rune) bool {
 	}
 	cands := []rune{r}
 	if Windows {
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			cands = append(cands, f)
+		}
 		cands = append(cands, unicode.ToLower(r), unicode.ToUpper(r))
 	}
 	hit := false

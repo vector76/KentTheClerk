@@ -10,8 +10,10 @@ type operation struct {
 
 func isASCIIAlpha(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
 
-func parseContent(data []byte) ([]operation, error) {
-	p := &parser{data: data}
+// parseContent parses a content stream; frame is the Python frame of its
+// read_object calls.
+func parseContent(data []byte, frame int) ([]operation, error) {
+	p := &parser{data: data, frame: frame}
 	var ops []operation
 	var operands []Object
 	for {

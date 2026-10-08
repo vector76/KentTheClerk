@@ -1,162 +1,187 @@
 package htmltext
 
-// A tiny backtracking matcher with Python `re` (sre) semantics, used for the two
-// html.parser patterns that need lookbehind/lookahead and whose match end depends on
-// backtracking order: locatestarttagend_tolerant and attrfind_tolerant. Nodes are written
-// in continuation-passing style, so alternatives and greedy repeats are tried in the same
-// order sre tries them, and the first complete match wins, as in sre.
+// Hand-written matchers for the html.parser patterns Go's RE2 cannot express. Everything
+// here is iterative: no recursion in proportion to the input.
+//
+// locatestarttagend_tolerant and attrfind_tolerant use lookbehind/lookahead, and their match
+// end depends on sre's backtracking order. Every part after an attribute name is optional, so
+// once a name matches the overall match never fails; backtracking only happens locally,
+// inside the value part \s*=+\s*VALUE, when VALUE starts with an unclosed quote:
+//
+//   - sre first gives back one character of the \s* after the '=' run: VALUE then matches
+//     empty (bare alternative) at that whitespace;
+//   - with no such whitespace it gives back one '=' of a run of two or more: VALUE is then the
+//     bare run starting at that last '=';
+//   - otherwise the optional value part matches nothing.
+//
+// The CPS reference matcher in match_ref_test.go mirrors sre literally and the test
+// TestScannerMatchesReference checks this scanner against it.
 
-type cont func(int) bool
-
-type node func(s []rune, p int, k cont) bool
-
-func charIf(f func(rune) bool) node {
-	return func(s []rune, p int, k cont) bool {
-		return p < len(s) && f(s[p]) && k(p+1)
+// scanner holds the input and caches the search for the next quote, so that many
+// attributes with unclosed quotes cost linear rather than quadratic time.
+type scanner struct {
+	s      []rune
+	qcache [2]struct {
+		valid    bool
+		from, at int
 	}
 }
 
-func lit(r rune) node { return charIf(func(c rune) bool { return c == r }) }
+// nextQuote is s.find(q, from), q being the single quote (idx 0) or the double quote (idx 1).
+func (sc *scanner) nextQuote(idx int, q rune, from int) int {
+	c := &sc.qcache[idx]
+	if c.valid && c.from <= from && (c.at < 0 || from <= c.at) {
+		return c.at
+	}
+	at := indexRune(sc.s, q, from)
+	c.valid, c.from, c.at = true, from, at
+	return at
+}
 
-// repeatChar is a greedy single-character repeat (X* when min == 0, X+ when min == 1).
-func repeatChar(f func(rune) bool, min int) node {
-	return func(s []rune, p int, k cont) bool {
-		q := p
-		for q < len(s) && f(s[q]) {
-			q++
-		}
-		for ; q >= p+min; q-- {
-			if k(q) {
-				return true
+// attrNameEnd matches (?<=['"\s/])[^\s/>][^\s/=>]* at p and returns its end, or -1.
+func (sc *scanner) attrNameEnd(p int) int {
+	s := sc.s
+	if p <= 0 || p >= len(s) || !isQuoteSpaceSl(s[p-1]) || !notSpaceSlGT(s[p]) {
+		return -1
+	}
+	p++
+	for p < len(s) && notSpaceSlEqGT(s[p]) {
+		p++
+	}
+	return p
+}
+
+// valueAt matches ('[^']*'|"[^"]*"|(?!['"])[^>\s]*) at q and returns its end, or -1.
+func (sc *scanner) valueAt(q int) int {
+	s := sc.s
+	if q < len(s) {
+		switch s[q] {
+		case '\'':
+			if c := sc.nextQuote(0, '\'', q+1); c >= 0 {
+				return c + 1
 			}
-		}
-		return false
-	}
-}
-
-func seq(ns ...node) node {
-	if len(ns) == 0 {
-		return func(s []rune, p int, k cont) bool { return k(p) }
-	}
-	if len(ns) == 1 {
-		return ns[0]
-	}
-	head, tail := ns[0], seq(ns[1:]...)
-	return func(s []rune, p int, k cont) bool {
-		return head(s, p, func(q int) bool { return tail(s, q, k) })
-	}
-}
-
-func alt(ns ...node) node {
-	return func(s []rune, p int, k cont) bool {
-		for _, n := range ns {
-			if n(s, p, k) {
-				return true
+			return -1
+		case '"':
+			if c := sc.nextQuote(1, '"', q+1); c >= 0 {
+				return c + 1
 			}
+			return -1
 		}
-		return false
 	}
+	for q < len(s) && notGTSpace(s[q]) {
+		q++
+	}
+	return q
 }
 
-// opt is a greedy (?:X)?.
-func opt(n node) node {
-	return func(s []rune, p int, k cont) bool { return n(s, p, k) || k(p) }
+// valuePart matches \s*=+\s*VALUE at a with sre's backtracking. It returns the span of
+// VALUE (group 3 of attrfind_tolerant), or ok == false when the optional part is absent.
+func (sc *scanner) valuePart(a int) (vstart, vend int, ok bool) {
+	s := sc.s
+	n := len(s)
+	p := a
+	for p < n && isSpace(s[p]) {
+		p++
+	}
+	if p >= n || s[p] != '=' {
+		return 0, 0, false
+	}
+	eq := p
+	for p < n && s[p] == '=' {
+		p++
+	}
+	afterEq := p
+	for p < n && isSpace(s[p]) {
+		p++
+	}
+	if e := sc.valueAt(p); e >= 0 {
+		return p, e, true
+	}
+	if p > afterEq {
+		return p - 1, p - 1, true // empty bare value at the last whitespace
+	}
+	if afterEq-eq > 1 {
+		return p - 1, sc.valueAt(p - 1), true // bare value from the last '='
+	}
+	return 0, 0, false
 }
 
-// star is a greedy (?:X)* over a group. Like sre's MAX_UNTIL, an iteration that matched
-// the empty string is not followed by another iteration.
-func star(n node) node {
-	var self node
-	self = func(s []rune, p int, k cont) bool {
-		if n(s, p, func(q int) bool {
-			if q == p {
-				return k(q)
-			}
-			return self(s, q, k)
-		}) {
-			return true
+// skipSpaceOrSlashNoGT matches (?:\s|/(?!>))* at p and returns its end.
+func (sc *scanner) skipSpaceOrSlashNoGT(p int) int {
+	s := sc.s
+	for p < len(s) && (isSpace(s[p]) || s[p] == '/' && !(p+1 < len(s) && s[p+1] == '>')) {
+		p++
+	}
+	return p
+}
+
+func (sc *scanner) skipSpace(p int) int {
+	for p < len(sc.s) && isSpace(sc.s[p]) {
+		p++
+	}
+	return p
+}
+
+// attrfind is attrfind_tolerant.match(s, k):
+//
+//	((?<=['"\s/])[^\s/>][^\s/=>]*)(\s*=+\s*('[^']*'|"[^"]*"|(?![\'"])[^>\s]*))?(?:\s|/(?!>))*
+//
+// It returns the match end (-1 when there is no match) and group 3 (hasValue false when
+// group 2 did not participate).
+func (sc *scanner) attrfind(k int) (end, vstart, vend int, hasValue bool) {
+	p := sc.attrNameEnd(k)
+	if p < 0 {
+		return -1, 0, 0, false
+	}
+	if vs, ve, ok := sc.valuePart(p); ok {
+		vstart, vend, hasValue = vs, ve, true
+		p = ve
+	}
+	return sc.skipSpaceOrSlashNoGT(p), vstart, vend, hasValue
+}
+
+// locateStarttagEnd is locatestarttagend_tolerant.match(s, i).end(), for s[i] == '<' and
+// s[i+1] an ASCII letter (re.VERBOSE):
+//
+//	<[a-zA-Z][^\t\n\r\f />\x00]*
+//	(?:[\s/]*
+//	  (?:(?<=['"\s/])[^\s/>][^\s/=>]*
+//	    (?:\s*=+\s*(?:'[^']*'|"[^"]*"|(?!['"])[^>\s]*)\s*)?(?:\s|/(?!>))*
+//	  )*
+//	)?
+//	\s*
+func (sc *scanner) locateStarttagEnd(i int) int {
+	s := sc.s
+	p := i + 2
+	for p < len(s) && tagNameChar(s[p]) {
+		p++
+	}
+	for p < len(s) && isSpaceOrSlash(s[p]) {
+		p++
+	}
+	for {
+		e := sc.attrNameEnd(p)
+		if e < 0 {
+			break
 		}
-		return k(p)
+		p = e
+		if _, ve, ok := sc.valuePart(p); ok {
+			p = sc.skipSpace(ve)
+		}
+		p = sc.skipSpaceOrSlashNoGT(p)
 	}
-	return self
-}
-
-// behind is the lookbehind (?<=[...]) for a one-character class.
-func behind(f func(rune) bool) node {
-	return func(s []rune, p int, k cont) bool { return p > 0 && f(s[p-1]) && k(p) }
-}
-
-// notAhead is the negative lookahead (?![...]) for a one-character class.
-func notAhead(f func(rune) bool) node {
-	return func(s []rune, p int, k cont) bool { return !(p < len(s) && f(s[p])) && k(p) }
-}
-
-// slashNotGT is /(?!>).
-func slashNotGT(s []rune, p int, k cont) bool {
-	return p < len(s) && s[p] == '/' && !(p+1 < len(s) && s[p+1] == '>') && k(p+1)
-}
-
-// matchEnd runs n anchored at p and returns the end of the first match, or -1.
-func matchEnd(n node, s []rune, p int) int {
-	end := -1
-	n(s, p, func(q int) bool { end = q; return true })
-	return end
+	return sc.skipSpace(p)
 }
 
 var (
-	isQuote        = func(r rune) bool { return r == '\'' || r == '"' }
 	isQuoteSpaceSl = func(r rune) bool { return r == '\'' || r == '"' || r == '/' || isSpace(r) }
 	isSpaceOrSlash = func(r rune) bool { return r == '/' || isSpace(r) }
 	notSpaceSlGT   = func(r rune) bool { return !(r == '/' || r == '>' || isSpace(r)) }
 	notSpaceSlEqGT = func(r rune) bool { return !(r == '/' || r == '=' || r == '>' || isSpace(r)) }
 	notGTSpace     = func(r rune) bool { return !(r == '>' || isSpace(r)) }
-	notSQuote      = func(r rune) bool { return r != '\'' }
-	notDQuote      = func(r rune) bool { return r != '"' }
-	isEq           = func(r rune) bool { return r == '=' }
 	tagNameChar    = func(r rune) bool {
 		return !(r == '\t' || r == '\n' || r == '\r' || r == '\f' || r == ' ' || r == '/' || r == '>' || r == 0)
 	}
-	spaces           = repeatChar(isSpace, 0)
-	spaceOrSlashNoGT = star(alt(charIf(isSpace), slashNotGT))
-
-	// ('[^']*'|"[^"]*"|(?!['"])[^>\s]*)
-	attrValue = alt(
-		seq(lit('\''), repeatChar(notSQuote, 0), lit('\'')),
-		seq(lit('"'), repeatChar(notDQuote, 0), lit('"')),
-		seq(notAhead(isQuote), repeatChar(notGTSpace, 0)),
-	)
-
-	// (?<=['"\s/])[^\s/>][^\s/=>]*
-	attrName = seq(behind(isQuoteSpaceSl), charIf(notSpaceSlGT), repeatChar(notSpaceSlEqGT, 0))
-
-	// attrfind_tolerant:
-	// ((?<=['"\s/])[^\s/>][^\s/=>]*)(\s*=+\s*('[^']*'|"[^"]*"|(?![\'"])[^>\s]*))?(?:\s|/(?!>))*
-	attrfindTolerant = seq(
-		attrName,
-		opt(seq(spaces, repeatChar(isEq, 1), spaces, attrValue)),
-		spaceOrSlashNoGT,
-	)
-
-	// locatestarttagend_tolerant (re.VERBOSE):
-	//   <[a-zA-Z][^\t\n\r\f />\x00]*
-	//   (?:[\s/]*
-	//     (?:(?<=['"\s/])[^\s/>][^\s/=>]*
-	//       (?:\s*=+\s*(?:'[^']*'|"[^"]*"|(?!['"])[^>\s]*)\s*)?(?:\s|/(?!>))*
-	//     )*
-	//   )?
-	//   \s*
-	locateStarttagEndTolerant = seq(
-		lit('<'), charIf(isASCIILetter), repeatChar(tagNameChar, 0),
-		opt(seq(
-			repeatChar(isSpaceOrSlash, 0),
-			star(seq(
-				attrName,
-				opt(seq(spaces, repeatChar(isEq, 1), spaces, attrValue, spaces)),
-				spaceOrSlashNoGT,
-			)),
-		)),
-		spaces,
-	)
 )
 
 // tagfindTolerant matches ([a-zA-Z][^\t\n\r\f />\x00]*)(?:\s|/(?!>))* at p. It returns the
@@ -214,7 +239,7 @@ func endtagfind(s []rune, p int) (name []rune, end int, ok bool) {
 	return name, q + 1, true
 }
 
-// searchCloseSeq is a leftmost search from `from` for the literal runes of parts joined by
+// searchClose is a leftmost search from `from` for the literal runes of parts joined by
 // \s* and ending in '>': parts "--" gives --\s*>, parts "]","]" gives ]\s*]\s*>, parts "]"
 // gives ]\s*>. It returns the match start and end, or (-1, -1).
 func searchClose(s []rune, from int, parts ...string) (start, end int) {

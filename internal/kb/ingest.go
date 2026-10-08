@@ -4,11 +4,9 @@ package kb
 // projection beside its original (S-0004, S-0038, S-0039). See kb/ingest.py.
 
 import (
-	"archive/zip"
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
-	"encoding/xml"
 	"fmt"
 	"io"
 	"os"
@@ -178,183 +176,20 @@ func extractText(path string) ([]chunk, any) {
 
 func extractHTML(path string) ([]chunk, any) {
 	lines, title, hasTitle, err := htmltext.ExtractErr(readBytes(path))
-	if err != nil {
-		py.Raise("AssertionError", "%s", err.Error())
+	switch e := err.(type) {
+	case nil:
+	case *htmltext.AssertionError:
+		py.Raise("AssertionError", "%s", e.Msg)
+	case *htmltext.ValueError:
+		py.Raise("ValueError", "%s", e.Msg)
+	default:
+		panic(err)
 	}
 	var t any
 	if hasTitle {
 		t = title
 	}
 	return chunkUnits(lines, "lines"), t
-}
-
-// xmlElem is the part of an ElementTree element extract_docx uses.
-type xmlElem struct {
-	tag      string // "{namespace}local"
-	attr     map[string]string
-	text     string
-	children []*xmlElem
-}
-
-func parseXML(data []byte) *xmlElem {
-	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
-	dec := xml.NewDecoder(bytes.NewReader(data))
-	var root *xmlElem
-	var stack []*xmlElem
-	name := func(n xml.Name) string {
-		if n.Space != "" {
-			return "{" + n.Space + "}" + n.Local
-		}
-		return n.Local
-	}
-	for {
-		tok, err := dec.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			py.Raise("xml.etree.ElementTree.ParseError", "%v", err)
-		}
-		switch t := tok.(type) {
-		case xml.StartElement:
-			e := &xmlElem{tag: name(t.Name), attr: map[string]string{}}
-			for _, a := range t.Attr {
-				if a.Name.Space == "xmlns" || (a.Name.Space == "" && a.Name.Local == "xmlns") {
-					continue
-				}
-				e.attr[name(a.Name)] = a.Value
-			}
-			if len(stack) > 0 {
-				p := stack[len(stack)-1]
-				p.children = append(p.children, e)
-			} else {
-				root = e
-			}
-			stack = append(stack, e)
-		case xml.EndElement:
-			stack = stack[:len(stack)-1]
-		case xml.CharData:
-			if len(stack) > 0 {
-				e := stack[len(stack)-1]
-				if len(e.children) == 0 {
-					e.text += string(t)
-				}
-			}
-		}
-	}
-	if root == nil {
-		py.Raise("xml.etree.ElementTree.ParseError", "no element found")
-	}
-	return root
-}
-
-// iter is Element.iter(tag): the element and its descendants in document order, filtered by tag.
-func (e *xmlElem) iter(tag string, fn func(*xmlElem)) {
-	if tag == "" || e.tag == tag {
-		fn(e)
-	}
-	for _, c := range e.children {
-		c.iter(tag, fn)
-	}
-}
-
-func (e *xmlElem) find(tag string) *xmlElem {
-	for _, c := range e.children {
-		if c.tag == tag {
-			return c
-		}
-	}
-	return nil
-}
-
-var headingStyleRE = regexp.MustCompile(`^(?i:heading)(\p{Nd})`)
-
-func extractDocx(path string) ([]chunk, any) {
-	const W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-	zr, err := zip.OpenReader(path)
-	if err != nil {
-		die(py.Name(path) + " is not a Word document: File is not a zip file")
-	}
-	defer zr.Close()
-	var member *zip.File
-	for _, f := range zr.File {
-		if f.Name == "word/document.xml" {
-			member = f
-		}
-	}
-	if member == nil {
-		die(py.Name(path) + ` is not a Word document: "There is no item named 'word/document.xml' in the archive"`)
-	}
-	rc, err := member.Open()
-	if err != nil {
-		py.Raise("zipfile.BadZipFile", "%v", err)
-	}
-	data, err := io.ReadAll(rc)
-	rc.Close()
-	if err != nil {
-		py.Raise("zipfile.BadZipFile", "%v", err)
-	}
-	root := parseXML(data)
-	body := root.find(W + "body")
-	var paras []string
-	var title any
-
-	paraText := func(p *xmlElem) string {
-		var b strings.Builder
-		p.iter("", func(el *xmlElem) {
-			switch el.tag {
-			case W + "t":
-				b.WriteString(el.text)
-			case W + "tab":
-				b.WriteString("\t")
-			case W + "br":
-				b.WriteString("\n")
-			}
-		})
-		return b.String()
-	}
-
-	if body != nil {
-		for _, el := range body.children {
-			switch el.tag {
-			case W + "p":
-				text := paraText(el)
-				sval := ""
-				if ppr := el.find(W + "pPr"); ppr != nil {
-					if st := ppr.find(W + "pStyle"); st != nil {
-						sval = st.attr[W+"val"]
-					}
-				}
-				m := headingStyleRE.FindStringSubmatch(sval)
-				if m != nil && py.Strip(text) != "" {
-					d, _ := utf8.DecodeRuneInString(m[1])
-					text = strings.Repeat("#", py.DecimalValue(d)) + " " + py.Strip(text)
-					if !py.Truthy(title) {
-						title = py.Strip(strings.TrimLeft(text, "#"))
-					}
-				} else if py.Lower(sval) == "title" && py.Strip(text) != "" {
-					if !py.Truthy(title) {
-						title = py.Strip(text)
-					}
-					text = "# " + py.Strip(text)
-				}
-				paras = append(paras, text)
-			case W + "tbl":
-				el.iter(W+"tr", func(tr *xmlElem) {
-					if tr == el {
-						return
-					}
-					var cells []string
-					tr.iter(W+"tc", func(tc *xmlElem) {
-						cells = append(cells, py.Strip(strings.ReplaceAll(paraText(tc), "\n", " ")))
-					})
-					paras = append(paras, "| "+strings.Join(cells, " | ")+" |")
-				})
-				paras = append(paras, "")
-			}
-		}
-	}
-	return chunkUnits(paras, "paragraphs"), title
 }
 
 func extractOpaque(path, caption, mediaType string) ([]chunk, any) {

@@ -278,8 +278,8 @@ func (d *droppedCounts) dict() *py.Dict {
 }
 
 type projectInfo struct {
-	title                              any
-	dropped                            *droppedCounts
+	title                               any
+	dropped                             *droppedCounts
 	humanTurns, agentTurns, clientTurns int
 }
 
@@ -402,9 +402,17 @@ func readSource(path string) []*py.Dict {
 func writeJSONL(dest string, header *py.Dict, records []*py.Dict) {
 	tmp := strings.TrimSuffix(dest, ".jsonl") + ".jsonl.tmp"
 	var b strings.Builder
-	b.WriteString(py.Dumps(header) + "\n")
-	for _, t := range records {
-		b.WriteString(py.Dumps(t) + "\n")
+	for _, rec := range append([]*py.Dict{header}, records...) {
+		line := py.Dumps(rec) + "\n"
+		if py.SurrogateIndex(line) >= 0 {
+			// Python writes the lines before this one to the .tmp file, then fails to encode it;
+			// the record itself is left untouched.
+			if err := os.WriteFile(tmp, []byte(b.String()), 0o666); err != nil {
+				py.RaiseOS(err)
+			}
+			py.CheckEncodable(line)
+		}
+		b.WriteString(line)
 	}
 	if err := os.WriteFile(tmp, []byte(b.String()), 0o666); err != nil {
 		py.RaiseOS(err)

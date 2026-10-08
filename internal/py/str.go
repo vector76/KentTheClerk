@@ -41,34 +41,35 @@ func StripChars(s, chars string) string { return strings.Trim(s, chars) }
 func Fields(s string) []string { return strings.FieldsFunc(s, IsSpace) }
 
 // Len is len(s) for a str: the number of code points.
-func Len(s string) int { return utf8.RuneCountInString(s) }
+func Len(s string) int {
+	n := 0
+	for i := 0; i < len(s); n++ {
+		_, size := decodeWTF8(s[i:])
+		i += size
+	}
+	return n
+}
 
 // Head is s[:n] in code points (n >= 0).
 func Head(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
+	return s[:byteOffset(s, n)]
+}
+
+// byteOffset is the byte index of code point n (a lone surrogate, as Loads keeps it, counts as one).
+func byteOffset(s string, n int) int {
 	i := 0
-	for j := range s {
-		if i == n {
-			return s[:j]
-		}
-		i++
+	for k := 0; k < n && i < len(s); k++ {
+		_, size := decodeWTF8(s[i:])
+		i += size
 	}
-	return s
+	return i
 }
 
 // Tail is s[n:] in code points (n >= 0).
-func Tail(s string, n int) string {
-	i := 0
-	for j := range s {
-		if i == n {
-			return s[j:]
-		}
-		i++
-	}
-	return ""
-}
+func Tail(s string, n int) string { return s[byteOffset(s, n):] }
 
 var (
 	lower = cases.Lower(language.Und)
@@ -120,6 +121,9 @@ func Partition(s, sep string) (string, string, string) {
 
 // IsWord is what \w matches in a Python str pattern: alphanumeric (str.isalnum) or underscore.
 func IsWord(r rune) bool {
+	if _, letter := unicode151(r); letter {
+		return true
+	}
 	return r == '_' || unicode.IsLetter(r) || unicode.IsNumber(r)
 }
 
@@ -142,9 +146,24 @@ func DecimalValue(r rune) int {
 	return 0
 }
 
+// unicode151 is true for the code points Unicode 15.1 (Python 3.13's version) assigned beyond Go's
+// Unicode 15.0 tables: CJK Extension I (letters) and a few ideographic description characters.
+func unicode151(r rune) (assigned, letter bool) {
+	switch {
+	case r >= 0x2EBF0 && r <= 0x2EE5D:
+		return true, true
+	case r >= 0x2FFC && r <= 0x2FFF, r == 0x31EF:
+		return true, false
+	}
+	return false, false
+}
+
 // IsPrintable is str.isprintable() for one code point.
 func IsPrintable(r rune) bool {
 	if r == ' ' {
+		return true
+	}
+	if ok, _ := unicode151(r); ok {
 		return true
 	}
 	if unicode.In(r, unicode.Cc, unicode.Cf, unicode.Cs, unicode.Co, unicode.Zl, unicode.Zp, unicode.Zs) {
@@ -160,4 +179,51 @@ func Ljust(s string, n int) string {
 		return s + strings.Repeat(" ", n-l)
 	}
 	return s
+}
+
+// DecodeReplace is bytes.decode("utf-8", errors="replace"): each maximal invalid subpart (a byte that
+// cannot start a sequence, or the valid start of a sequence that is cut short) becomes one U+FFFD.
+func DecodeReplace(b []byte) string {
+	var out strings.Builder
+	for i := 0; i < len(b); {
+		c := b[i]
+		if c < 0x80 {
+			out.WriteByte(c)
+			i++
+			continue
+		}
+		// expected length and the range of the second byte, as CPython's decoder checks them
+		n, lo, hi := 0, byte(0x80), byte(0xbf)
+		switch {
+		case c >= 0xc2 && c <= 0xdf:
+			n = 2
+		case c == 0xe0:
+			n, lo = 3, 0xa0
+		case c >= 0xe1 && c <= 0xec, c == 0xee, c == 0xef:
+			n = 3
+		case c == 0xed:
+			n, hi = 3, 0x9f
+		case c == 0xf0:
+			n, lo = 4, 0x90
+		case c >= 0xf1 && c <= 0xf3:
+			n = 4
+		case c == 0xf4:
+			n, hi = 4, 0x8f
+		}
+		k := 1
+		for n > 0 && k < n && i+k < len(b) {
+			x := b[i+k]
+			if k == 1 && (x < lo || x > hi) || k > 1 && (x < 0x80 || x > 0xbf) {
+				break
+			}
+			k++
+		}
+		if n > 0 && k == n {
+			out.Write(b[i : i+n])
+		} else {
+			out.WriteRune(utf8.RuneError)
+		}
+		i += k
+	}
+	return out.String()
 }

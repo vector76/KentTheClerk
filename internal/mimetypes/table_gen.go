@@ -161,19 +161,19 @@ var defaultTypes = [][2]string{
 
 var defaultSuffixMap = map[string]string{
 	".svgz": ".svg.gz",
-	".tgz": ".tar.gz",
-	".taz": ".tar.gz",
-	".tz": ".tar.gz",
+	".tgz":  ".tar.gz",
+	".taz":  ".tar.gz",
+	".tz":   ".tar.gz",
 	".tbz2": ".tar.bz2",
-	".txz": ".tar.xz",
+	".txz":  ".tar.xz",
 }
 
 var defaultEncodings = map[string]string{
-	".gz": "gzip",
-	".Z": "compress",
+	".gz":  "gzip",
+	".Z":   "compress",
 	".bz2": "bzip2",
-	".xz": "xz",
-	".br": "br",
+	".xz":  "xz",
+	".br":  "br",
 }
 
 var knownFiles = []string{

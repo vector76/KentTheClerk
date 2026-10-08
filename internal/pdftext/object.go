@@ -219,9 +219,10 @@ func isNumberChar(c byte) bool {
 }
 
 type parser struct {
-	data []byte
-	pos  int
-	doc  *Document // nil inside content streams
+	data  []byte
+	pos   int
+	doc   *Document // nil inside content streams
+	frame int       // Python frame number of a top-level read_object call
 }
 
 // slice returns data[s:e] clamped to the data (positions past the end are
@@ -336,29 +337,46 @@ func (p *parser) readUntilDelim() []byte {
 
 // readObject is pypdf's read_object.
 func (p *parser) readObject() (Object, error) {
-	return p.readObjectDepth(0)
+	return p.readObjectDepth(p.frame)
 }
 
-const maxDepth = 400
+// pyRecursionLimit is Python's default sys.getrecursionlimit(). Parsers
+// track the Python stack depth pypdf would be at (see frames.go) so that
+// deeply nested input fails where pypdf's RecursionError would hit; this
+// also bounds the Go recursion.
+const pyRecursionLimit = 1000
 
+func recursionError() error {
+	return pyErr("RecursionError", "maximum recursion depth exceeded")
+}
+
+// readObjectDepth is read_object running in Python frame number depth;
+// the terminal readers need two more frames (X.read_from_stream and a
+// helper such as read_until_regex).
 func (p *parser) readObjectDepth(depth int) (Object, error) {
-	if depth > maxDepth {
-		return nil, pyErr("PdfReadError", "RecursionError")
+	if depth > pyRecursionLimit {
+		return nil, recursionError()
 	}
 	tok := -1
 	if p.pos < len(p.data) {
 		tok = int(p.data[p.pos])
+	}
+	if tok != '<' && tok != '[' && tok != '%' && depth+2 > pyRecursionLimit {
+		return nil, recursionError()
 	}
 	switch {
 	case tok == '/':
 		return p.readName()
 	case tok == '<':
 		if p.pos+1 < len(p.data) && p.data[p.pos+1] == '<' {
-			return p.readDict(depth)
+			return p.readDict(depth + 1)
+		}
+		if depth+2 > pyRecursionLimit {
+			return nil, recursionError()
 		}
 		return p.readHexString()
 	case tok == '[':
-		return p.readArray(depth)
+		return p.readArray(depth + 1)
 	case tok == 't' || tok == 'f':
 		w := p.read(4)
 		if string(w) == "true" {
@@ -380,6 +398,10 @@ func (p *parser) readObjectDepth(depth int) (Object, error) {
 		}
 		return Null{}, nil
 	case tok == '%':
+		// skip_over_comment, then read_object recurses: one frame each
+		if depth+1 > pyRecursionLimit {
+			return nil, recursionError()
+		}
 		if err := p.skipOverComment(); err != nil {
 			return nil, err
 		}
@@ -387,11 +409,11 @@ func (p *parser) readObjectDepth(depth int) (Object, error) {
 		p.back(1)
 		return p.readObjectDepth(depth + 1)
 	case tok < 0 || (tok >= '0' && tok <= '9') || tok == '+' || tok == '-' || tok == '.':
-		if num, gen, ok := p.matchIndirect(); ok {
+		if p.matchIndirect() {
 			if p.doc == nil {
 				return nil, pyErr("AssertionError", "mypy")
 			}
-			return p.readIndirect(num, gen)
+			return p.readIndirect()
 		}
 		return p.readNumber()
 	}
@@ -411,7 +433,7 @@ func minInt(a, b int) int {
 
 // matchIndirect applies IndirectPattern [+-]?(\d+)\s+(\d+)\s+R[^a-zA-Z] to
 // the next 20 bytes.
-func (p *parser) matchIndirect() (int, int, bool) {
+func (p *parser) matchIndirect() bool {
 	end := minInt(p.pos+20, len(p.data))
 	b := p.slice(p.pos, end)
 	i := 0
@@ -433,24 +455,24 @@ func (p *parser) matchIndirect() (int, int, bool) {
 		return i > s
 	}
 	if !digits() || !spaces() || !digits() || !spaces() {
-		return 0, 0, false
+		return false
 	}
 	if i >= len(b) || b[i] != 'R' {
-		return 0, 0, false
+		return false
 	}
 	i++
 	if i >= len(b) {
-		return 0, 0, false
+		return false
 	}
 	c := b[i]
 	if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
-		return 0, 0, false
+		return false
 	}
-	return 0, 0, true
+	return true
 }
 
 // readIndirect is IndirectObject.read_from_stream.
-func (p *parser) readIndirect(_, _ int) (Object, error) {
+func (p *parser) readIndirect() (Object, error) {
 	var idnum []byte
 	for {
 		c := p.read1()
@@ -762,7 +784,11 @@ func (p *parser) readHexString() (Object, error) {
 }
 
 // readArray is ArrayObject.read_from_stream.
+// readArray is ArrayObject.read_from_stream running in Python frame depth.
 func (p *parser) readArray(depth int) (Object, error) {
+	if depth > pyRecursionLimit {
+		return nil, recursionError()
+	}
 	p.pos++
 	arr := Array{}
 	for {
@@ -794,7 +820,11 @@ func (p *parser) readArray(depth int) (Object, error) {
 }
 
 // readDict is DictionaryObject.read_from_stream, including streams.
+// readDict is DictionaryObject.read_from_stream running in Python frame depth.
 func (p *parser) readDict(depth int) (Object, error) {
+	if depth > pyRecursionLimit {
+		return nil, recursionError()
+	}
 	p.pos += 2
 	data := newDict()
 	for {
@@ -822,7 +852,7 @@ func (p *parser) readDict(depth int) (Object, error) {
 			if isReadError(err) {
 				continue
 			}
-			return p.partialDict(data, err)
+			return p.dictError(data, err)
 		}
 		if _, isNull := key.(Null); isNull {
 			break
@@ -835,7 +865,7 @@ func (p *parser) readDict(depth int) (Object, error) {
 		p.back(1)
 		val, err := p.readObjectDepth(depth + 1)
 		if err != nil {
-			return p.partialDict(data, err)
+			return p.dictError(data, err)
 		}
 		if old, ok := data.Get(kn); !ok || !truthy(old) {
 			data.Set(kn, val)
@@ -865,7 +895,11 @@ func (p *parser) readDict(depth int) (Object, error) {
 				return nil, pyErr("AssertionError", "mypy")
 			}
 			t := p.pos
+			// pdf.get_object(length) is called from this frame
+			saved := p.doc.frame
+			p.doc.frame = depth - 1
 			o, err := p.doc.getObject(r)
+			p.doc.frame = saved
 			if err != nil {
 				return nil, err
 			}
@@ -886,13 +920,17 @@ func (p *parser) readDict(depth int) (Object, error) {
 		}
 		pstart := p.pos
 		var sdata []byte
-		if length > 75000000 {
+		if length > maxDeclaredStreamLength {
 			return nil, pyErr("LimitReachedError", "Declared stream length of %d exceeds maximum allowed length.", length)
 		}
 		if length >= 0 {
 			sdata = p.read(int(minInt64(length, int64(len(p.data)))))
 		} else {
 			idx := indexOf(p.data[p.pos:], []byte("endstream"))
+			if idx >= maxDeclaredStreamLength-16 || (idx < 0 && len(p.data)-p.pos >= maxDeclaredStreamLength-16) {
+				// read_until_regex(..., length=MAX_DECLARED_STREAM_LENGTH)
+				return nil, pyErr("LimitReachedError", "Read stream length exceeds maximum allowed length.")
+			}
 			if idx < 0 {
 				sdata = p.data[p.pos:]
 				p.pos = len(p.data)
@@ -924,9 +962,13 @@ func (p *parser) readDict(depth int) (Object, error) {
 						}
 					}
 				}
+				if end-pstart >= maxDeclaredStreamLength {
+					return nil, pyErr("LimitReachedError", "Requested length of %d exceeds maximum allowed length.", end-pstart)
+				}
 				rest := p.data[pstart:end]
 				idx := indexOf(rest, []byte("endstream"))
 				if idx < 0 {
+					p.pos = end // the bytes up to the next object were read
 					return nil, pyErr("PdfReadError", "Unable to find 'endstream' marker")
 				}
 				if idx >= 1 {
@@ -946,9 +988,14 @@ func (p *parser) readDict(depth int) (Object, error) {
 	return data, nil
 }
 
-func (p *parser) partialDict(data *Dict, err error) (Object, error) {
-	// pypdf (non-strict) logs the exception and returns the partial dict.
-	_ = err
+// dictError is the except clauses around reading a key or value:
+// RecursionError and LimitReachedError become a PdfReadError that
+// propagates; anything else is logged and the partial dict is returned.
+func (p *parser) dictError(data *Dict, err error) (Object, error) {
+	switch errClass(err) {
+	case "RecursionError", "LimitReachedError":
+		return nil, pyErr("PdfReadError", "%s('%s')", errClass(err), err.(*pyError).Msg)
+	}
 	return data, nil
 }
 
@@ -966,5 +1013,5 @@ func newParser(d *Document, pos int) *parser {
 	if pos < 0 {
 		pos = 0
 	}
-	return &parser{data: d.data, doc: d, pos: pos}
+	return &parser{data: d.data, doc: d, pos: pos, frame: d.frame + 3}
 }

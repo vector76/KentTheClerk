@@ -411,7 +411,8 @@
   "want": {
    "lines": null,
    "title": null,
-   "error": "AssertionError"
+   "error": "AssertionError",
+   "message": "unknown status keyword 'foo' in marked section"
   }
  },
  {
@@ -420,7 +421,8 @@
   "want": {
    "lines": null,
    "title": null,
-   "error": "AssertionError"
+   "error": "AssertionError",
+   "message": "expected name token at '\u003c![ CDATA[x]]\u003eb'"
   }
  },
  {

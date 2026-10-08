@@ -550,10 +550,15 @@ func codesFromObject(o Object, enc *encoding) pstr {
 
 // extractText is PageObject._extract_text for a page (contentKey true) or a
 // form XObject stream (contentKey false).
-func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known map[*Stream]bool) pstr {
+// level is the form XObject nesting level (0 for the page itself).
+func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known map[*Stream]bool, level int) pstr {
 	if known == nil {
 		known = map[*Stream]bool{}
 	}
+	savedFrame := d.frame
+	defer func() { d.frame = savedFrame }()
+	frame := extractFrame(level)
+	d.frame = frame + 3 // resources and fonts are resolved a few calls down
 	e := newExtractor(d)
 	e.fonts = map[string]*font{}
 	e.fontResources = map[string]*Dict{}
@@ -659,7 +664,7 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 						return err
 					}
 					e.fonts[k] = fnt
-					if fnt.widths[fnt.spaceChar.key()] == 0 {
+					if fnt.widths.get(fnt.spaceChar.key()) == 0 {
 						fnt.spaceWidth = 200.0
 					}
 					return nil
@@ -681,35 +686,21 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 		if !ok {
 			return pstr{}
 		}
-		content := d.resolve(co)
-		switch c := content.(type) {
-		case Array:
-			var buf []byte
-			for _, s := range c {
-				sr := d.resolve(s)
-				if _, isNull := sr.(Null); isNull {
-					continue
-				}
-				if st, ok := sr.(*Stream); ok {
-					b, err := d.streamData(st)
-					if err != nil {
-						raise(err)
-					}
-					buf = append(buf, b...)
-				}
-				if len(buf) == 0 || buf[len(buf)-1] != '\n' {
-					buf = append(buf, '\n')
-				}
+		// try: content = ...; ContentStream(content, pdf, "bytes")
+		// except (AttributeError, KeyError): return ""
+		noContent := false
+		err := catch(func() error {
+			data, noContent = d.pageContent(co)
+			return nil
+		})
+		if err != nil {
+			if c := errClass(err); c == "AttributeError" || c == "KeyError" {
+				return pstr{}
 			}
-			data = buf
-		case *Stream:
-			b, err := d.streamData(c)
-			if err != nil {
-				raise(err)
-			}
-			data = b
-		default:
-			return pstr{} // AttributeError: no content can be extracted
+			raise(err)
+		}
+		if noContent {
+			return pstr{}
 		}
 	} else {
 		b, err := d.streamData(self)
@@ -718,7 +709,8 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 		}
 		data = b
 	}
-	ops, err := parseContent(data)
+	ops, err := parseContent(data, frame+3)
+	d.spend(0, len(ops), 0)
 	if err != nil {
 		raise(err)
 	}
@@ -798,12 +790,20 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 				if known[xs] {
 					text = pstr{}
 				} else {
+					// pypdf's RecursionError deep down a chain of forms is
+					// caught by this handler (see frames.go)
+					if extractFrame(level+1)+frameFormWork > pyRecursionLimit {
+						return recursionError()
+					}
+					d.spend(1, 0, 0)
 					known[xs] = true
 					func() {
 						defer delete(known, xs)
-						text = d.extractText(xs.Dict, xs, false, known)
+						text = d.extractText(xs.Dict, xs, false, known, level+1)
 					}()
+					d.frame = frame + 3
 				}
+				d.spend(0, 0, len(text))
 				e.output = append(e.output, text...)
 				return nil
 			})
@@ -911,4 +911,47 @@ func getInherited(d *Document, obj *Dict, key Name) Object {
 		}
 		cur = pd
 	}
+}
+
+// pageContent builds a page's content bytes like ContentStream(obj, pdf,
+// "bytes"); noContent stands for a page without extractable content.
+func (d *Document) pageContent(co Object) (data []byte, noContent bool) {
+	content := d.resolve(co)
+	switch c := content.(type) {
+	case Array:
+		if len(c) > maxContentArrayLength {
+			raise(pyErr("LimitReachedError", "Array-based stream has %d > %d elements.", len(c), maxContentArrayLength))
+		}
+		var buf []byte
+		length := 0
+		for _, s := range c {
+			sr := d.resolve(s)
+			if _, isNull := sr.(Null); isNull {
+				continue
+			}
+			if st, ok := sr.(*Stream); ok {
+				b, err := d.streamData(st)
+				if err != nil {
+					raise(err)
+				}
+				length += len(b)
+				if length > maxArrayStreamOutput {
+					raise(pyErr("LimitReachedError", "Array-based stream has at least %d > %d output bytes.", length, maxArrayStreamOutput))
+				}
+				buf = append(buf, b...)
+			}
+			if len(buf) == 0 || buf[len(buf)-1] != '\n' {
+				length++
+				buf = append(buf, '\n')
+			}
+		}
+		return buf, false
+	case *Stream:
+		b, err := d.streamData(c)
+		if err != nil {
+			raise(err)
+		}
+		return b, false
+	}
+	return nil, true // AttributeError: no content can be extracted
 }

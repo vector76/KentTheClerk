@@ -24,6 +24,7 @@ import hashlib
 import http.client
 import json
 import os
+import platform
 import re
 import shutil
 import socket
@@ -52,14 +53,22 @@ def record(section, name, status, detail=""):
 
 
 class Out:
-    def __init__(self, rc, stdout, stderr):
-        self.rc, self.stdout, self.stderr = rc, stdout, stderr
+    def __init__(self, rc, raw_out: bytes, raw_err: bytes):
+        self.rc, self.raw_out, self.raw_err = rc, raw_out, raw_err
+        self.stdout, self.stderr = raw_out.decode("utf-8", "replace"), raw_err.decode("utf-8", "replace")
 
 
-def crash_kind(o: Out) -> str | None:
-    """'crash' when the run died of an unexpected exception (Python traceback / Go 'kb: unexpected')."""
-    if "Traceback (most recent call last)" in o.stderr or o.stderr.startswith("kb: unexpected") or "\nkb: unexpected" in o.stderr:
-        return "crash"
+def split_crash(o: Out):
+    """(stderr before the crash, "Type: message") when the run died of an unexpected exception: Python's
+    traceback ends with that line; Go prints "kb: unexpected Type: message". Else None."""
+    err = o.stderr
+    if "Traceback (most recent call last)" in err:
+        before = err[:err.index("Traceback (most recent call last)")]
+        lines = [l for l in err.splitlines() if l.strip()]
+        return before, lines[-1].strip()
+    i = err.find("kb: unexpected ")
+    if i >= 0 and (i == 0 or err[i - 1] == "\n"):
+        return err[:i], err[i + len("kb: unexpected "):].strip()
     return None
 
 
@@ -80,7 +89,7 @@ def base_env(extra=None, drop=()):
 def run(impl, args, cwd, env=None, timeout=300) -> Out:
     cmd = (PY_KB if impl == "py" else [str(G.go)]) + list(args)
     p = subprocess.run(cmd, cwd=cwd, env=env or base_env(), capture_output=True, timeout=timeout)
-    return Out(p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace"))
+    return Out(p.returncode, p.stdout, p.stderr)
 
 
 class G:  # globals set in main
@@ -110,29 +119,20 @@ def workspace(base: str) -> Path:
 
 # ---------------------------------------------------------------- normalisation
 
-HEADER_VOLATILE = ("snapshot_at", "ingested_at", "system_version", "system_hash", "source")
-TS_RE = re.compile(r'"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00"')
-STAMP_RE = re.compile(r'^(\s*(?:- )?(?:withdrawn_)?system_(?:hash|version)): .*$', re.M)
+# What legitimately differs between the two runs: the time of the act and the content hash of the system.
+# Only those values are blanked, in the raw bytes; everything else (key order, escaping, number format,
+# source, system_version) must be identical.
+HEADER_VOLATILE_RE = re.compile(rb'"(snapshot_at|ingested_at|system_hash)": "[^"]*"')
+TS_RE = re.compile(rb'"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00"')
+HASH_RE = re.compile(rb'^(\s*(?:- )?(?:withdrawn_)?system_hash): "sha256:[0-9a-f]{64}"', re.M)
 
 
 def norm_file(rel: str, data: bytes) -> bytes:
     if rel.endswith(".jsonl"):
-        lines = data.split(b"\n")
-        try:
-            h = json.loads(lines[0])
-            if isinstance(h, dict):
-                for k in HEADER_VOLATILE:
-                    if k in h:
-                        h[k] = "<volatile>"
-                lines[0] = json.dumps(h, ensure_ascii=False).encode("utf-8")
-        except ValueError:
-            pass
-        return b"\n".join(lines)
+        first, nl, rest = data.partition(b"\n")
+        return HEADER_VOLATILE_RE.sub(rb'"\1": "<volatile>"', first) + nl + rest
     if rel.endswith(".md"):
-        s = data.decode("utf-8", "replace")
-        s = TS_RE.sub('"<TS>"', s)
-        s = STAMP_RE.sub(r"\1: <STAMP>", s)
-        return s.encode("utf-8")
+        return HASH_RE.sub(rb'\1: "<HASH>"', TS_RE.sub(b'"<TS>"', data))
     return data
 
 
@@ -141,7 +141,7 @@ def changed_files(w: Path, base: str) -> dict[str, bytes | None]:
     now = file_hashes(w)
     out = {}
     for rel, h in now.items():
-        if rel.startswith("index.db") or rel.endswith(".tmp"):
+        if rel.startswith("index.db"):
             continue
         if before.get(rel) != h:
             out[rel] = (w / rel).read_bytes()
@@ -162,11 +162,14 @@ def first_diff(a: str, b: str, label: str) -> str:
 
 # ---------------------------------------------------------------- the pair runner
 
-def pair(section, name, steps, base="convkb", setup=None, env=None, cwd_sub="", norm=None, allow=None):
+def pair(section, name, steps, base="convkb", setup=None, env=None, cwd_sub="", norm=None, allow=None, expect=None,
+         known=None):
     """Run the steps (lists of kb arguments) with each version in a fresh copy of `base`; compare.
 
     setup(w) prepares the copy (the same for both). norm(text) normalises stdout/stderr. allow(py, go)
-    returns a reason string when a remaining difference is expected."""
+    returns a reason string when a remaining stderr difference is expected. expect is the exit status the
+    last step must have (earlier steps must succeed), so a case cannot pass by both versions failing alike.
+    known names a deliberate deviation: the case is reported as expected, with what differed."""
     res = {}
     for impl in ("py", "go"):
         w = workspace(base)
@@ -178,22 +181,33 @@ def pair(section, name, steps, base="convkb", setup=None, env=None, cwd_sub="", 
             args = st(w) if callable(st) else st
             outs.append(run(impl, args, w / cwd_sub, st_env))
         res[impl] = (outs, changed_files(w, base))
-    problems = []
+    problems = []      # stdout, exit status, files
+    err_problems = []  # stderr only
     expected = []
+    if expect is not None:
+        rcs = [o.rc for o in res["py"][0]]
+        want = [0] * (len(rcs) - 1) + [expect]
+        if rcs != want:
+            problems.append(f"Python's exit statuses {rcs}, expected {want}: the case does not exercise what it claims")
     for i, (po, go) in enumerate(zip(res["py"][0], res["go"][0])):
-        tag = f"step {i + 1}" if len(steps) > 1 else ""
-        pso, gso, pse, gse = po.stdout, go.stdout, po.stderr, go.stderr
+        tag = f"step {i + 1} " if len(steps) > 1 else ""
         if norm:
-            pso, gso, pse, gse = norm(pso), norm(gso), norm(pse), norm(gse)
+            same_out = norm(po.stdout) == norm(go.stdout)
+            pse, gse = norm(po.stderr), norm(go.stderr)
+            same_err = pse == gse
+        else:
+            same_out, same_err = po.raw_out == go.raw_out, po.raw_err == go.raw_err
+            pse, gse = po.stderr, go.stderr
         if po.rc != go.rc:
-            problems.append(f"{tag} exit status py={po.rc} go={go.rc}")
-        if pso != gso:
-            problems.append(first_diff(pso, gso, f"{tag} stdout"))
-        if pse != gse:
-            if crash_kind(po) and crash_kind(go):
-                expected.append(f"{tag} both crashed (py: {pse.strip().splitlines()[-1][:200]} | go: {gse.strip()[:200]})")
+            problems.append(f"{tag}exit status py={po.rc} go={go.rc}")
+        if not same_out:
+            problems.append(first_diff(po.stdout, go.stdout, f"{tag}stdout"))
+        if not same_err:
+            pc, gc = split_crash(po), split_crash(go)
+            if pc and gc and (norm(pc[0]) if norm else pc[0]) == (norm(gc[0]) if norm else gc[0]) and pc[1] == gc[1]:
+                expected.append(f"{tag}both raised {pc[1][:240]} (Python prints a traceback, Go one line)")
             else:
-                problems.append(first_diff(pse, gse, f"{tag} stderr"))
+                err_problems.append(first_diff(pse, gse, f"{tag}stderr"))
     pf, gf = res["py"][1], res["go"][1]
     if set(pf) != set(gf):
         problems.append(f"changed files differ: py only {sorted(set(pf) - set(gf))}, go only {sorted(set(gf) - set(pf))}")
@@ -202,13 +216,17 @@ def pair(section, name, steps, base="convkb", setup=None, env=None, cwd_sub="", 
         if (a is None) != (b is None):
             problems.append(f"{rel}: deleted by one version only")
         elif a is not None and norm_file(rel, a) != norm_file(rel, b):
-            problems.append(first_diff(norm_file(rel, a).decode("utf-8", "replace"), norm_file(rel, b).decode("utf-8", "replace"), rel))
-    files_same = not any(not p.startswith(" stderr") and "stderr" not in p.split(":")[0] for p in problems)
-    if problems and allow and files_same:
+            problems.append(first_diff(norm_file(rel, a).decode("utf-8", "backslashreplace"),
+                                       norm_file(rel, b).decode("utf-8", "backslashreplace"), rel))
+    if err_problems and not problems and allow:
         reason = allow(res["py"][0], res["go"][0])
         if reason:
-            record(section, name, "expected", reason + "\n" + "\n".join(problems)[:600])
+            record(section, name, "expected", reason + "\n" + "\n".join(err_problems)[:600])
             return res
+    problems += err_problems
+    if problems and known:
+        record(section, name, "expected", known + "\n" + "\n".join(problems)[:600])
+        return res
     if problems:
         record(section, name, "diff", "\n".join(problems))
     elif expected:
@@ -256,8 +274,9 @@ def body_of(p: Path) -> str:
 
 
 def write(p: Path, s: str):
+    """Write exactly these characters (no newline translation), as UTF-8."""
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(s, encoding="utf-8")
+    p.write_bytes(s.encode("utf-8"))
 
 
 def draft(w: Path, name: str, meta: str, body: str):
@@ -313,7 +332,7 @@ def sec_location():
 def sec_snapshot():
     S = "snapshot"
     for sid, mode, filt, user in G.session_ids:
-        res = pair(S, f"re-snapshot {sid[:8]} ({mode}, {filt})", [["snapshot", sid, "--mode", mode, "--filter", filt, "--user", user]])
+        res = pair(S, f"re-snapshot {sid[:8]} ({mode}, {filt})", [["snapshot", sid, "--mode", mode, "--filter", filt, "--user", user]], expect=0)
         # how much of the snapshot in the record each version reproduces, line for line
         orig = next(p for p, h, _ in G.sessions if h["session_id"] == sid)
         old = orig.read_bytes().split(b"\n")[1:]
@@ -323,7 +342,7 @@ def sec_snapshot():
                 newset = set(new.split(b"\n")[1:])
                 kept = sum(1 for l in old if l and l in newset)
                 G.resnap_info.setdefault(sid[:8], {})[impl] = f"{kept}/{sum(1 for l in old if l)} recorded turn lines reproduced"
-        pair(S, f"full-v1 into an empty base {sid[:8]}", [["snapshot", sid, "--filter", "full-v1", "--user", user]], base="empty")
+        pair(S, f"full-v1 into an empty base {sid[:8]}", [["snapshot", sid, "--filter", "full-v1", "--user", user]], base="empty", expect=0)
     sid0 = G.session_ids[0][0]
     on = next(s for s in G.session_ids if s[1] == "on-record")[0]
     off = next((s for s in G.session_ids if s[1] == "off-record"), None)
@@ -343,7 +362,7 @@ def sec_snapshot():
 
     def header_mode_off(w):
         p = next((w / "evidence").glob(f"*{on[:8]}.jsonl"))
-        lines = p.read_text(encoding="utf-8").split("\n")
+        lines = p.read_text(encoding="utf-8", newline="").split("\n")
         h = json.loads(lines[0]); h["mode"] = "off-record"
         lines[0] = json.dumps(h, ensure_ascii=False)
         p.write_text("\n".join(lines), encoding="utf-8", newline="\n")
@@ -476,6 +495,32 @@ def sec_ingest():
                 z.writestr("word/document.xml", xml)
             z.writestr("[Content_Types].xml", "<Types/>")
         files.append((buf, []))
+    good_xml = docx_cases()["headings.docx"]
+    with zipfile.ZipFile(samples / "bzip2.docx", "w", compression=zipfile.ZIP_BZIP2) as z:
+        z.writestr("word/document.xml", good_xml)
+    files.append((samples / "bzip2.docx", []))
+    with zipfile.ZipFile(samples / "backslash.docx", "w") as z:
+        z.writestr(zipfile.ZipInfo("word/document.xml"), good_xml)
+    raw = (samples / "backslash.docx").read_bytes().replace(b"word/document.xml", b"word\\document.xml")
+    (samples / "backslash.docx").write_bytes(raw)
+    files.append((samples / "backslash.docx", []))
+    with zipfile.ZipFile(samples / "badcrc.docx", "w", compression=zipfile.ZIP_STORED) as z:
+        z.writestr("word/document.xml", good_xml)
+    raw = bytearray((samples / "badcrc.docx").read_bytes())
+    i = raw.index(b"Doc Title")
+    raw[i] ^= 0x01
+    (samples / "badcrc.docx").write_bytes(bytes(raw))
+    files.append((samples / "badcrc.docx", []))
+    for flag, nm in ((0x1, "encrypted.docx"), (0x40, "strong-encryption.docx")):
+        with zipfile.ZipFile(samples / nm, "w") as z:
+            zi = zipfile.ZipInfo("word/document.xml")
+            z.writestr(zi, good_xml)
+        raw = bytearray((samples / nm).read_bytes())
+        for sig, off in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+            j = raw.index(sig)
+            raw[j + off] |= flag
+        (samples / nm).write_bytes(bytes(raw))
+        files.append((samples / nm, []))
     add("notazip.docx", b"PK not really")
     for p in sorted((REPO / "internal" / "pdftext" / "testdata").rglob("*.pdf")):
         files.append((p, []))
@@ -484,9 +529,12 @@ def sec_ingest():
         if all(a.rc == b.rc and a.stdout == b.stdout and not b.stderr and a.stderr for a, b in zip(py, go)):
             return "pypdf's repair warnings on stderr are not reproduced (stdout, exit status and files identical)"
     for p, extra in files:
+        refused = {"latin1.txt", "empty.txt", "blank.txt", "crash.html", "notazip.docx", "nodocxml.docx", "nobody.docx",
+                   "dup-attr.docx", "unbound-prefix.docx", "junk-after-root.docx", "second-root.docx", "space-before-decl.docx",
+                   "mismatched.docx", "badcrc.docx", "encrypted.docx", "strong-encryption.docx"}
         pair(S, f"ingest {p.name}", [["ingest", str(p), *extra]], base="empty",
-             allow=pypdf_logging if p.suffix == ".pdf" else None)
-    md = files[1][0]
+             allow=pypdf_logging if p.suffix == ".pdf" else None, expect=1 if p.name in refused else 0)
+    md = samples / "headings.md"
     pair(S, "same bytes, same extractor: refused (frozen)", [["ingest", str(md)], ["ingest", str(md)]], base="empty")
     pair(S, "same bytes, another extractor: new item, original reused", [["ingest", str(md)], ["ingest", str(md), "--extractor", "opaque-v1"]], base="empty")
     copy = samples / "headings-copy.txt"
@@ -522,6 +570,23 @@ def docx_cases():
                          + "".join(p(("word " * 80).strip()) for _ in range(12))),
         "nodocxml.docx": None,
         "nobody.docx": f'<w:document {W}></w:document>',
+        # declared encodings and versions expat reads
+        "utf16.docx": ('\ufeff<?xml version="1.0" encoding="UTF-16"?>' + doc(p("UTF-16 text \u00e9"))[doc(p("")).index("<w:document"):]).encode("utf-16-le"),
+        "latin1-declared.docx": doc(p("caf\u00e9")).replace('encoding="UTF-8"', 'encoding="ISO-8859-1"').encode("latin-1"),
+        "cp1252-declared.docx": doc(p("smart \u201cquotes\u201d")).replace('encoding="UTF-8"', 'encoding="windows-1252"').encode("cp1252"),
+        "ascii-declared.docx": doc(p("plain")).replace('encoding="UTF-8"', 'encoding="us-ascii"'),
+        "xml11.docx": doc(p("one point one")).replace('version="1.0"', 'version="1.1"'),
+        "entity.docx": doc(p("before &who; after")).replace("?>", '?><!DOCTYPE w:document [<!ENTITY who "the entity">]>', 1),
+        # malformed: Python's ParseError
+        "dup-attr.docx": doc('<w:p w:a="1" w:a="2"><w:r><w:t>x</w:t></w:r></w:p>'),
+        "unbound-prefix.docx": doc('<q:p><w:r><w:t>x</w:t></w:r></q:p>'),
+        "junk-after-root.docx": doc(p("x")) + "junk",
+        "second-root.docx": doc(p("x")) + f'<w:document {W}><w:body>{p("second")}</w:body></w:document>',
+        "space-before-decl.docx": "  " + doc(p("x")),
+        "mismatched.docx": doc('<w:p><w:r><w:t>x</w:r></w:t></w:p>'),
+        # style lookup
+        "two-ppr.docx": doc('<w:p><w:pPr/><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Second pPr heading</w:t></w:r></w:p>' + p("body")),
+        "dotless-i.docx": doc(p("Dotless", "Head\u0131ng1") + p("Dotted", "HEAD\u0130NG2") + p("body")),
     }
 
 
@@ -557,7 +622,14 @@ def sec_check_show_search():
     def edit(path_fn, fn):
         def setup(w):
             p = path_fn(w)
-            p.write_text(fn(p.read_text(encoding="utf-8")), encoding="utf-8")
+            raw = p.read_bytes().decode("utf-8")
+            crlf = "\r\n" in raw
+            old = raw.replace("\r\n", "\n")
+            new = fn(old)
+            assert new != old, f"tamper did not change {p.name}"
+            if crlf:
+                new = new.replace("\n", "\r\n")
+            p.write_bytes(new.encode("utf-8"))  # line endings as they were
         return setup
     first_orig = lambda w: next((w / "evidence" / "originals").iterdir())
     tampers = {
@@ -596,17 +668,20 @@ def sec_index_cross():
     for impl in ("py", "go"):
         w = workspace("convkb")
         o = run(impl, ["index"], w)
+        if o.rc != 0:
+            record(S, f"kb index ({impl})", "diff", o.stderr[:500])
         dst = G.work / f"index-{impl}.db"
         shutil.copyfile(w / "index.db", dst)
         dbs[impl] = dst
     tables = ["sessions", "turns", "statements", "attestations", "citations", "turns_fts", "statements_fts"]
     def dump(p):
         con = sqlite3.connect(p)
-        out = {t: sorted(map(repr, con.execute(f"SELECT * FROM {t}"))) for t in tables}
+        out = {t: list(map(repr, con.execute(f"SELECT rowid, * FROM {t} ORDER BY rowid"))) for t in tables}
+        out["sqlite_master"] = list(map(repr, con.execute("SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY name")))
         con.close()
         return out
     a, b = dump(dbs["py"]), dump(dbs["go"])
-    bad = [t for t in tables if a[t] != b[t]]
+    bad = [t for t in a if a[t] != b[t]]
     record(S, "index.db contents (every table, sqlite3)", "diff" if bad else "same",
            f"tables differ: {bad}" if bad else f"{sum(len(v) for v in a.values())} rows identical")
     queries = [("attest",), ("kent", "rule"), ("python", "OR", "go"), ('"S-0090"',), ('"agent', 'statement"'), ("superses*",)]
@@ -663,49 +738,61 @@ def sec_serve():
         orig = next((G.bases["convkb"] / "evidence" / "originals").iterdir()).name
         urls = ["/", "/cards", "/e/", "/u/jamie", "/u/agent:claude-opus-5-5", "/search?q=attest", "/search?q=kent+rule",
                 "/search?q=a.b", "/search?q=", "/search", "/search?q=%22agent%20statement%22&x=1", "/o/" + orig, "/o/bad",
-                "/o/" + "0" * 64 + ".md", "/nope", "/e/zzzz", "/s/S-9999", "/s/S-0001%20x", "/e/" + G.session_ids[0][0][:4]]
+                "/o/" + "0" * 64 + ".md", "/nope", "/e/zzzz", "/s/S-9999", "/s/S-0001%20x", "/e/" + G.session_ids[0][0][:4],
+                # odd forms: http.server collapses a leading //, urlparse drops ;params from the last segment
+                "//e/", "///e/", "/;a", "/cards;x=1", "/search;p?q=attest", "/e/" + G.session_ids[0][0] + ";x",
+                "/s/S-0090;v=1", "/e/a;b/c", "/%2e%2e/%2e%2e/", "/s/%E2%9C%93", "/s/%ZZ", "/search?q=a+b&q=c",
+                "/search?q", "/search?=x&q=%E2%9C%93", "/e/?x=1#frag", "/u/" + "%20" * 3, "/o/../index.db",
+                "/search?q=http://foo", "/s/S-0090?r=https://x/y", "http:/s/S-0090", "http://host/cards", "/s/%FF%FF",
+                "/s/%C0%80", "/search?q=%FF%FE", "/u/%E2%82", "/u/100%", "/u/a%2", "/e/%G0", "/u/jos%C3%A9"]
         urls += [f"/e/{s[0]}" for s in G.session_ids] + [f"/e/{h['document_id']}" for _, h, _ in G.documents]
         urls += [f"/s/{x}" for x in stmts + agents]
+        def raw(impl, request: bytes) -> bytes:
+            """The whole response to these request bytes, with the Server and Date values blanked."""
+            c = socket.create_connection(("127.0.0.1", ports[impl]), timeout=60)
+            c.sendall(request)
+            c.shutdown(socket.SHUT_WR)  # a request without its blank line still ends
+            data = b""
+            while chunk := c.recv(65536):
+                data += chunk
+            c.close()
+            return re.sub(rb"(?m)^(Server|Date): [^\r\n]*", rb"\1: <x>", data)
+
         same = 0
         for u in urls:
-            got = {}
-            for impl in ("py", "go"):
-                c = http.client.HTTPConnection("127.0.0.1", ports[impl], timeout=60)
-                c.request("GET", u)
-                r = c.getresponse()
-                got[impl] = (r.status, r.getheader("Content-Type"), r.read())
-                c.close()
-            if got["py"] == got["go"]:
+            req = f"GET {u} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n".encode("latin-1")
+            a, b = raw("py", req), raw("go", req)
+            if a == b:
                 same += 1
             else:
-                record(S, f"GET {u}", "diff", f"status {got['py'][0]}/{got['go'][0]}, type {got['py'][1]}/{got['go'][1]}\n"
-                       + first_diff(got["py"][2].decode("utf-8", "replace").replace("><", ">\n<"),
-                                    got["go"][2].decode("utf-8", "replace").replace("><", ">\n<"), "body"))
-        record(S, f"GET {len(urls)} pages (status, content type, body)", "same" if same == len(urls) else "diff",
-               f"{same}/{len(urls)} identical")
-        # POST: Python answers 501 with its error page
-        got = {}
-        for impl in ("py", "go"):
-            c = http.client.HTTPConnection("127.0.0.1", ports[impl], timeout=30)
-            c.request("POST", "/", body=b"")
-            r = c.getresponse()
-            got[impl] = (r.status, r.read())
-            c.close()
-        record(S, "POST / (unsupported method)", "same" if got["py"] == got["go"] else "diff", repr(got)[:500])
-        got = {}
-        for impl in ("py", "go"):
-            c = http.client.HTTPConnection("127.0.0.1", ports[impl], timeout=60)
-            c.request("GET", "/reindex")
-            r = c.getresponse()
-            got[impl] = (r.status, r.getheader("Location"))
-            c.close()
-        record(S, "GET /reindex (redirect)", "same" if got["py"] == got["go"] else "diff", repr(got))
+                record(S, f"GET {u}", "diff", first_diff(a.decode("utf-8", "backslashreplace").replace("><", ">\n<"),
+                                                         b.decode("utf-8", "backslashreplace").replace("><", ">\n<"), "response"))
+        record(S, f"GET {len(urls)} pages: whole response (status line, headers, body; Server and Date values blanked)",
+               "same" if same == len(urls) else "diff", f"{same}/{len(urls)} identical")
+        odd = {
+            "POST (unsupported method)": b"POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\n",
+            "HEAD (unsupported method)": b"HEAD / HTTP/1.0\r\n\r\n",
+            "HTTP/0.9 request": b"GET /cards\r\n",
+            "HTTP/0.9 with another method": b"POST /\r\n",
+            "HTTP/2.0 request line": b"GET / HTTP/2.0\r\n\r\n",
+            "bad version": b"GET / XYZ/1.0\r\n\r\n",
+            "too many words": b"GET / x HTTP/1.0\r\n\r\n",
+            "empty request line": b"\r\n",
+            "raw UTF-8 in the path": "GET /s/S-0090\u00e9 HTTP/1.0\r\n\r\n".encode("utf-8"),
+            "101 header lines": b"GET / HTTP/1.0\r\n" + b"X: y\r\n" * 101 + b"\r\n",
+            "long header line": b"GET / HTTP/1.0\r\nX: " + b"y" * 70000 + b"\r\n\r\n",
+            "redirect after /reindex": b"GET /reindex HTTP/1.0\r\n\r\n",
+        }
+        for name, req in odd.items():
+            a, b = raw("py", req), raw("go", req)
+            record(S, name, "same" if a == b else "diff", "" if a == b else first_diff(
+                a.decode("utf-8", "backslashreplace"), b.decode("utf-8", "backslashreplace"), "response"))
     finally:
         for p in procs.values():
             p.kill()
             p.wait()
-    record(S, "HTTP framing", "expected", "Python answers HTTP/1.0 with Server/Date headers from http.server; Go answers "
-                                         "HTTP/1.1 with its own headers. Status, Content-Type and body are compared above.")
+    record(S, "Server header", "expected", "the Server header names the implementation (Python: BaseHTTP/0.6 Python/x.y.z; "
+           "Go: BaseHTTP/0.6 kb/<version>); its value and the Date value are blanked in the comparisons above")
 
 
 def sec_acts():
@@ -752,7 +839,10 @@ def sec_acts():
         ("refused: agreement before the proposal", d("d.md"), [A("off-record/drafts/d.md", "--turn", early_human, "--proposed", prop)]),
         ("refused: proposal in another session", d("d.md"), [A("off-record/drafts/d.md", "--turn", agree, "--proposed", f"{other_sess}#{other_agent['uuid']}")]),
         ("refused: re-attestation (endorsing what I attested)", None, [A("--form", "endorsement", "--statement", "S-0090", "--turn", agree)]),
-        ("endorsement (another user's own turn is required)", None, [A("--form", "endorsement", "--statement", "S-0090", "--turn", agree, "--user", "jamie2")]),
+        ("refused: endorsement from a turn the endorser did not write", None, [A("--form", "endorsement", "--statement", "S-0090", "--turn", agree, "--user", "pat")]),
+        ("endorsement by a second person", None, [pat_snapshot(), A("--form", "endorsement", "--statement", "S-0090", "--turn", PAT_TURN, "--user", "pat")]),
+        ("refused: endorsing twice", None, [pat_snapshot(), A("--form", "endorsement", "--statement", "S-0090", "--turn", PAT_TURN, "--user", "pat"),
+                                            A("--form", "endorsement", "--statement", "S-0090", "--turn", PAT_TURN, "--user", "pat")]),
         ("refused: endorsement without --statement", None, [A("--form", "endorsement", "--turn", agree)]),
         ("refused: endorsing an agent statement", None, [A("--form", "endorsement", "--statement", "A-0005", "--turn", agree)]),
         ("refused: endorsing a missing statement", None, [A("--form", "endorsement", "--statement", "S-9999", "--turn", agree)]),
@@ -793,6 +883,7 @@ def sec_acts():
         ("refused: record revising a withdrawn one",
          lambda w: (d("a.md", meta=good_a + "\nclarifies: A-0004")(w), withdraw_a4(w)), [R("off-record/drafts/a.md", "--turn", made)]),
         ("refused: record without answers", d("a.md", meta='title: "x"'), [R("off-record/drafts/a.md", "--turn", made)]),
+        ("seen in another conversation's turn", None, [pat_snapshot(), ["seen", "A-0005", "--turn", PAT_AGENT_TURN]]),
         ("refused: seen, text not shown", None, [["seen", "A-0005", "--turn", agree]]),
         ("refused: seen, already recorded there", None, [["seen", "A-0005", "--turn", made]]),
         ("refused: seen of a human statement id", None, [["seen", "S-0001", "--turn", made]]),
@@ -803,26 +894,65 @@ def sec_acts():
         ("refused: withdraw from an off-record turn", None, [["withdraw", "A-0005", "--turn", f"{off[0]}#{off_human['uuid']}", "--reason", "x"]]),
     ]
     for name, setup, steps in cases:
-        pair(S, name, steps, setup=setup)
+        pair(S, name, steps, setup=setup, env=pat_env, expect=1 if name.startswith(("refused", "crash")) else 0)
+    pair(S, "absolute draft path", [lambda w: A(str(w / "off-record" / "drafts" / "d.md"), "--turn", agree, "--proposed", prop)],
+         setup=d("d.md"), known="deliberate: Python's attest crashes on an absolute draft path (load_statement is given a "
+         "str and calls .read_text on it); Go attests the draft")
+    pair(S, "absolute draft path (record)", [lambda w: R(str(w / "off-record" / "drafts" / "a.md"), "--turn", made)],
+         setup=d("a.md", meta=good_a, body=body_a5), known="deliberate: Python's record crashes the same way; Go records the draft")
     G.acts = (prop, agree, made, body90, body_a5, good, good_a)
+
+
+PAT_SESSION = "9a7a7a7a-0000-4000-8000-000000000001"
+PAT_TURN = "9a7a7a7a#9a7a7a7a-0000-4000-8000-0000000000a1"
+PAT_AGENT_TURN = "9a7a7a7a#9a7a7a7a-0000-4000-8000-0000000000b2"
+
+
+def pat_projects() -> Path:
+    """A crafted on-record conversation in which a second person, pat, says something."""
+    d = G.work / "pat_projects" / "proj"
+    if not d.exists():
+        d.mkdir(parents=True)
+        body_a5 = body_of(next((G.bases["convkb"] / "agent").glob("A-0005-*.md")))
+        recs = [{"type": "user", "uuid": PAT_TURN.split("#")[1], "parentUuid": None, "sessionId": PAT_SESSION,
+                 "timestamp": "2026-10-08T09:00:00.000Z", "origin": {"kind": "human"},
+                 "message": {"role": "user", "content": "I agree with S-0090 too."}},
+                {"type": "assistant", "uuid": PAT_AGENT_TURN.split("#")[1], "parentUuid": PAT_TURN.split("#")[1],
+                 "sessionId": PAT_SESSION, "timestamp": "2026-10-08T09:00:05.000Z",
+                 "message": {"model": "claude-x", "content": [{"type": "text", "text": "For the record, the working choice reads: " + body_a5}]}}]
+        (d / f"{PAT_SESSION}.jsonl").write_bytes("".join(json.dumps(r) + "\n" for r in recs).encode("utf-8"))
+    return d.parent
+
+
+def pat_env(w):
+    return base_env({"CLAUDE_PROJECTS_DIR": str(pat_projects())})
+
+
+def pat_snapshot():
+    return ["snapshot", PAT_SESSION, "--user", "pat"]
 
 
 def withdraw_a4(w):
     p = next((w / "agent").glob("A-0004-*.md"))
-    s = p.read_text(encoding="utf-8").replace("topics: []", 'topics: []\nwithdrawn_in: "x#y"', 1)
-    p.write_text(s, encoding="utf-8")
+    old = p.read_bytes().decode("utf-8")
+    nl = "\r\n" if "\r\n" in old else "\n"
+    new = old.replace("topics: []", "topics: []" + nl + 'withdrawn_in: "x#y"', 1)
+    assert new != old
+    p.write_bytes(new.encode("utf-8"))
 
 
 def sec_cross():
-    """Acts made by one version, checked by the other: a run of attest/record/seen/withdraw/endorse."""
+    """Acts made by one version, checked by the other: attest, endorse, supersede, record, seen, withdraw."""
     S = "cross"
     prop, agree, made, body90, body_a5, good, good_a = G.acts
     steps = [
         ["attest", "off-record/drafts/s1.md", "--turn", agree, "--proposed", prop],
+        pat_snapshot(),
+        ["attest", "--form", "endorsement", "--statement", "S-0091", "--turn", PAT_TURN, "--user", "pat"],
         ["attest", "off-record/drafts/s2.md", "--turn", agree, "--proposed", prop],
         ["record", "off-record/drafts/a1.md", "--turn", made],
+        ["seen", "A-0006", "--turn", PAT_AGENT_TURN],
         ["record", "off-record/drafts/a2.md", "--turn", made],
-        ["seen", "A-0007", "--turn", made],
         ["withdraw", "A-0007", "--turn", agree, "--reason", "superseded in the test, then withdrawn"],
     ]
     def setup(w):
@@ -831,15 +961,20 @@ def sec_cross():
         draft(w, "a1.md", good_a, body_a5)
         draft(w, "a2.md", good_a + "\nsupersedes: A-0006", "Not shown: the working choice, revised.")
     # each version's acts, side by side (files compared after timestamps and stamps are normalised)
-    res = pair(S, "the same acts by each version", steps, setup=setup)
+    res = pair(S, "the same acts by each version", steps, setup=setup, env=pat_env, expect=0)
     # then each version checks the other's result
     for maker, checker in (("go", "py"), ("py", "go")):
         w = workspace("convkb")
         setup(w)
+        failed = None
         for st in steps:
-            o = run(maker, st, w)
+            o = run(maker, st, w, pat_env(w))
             if o.rc != 0:
+                failed = f"{maker} act {' '.join(st[:2])} failed: {o.stderr.strip()[:300]}"
                 break
+        if failed:
+            record(S, f"{checker} kb check accepts the acts {maker} made", "diff", failed)
+            continue
         c = run(checker, ["check"], w)
         own = run(maker, ["check"], w)
         ok = c.rc == 0 and c.stdout == own.stdout and "0 error(s)" in c.stdout.splitlines()[-1]
@@ -907,9 +1042,28 @@ def main() -> int:
     return 1 if n["diff"] else 0
 
 
+def run_facts() -> list[str]:
+    def out(cmd, cwd=REPO):
+        try:
+            return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=60).stdout.strip()
+        except OSError:
+            return "?"
+    try:
+        import pypdf
+        pypdf_v = pypdf.__version__
+    except ImportError:
+        pypdf_v = "not installed (pdf-v1 falls back to pdftotext)"
+    go_ver = out([str(G.go), "version"]).splitlines()
+    return [
+        f"- commit: {out(['git', 'rev-parse', '--short', 'HEAD'])}" + (" (with uncommitted changes)" if out(["git", "status", "--porcelain"]) else ""),
+        f"- OS: {platform.platform()}; Python {sys.version.split()[0]}; pypdf {pypdf_v}; Python's SQLite {sqlite3.sqlite_version}",
+        f"- {out(['go', 'version'])}; Go kb: {', '.join(go_ver)}",
+        f"- knowledge base copied from `{G.real_kb.name}`: {len(G.session_ids)} sessions, {len(G.documents)} document(s)",
+    ]
+
+
 def write_report(path: Path, a):
-    lines = ["# Parity run", "", f"- Python: {sys.version.split()[0]}; knowledge base copied from `{G.real_kb.name}`; "
-             f"{len(G.session_ids)} sessions, {len(G.documents)} document(s)", ""]
+    lines = ["# Parity run", ""] + run_facts() + [""]
     by = {}
     for r in RESULTS:
         by.setdefault(r["section"], []).append(r)

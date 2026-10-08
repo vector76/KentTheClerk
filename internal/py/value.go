@@ -182,8 +182,10 @@ func Iter(v any) []any {
 		return x
 	case string:
 		out := []any{}
-		for _, r := range x {
-			out = append(out, string(r))
+		for i := 0; i < len(x); {
+			_, size := decodeWTF8(x[i:])
+			out = append(out, x[i:i+size])
+			i += size
 		}
 		return out
 	case *Dict:
@@ -429,7 +431,8 @@ func FloatRepr(f float64) string {
 // ParseInt is int(s) for a str: surrounding whitespace, a sign, Unicode decimal digits and single
 // underscores between digits are accepted.
 func ParseInt(s string) (*big.Int, bool) {
-	s = Strip(s)
+	// int() strips ASCII whitespace and non-ASCII Unicode whitespace, but not -
+	s = strings.TrimFunc(s, func(r rune) bool { return IsSpace(r) && !(r >= 0x1c && r <= 0x1f) })
 	neg := false
 	if s != "" && (s[0] == '+' || s[0] == '-') {
 		neg = s[0] == '-'
@@ -455,6 +458,9 @@ func ParseInt(s string) (*big.Int, bool) {
 		prevUnderscore = false
 	}
 	if prevUnderscore {
+		return nil, false
+	}
+	if digits.Len() > 4300 { // sys.get_int_max_str_digits()
 		return nil, false
 	}
 	n, ok := new(big.Int).SetString(digits.String(), 10)

@@ -35,13 +35,13 @@ func (p *parser) readInlineImage() error {
 		if c == 'I' {
 			break
 		}
-		key, err := p.readObject()
+		key, err := p.readObjectDepth(p.frame + 1) // called from _read_inline_image
 		if err != nil {
 			return err
 		}
 		p.readNonWhitespace()
 		p.back(1)
-		value, err := p.readObject()
+		value, err := p.readObjectDepth(p.frame + 1)
 		if err != nil {
 			return err
 		}

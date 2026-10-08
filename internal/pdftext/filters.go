@@ -73,7 +73,7 @@ func (d *Document) decodeStream(s *Stream) ([]byte, error) {
 		case "/FlateDecode", "/Fl":
 			data, err = d.flateDecode(data, params)
 		case "/RunLengthDecode", "/RL":
-			data = runLengthDecode(data)
+			data, err = runLengthDecode(data)
 		case "/Crypt":
 			if pd, ok := asDict(params); ok && (pd.Has("/Name") || pd.Has("/Type")) {
 				err = pyErr("NotImplementedError", "/Crypt filter with /Name or /Type not supported yet")
@@ -92,28 +92,73 @@ func (d *Document) decodeStream(s *Stream) ([]byte, error) {
 	return data, nil
 }
 
+// pypdf's output limits (pypdf/filters.py, generic/_data_structures.py).
+const (
+	maxDecodedOutput        = 75_000_000 // ZLIB/LZW/RUN_LENGTH_MAX_OUTPUT_LENGTH
+	maxZlibRecoveryInput    = 5_000_000  // ZLIB_MAX_RECOVERY_INPUT_LENGTH
+	maxFlateColumns         = 250_000    // FLATE_MAX_COLUMNS
+	maxFlateRowLength       = 4_000_000  // FLATE_MAX_ROW_LENGTH
+	maxContentArrayLength   = 10_000     // CONTENT_STREAM_ARRAY_MAX_LENGTH
+	maxArrayStreamOutput    = 75_000_000 // MAX_ARRAY_BASED_STREAM_OUTPUT_LENGTH
+	maxDeclaredStreamLength = 75_000_000 // MAX_DECLARED_STREAM_LENGTH
+)
+
+// readLimited reads r, failing like pypdf once more than maxDecodedOutput
+// bytes come out. corrupt reports a decoding error that is not a plain
+// truncation or a checksum mismatch.
+func readLimited(r io.Reader) (out []byte, corrupt bool, err error) {
+	out, rerr := io.ReadAll(io.LimitReader(r, maxDecodedOutput+1))
+	if len(out) > maxDecodedOutput {
+		return nil, false, pyErr("LimitReachedError", "Limit reached while decompressing.")
+	}
+	if rerr != nil && rerr != io.ErrUnexpectedEOF && rerr != zlib.ErrChecksum && rerr != gzip.ErrChecksum {
+		corrupt = true
+	}
+	return out, corrupt, nil
+}
+
 // zlibDecompress mimics pypdf's decompress(): a zlib stream, tolerant of
 // truncation and trailing garbage; on corrupt data it keeps what decoded.
-func zlibDecompress(data []byte) []byte {
+func zlibDecompress(data []byte) ([]byte, error) {
 	r, err := zlib.NewReader(bytes.NewReader(data))
 	if err == nil {
-		out, _ := io.ReadAll(r)
-		return out
+		out, corrupt, err := readLimited(r)
+		if err != nil {
+			return nil, err
+		}
+		// pypdf's byte-by-byte recovery keeps failing after the first
+		// error and gives up once the input index passes 5,000,000.
+		if corrupt && len(data) > maxZlibRecoveryInput+1 {
+			return nil, pyErr("LimitReachedError", "Recovery limit reached while decompressing.")
+		}
+		return out, nil
 	}
 	// No zlib header: pypdf's last resort feeds the bytes to a decompressor
 	// that also accepts a gzip header (wbits | 32); after the first error
 	// zlib produces nothing more, so a bad header yields no data.
 	if len(data) >= 10 && data[0] == 0x1f && data[1] == 0x8b {
 		if gr, err := gzip.NewReader(bytes.NewReader(data)); err == nil {
-			out, _ := io.ReadAll(gr)
-			return out
+			out, corrupt, err := readLimited(gr)
+			if err != nil {
+				return nil, err
+			}
+			if corrupt && len(data) > maxZlibRecoveryInput+1 {
+				return nil, pyErr("LimitReachedError", "Recovery limit reached while decompressing.")
+			}
+			return out, nil
 		}
 	}
-	return []byte{}
+	if len(data) > maxZlibRecoveryInput+1 {
+		return nil, pyErr("LimitReachedError", "Recovery limit reached while decompressing.")
+	}
+	return []byte{}, nil
 }
 
 func (d *Document) flateDecode(data []byte, params Object) ([]byte, error) {
-	out := zlibDecompress(data)
+	out, err := zlibDecompress(data)
+	if err != nil {
+		return nil, err
+	}
 	pd, ok := asDict(params)
 	if !ok {
 		return out, nil
@@ -143,18 +188,27 @@ func (d *Document) flateDecode(data []byte, params Object) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if columns > maxFlateColumns {
+		return nil, pyErr("LimitReachedError", "Number of columns %d exceeds defined limit of %d.", columns, maxFlateColumns)
+	}
 	colors, err := get("/Colors", 1)
 	if err != nil {
 		return nil, err
+	}
+	if colors > 16 {
+		return nil, pyErr("LimitReachedError", "Color value %d exceeds limit of 16.", colors)
 	}
 	bpc, err := get("/BitsPerComponent", 8)
 	if err != nil {
 		return nil, err
 	}
-	if columns > 250000 || colors > 16 || bpc > 16 {
-		return nil, pyErr("LimitReachedError", "predictor parameters out of range")
+	if bpc > 16 {
+		return nil, pyErr("PdfReadError", "More than 16 bits per component are not allowed: %d", bpc)
 	}
 	rowLength := int((columns*colors*bpc+7)/8) + 1
+	if rowLength > maxFlateRowLength {
+		return nil, pyErr("LimitReachedError", "Row length of %d exceeds defined limit of %d.", rowLength, maxFlateRowLength)
+	}
 	predictor, _ := pred.(Int)
 	switch {
 	case predictor == 2:
@@ -310,9 +364,10 @@ func ascii85Decode(data []byte) ([]byte, error) {
 	return out, nil
 }
 
-func runLengthDecode(data []byte) []byte {
+func runLengthDecode(data []byte) ([]byte, error) {
 	var out []byte
 	i := 0
+	total := 0
 	for i < len(data) {
 		l := int(data[i])
 		i++
@@ -326,6 +381,7 @@ func runLengthDecode(data []byte) []byte {
 			}
 			out = append(out, data[i:e]...)
 			i += l + 1
+			total += l + 1
 		} else {
 			if i >= len(data) {
 				break
@@ -334,9 +390,13 @@ func runLengthDecode(data []byte) []byte {
 				out = append(out, data[i])
 			}
 			i++
+			total += 257 - l
+		}
+		if total > maxDecodedOutput {
+			return nil, pyErr("LimitReachedError", "Limit reached while decompressing.")
 		}
 	}
-	return out
+	return out, nil
 }
 
 // lzwDecode ports pypdf's _LzwCodec.decode (early change, 9-12 bits).
@@ -402,6 +462,10 @@ func lzwDecode(data []byte) ([]byte, error) {
 			}
 			out = append(out, table[code]...)
 			old = code
+			if len(out) > maxDecodedOutput {
+				return nil, pyErr("LimitReachedError", "Limit reached while decompressing.")
+			}
+			continue
 		} else if code < tableIndex {
 			dec := table[code]
 			out = append(out, dec...)
@@ -420,6 +484,9 @@ func lzwDecode(data []byte) ([]byte, error) {
 			out = append(out, dec...)
 			add(base, dec[0])
 			old = code
+		}
+		if len(out) > maxDecodedOutput {
+			return nil, pyErr("LimitReachedError", "Limit reached while decompressing.")
 		}
 	}
 	return out, nil

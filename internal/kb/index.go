@@ -61,7 +61,10 @@ func sqlArg(v any) any {
 		py.Raise("OverflowError", "Python int too large to convert to SQLite INTEGER")
 	case int:
 		return int64(x)
-	case float64, string:
+	case float64:
+		return x
+	case string:
+		py.CheckEncodable(x) // sqlite3 encodes str as UTF-8: a lone surrogate raises
 		return x
 	}
 	py.Raise("sqlite3.ProgrammingError", "Error binding parameter - probably unsupported type.")

@@ -8,12 +8,10 @@ import (
 	"fmt"
 	"math/big"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"kenttheclerk/internal/argparse"
 	"kenttheclerk/internal/mimetypes"
@@ -175,34 +173,19 @@ func statementCard(db *sql.DB, s row, full bool) string {
 
 type kbServer struct{ root string }
 
-func (h *kbServer) send(w http.ResponseWriter, content []byte, status int, ctype string) {
-	w.Header().Set("Content-Type", ctype)
-	w.Header().Set("Content-Length", fmt.Sprint(len(content)))
-	w.WriteHeader(status)
-	w.Write(content)
+func (h *kbServer) send(w *resp, content []byte, status int, ctype string) {
+	w.status = status
+	w.set("Content-Type", ctype)
+	w.set("Content-Length", fmt.Sprint(len(content)))
+	w.body = content
 }
 
-func (h *kbServer) html(w http.ResponseWriter, content []byte, status int) {
+func (h *kbServer) html(w *resp, content []byte, status int) {
 	h.send(w, content, status, "text/html; charset=utf-8")
 }
 
-const unsupportedMethod = `<!DOCTYPE HTML>
-<html lang="en">
-    <head>
-        <meta charset="utf-8">
-        <title>Error response</title>
-    </head>
-    <body>
-        <h1>Error response</h1>
-        <p>Error code: 501</p>
-        <p>Message: Unsupported method (%s).</p>
-        <p>Error code explanation: 501 - Server does not support this operation.</p>
-    </body>
-</html>
-`
-
-// unquote is urllib.parse.unquote: %XX sequences decoded as UTF-8 with errors="replace"; malformed ones
-// are kept as they are.
+// unquote is urllib.parse.unquote: in each run of ASCII characters the %XX escapes are decoded and the
+// bytes read as UTF-8 with errors="replace"; malformed escapes and non-ASCII characters stay as they are.
 func unquote(s string, plus bool) string {
 	if plus {
 		s = strings.ReplaceAll(s, "+", " ")
@@ -210,17 +193,79 @@ func unquote(s string, plus bool) string {
 	if !strings.Contains(s, "%") {
 		return s
 	}
-	var out []byte
+	var out strings.Builder
 	for i := 0; i < len(s); {
-		if s[i] == '%' && i+2 < len(s)+0 && i+2 <= len(s)-1 && isHex(s[i+1]) && isHex(s[i+2]) {
-			out = append(out, unhex(s[i+1])<<4|unhex(s[i+2]))
+		j := i
+		for j < len(s) && s[j] < 0x80 {
+			j++
+		}
+		out.WriteString(unquoteASCII(s[i:j]))
+		k := j
+		for k < len(s) && s[k] >= 0x80 {
+			k++
+		}
+		out.WriteString(s[j:k])
+		i = k
+	}
+	return out.String()
+}
+
+func unquoteASCII(s string) string {
+	var b []byte
+	for i := 0; i < len(s); {
+		if s[i] == '%' && i+2 < len(s) && isHex(s[i+1]) && isHex(s[i+2]) {
+			b = append(b, unhex(s[i+1])<<4|unhex(s[i+2]))
 			i += 3
 			continue
 		}
-		out = append(out, s[i])
+		b = append(b, s[i])
 		i++
 	}
-	return strings.ToValidUTF8(string(out), "�")
+	return py.DecodeReplace(b)
+}
+
+// usesParams are the schemes for which urlparse splits ";params" off the path.
+var usesParams = map[string]bool{"": true, "ftp": true, "hdl": true, "prospero": true, "http": true, "imap": true,
+	"https": true, "shttp": true, "rtsp": true, "rtsps": true, "rtspu": true, "sip": true, "sips": true, "mms": true,
+	"sftp": true, "tel": true}
+
+// urlPathQuery is the path (without ;params) and the query of urllib.parse.urlparse(target).
+func urlPathQuery(url string) (string, string) {
+	// urlsplit: leading C0 controls and spaces stripped, tabs and line breaks removed
+	url = strings.TrimLeftFunc(url, func(r rune) bool { return r <= ' ' })
+	url = strings.NewReplacer("\t", "", "\r", "", "\n", "").Replace(url)
+	scheme := ""
+	if i := strings.Index(url, ":"); i > 0 && (url[0]|0x20 >= 'a' && url[0]|0x20 <= 'z') {
+		ok := true
+		for _, c := range url[:i] {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.') {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			scheme, url = strings.ToLower(url[:i]), url[i+1:]
+		}
+	}
+	if strings.HasPrefix(url, "//") {
+		end := len(url)
+		if j := strings.IndexAny(url[2:], "/?#"); j >= 0 {
+			end = 2 + j
+		}
+		url = url[end:]
+	}
+	url, _, _ = strings.Cut(url, "#")
+	path, query, _ := strings.Cut(url, "?")
+	if usesParams[scheme] && strings.Contains(path, ";") {
+		if strings.Contains(path, "/") {
+			if j := strings.Index(path[strings.LastIndex(path, "/"):], ";"); j >= 0 {
+				path = path[:strings.LastIndex(path, "/")+j]
+			}
+		} else {
+			path = path[:strings.Index(path, ";")]
+		}
+	}
+	return path, query
 }
 
 func isHex(c byte) bool { return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F' }
@@ -248,31 +293,10 @@ func firstQueryValue(query, name string) string {
 	return ""
 }
 
-func (h *kbServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		h.html(w, []byte(fmt.Sprintf(unsupportedMethod, htmlEscape(py.StrRepr(r.Method), false))), 501)
-		return
-	}
-	defer func() {
-		if rec := recover(); rec != nil {
-			// the Python handler would die with a traceback and drop the connection
-			fmt.Fprintf(os.Stderr, "kb serve: %v\n", rec)
-			panic(http.ErrAbortHandler)
-		}
-	}()
-	target := r.RequestURI
-	if i := strings.Index(target, "://"); i >= 0 {
-		rest := target[i+3:]
-		if j := strings.Index(rest, "/"); j >= 0 {
-			target = rest[j:]
-		} else {
-			target = ""
-		}
-	}
-	if i := strings.Index(target, "#"); i >= 0 {
-		target = target[:i]
-	}
-	rawPath, rawQuery, _ := strings.Cut(target, "?")
+// get is Handler.do_GET, for the request target as http.server passes it on (a leading "//" already
+// collapsed): urlparse, unquote, route.
+func (h *kbServer) get(w *resp, target string) {
+	rawPath, rawQuery := urlPathQuery(target)
 	path := unquote(rawPath, false)
 	db := connectIndex(h.root)
 	defer db.Close()
@@ -294,14 +318,14 @@ func (h *kbServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/reindex":
 		db.Close()
 		buildIndex(h.root)
-		w.Header().Set("Location", "/")
-		w.WriteHeader(302)
+		w.status = 302
+		w.set("Location", "/")
 	default:
 		h.html(w, page("not found", "<h1>not found</h1>"), 404)
 	}
 }
 
-func (h *kbServer) original(w http.ResponseWriter, name string) {
+func (h *kbServer) original(w *resp, name string) {
 	if !originalNameRE.MatchString(name) {
 		h.html(w, page("not found", "<h1>not found</h1>"), 404)
 		return
@@ -381,7 +405,7 @@ func (h *kbServer) cards(db *sql.DB) string {
 	return strings.Join(out, "")
 }
 
-func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
+func (h *kbServer) statement(w *resp, db *sql.DB, sid string) {
 	rows := query(db, "SELECT * FROM statements WHERE id = ?", sid)
 	if len(rows) == 0 {
 		h.html(w, page(sid, "<h1>"+esc(sid)+" not found</h1>"), 404)
@@ -460,7 +484,7 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 	h.html(w, page(sid+" "+sqlStr(s["title"]), strings.Join(out, "")), 200)
 }
 
-func (h *kbServer) evidence(w http.ResponseWriter, db *sql.DB, sid string) {
+func (h *kbServer) evidence(w *resp, db *sql.DB, sid string) {
 	if sid == "" {
 		out := []string{"<h1>evidence</h1><table><tr><th>item</th><th>title</th><th>mode</th><th>filter / extractor</th><th>recorded</th></tr>"}
 		for _, s := range query(db, "SELECT * FROM sessions ORDER BY snapshot_at") {
@@ -499,7 +523,7 @@ func (h *kbServer) evidence(w http.ResponseWriter, db *sql.DB, sid string) {
 	h.html(w, page(sqlStr(titleOrID), strings.Join(out, "")), 200)
 }
 
-func (h *kbServer) user(w http.ResponseWriter, db *sql.DB, uid string) {
+func (h *kbServer) user(w *resp, db *sql.DB, uid string) {
 	out := []string{"<h1>" + esc(uid) + "</h1><h2>attested</h2>"}
 	for _, s := range query(db, "SELECT s.* FROM statements s JOIN attestations a ON a.statement = s.id WHERE a.by_user = ? ORDER BY s.id", uid) {
 		out = append(out, statementCard(db, s, false))
@@ -533,7 +557,7 @@ func tryQuery(db *sql.DB, q string, args ...any) (rows []row, err error) {
 	return query(db, q, args...), nil
 }
 
-func (h *kbServer) search(w http.ResponseWriter, db *sql.DB, q string) {
+func (h *kbServer) search(w *resp, db *sql.DB, q string) {
 	out := []string{`<h1>search</h1><form><input name="q" value="` + esc(q) + `" size="50"></form>`}
 	if q != "" {
 		out = append(out, "<h2>statements</h2>")
@@ -579,16 +603,13 @@ func runServe(ns argparse.Namespace) int {
 	flushStdout()
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
-	srv := &http.Server{Handler: &kbServer{root}, ErrorLog: nil}
 	go func() {
 		<-stop
 		ln.Close()
 	}()
-	_ = srv.Serve(ln)
+	(&kbServer{root}).serve(ln)
 	return 0
 }
-
-var _ = utf8.RuneError
 
 func addServeParser(sub *argparse.Parser) {
 	p := sub.AddParser("serve", "HTML reading surface over the index")

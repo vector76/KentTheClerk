@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"kenttheclerk/internal/py"
@@ -191,7 +190,8 @@ type optTuple struct {
 	hasExplicit  bool
 }
 
-var negativeNumber = regexp.MustCompile(`^-\d+$|^-\d*\.\d+$`)
+// '^-\d+$|^-\d*\.\d+$' in Python: Unicode digits, and $ also before a final newline.
+var negativeNumber = regexp.MustCompile(`^-\p{Nd}+\n?$|^-\p{Nd}*\.\p{Nd}+\n?$`)
 
 func (p *Parser) optionMap() map[string]*Action {
 	m := map[string]*Action{}
@@ -599,8 +599,12 @@ func contains(l []string, s string) bool {
 // ---------------------------------------------------------------- help formatting
 
 func termWidth() int {
-	if c, err := strconv.Atoi(os.Getenv("COLUMNS")); err == nil && c > 0 {
-		return c
+	// shutil.get_terminal_size: int(os.environ["COLUMNS"]) when that parses and is positive
+	if n, ok := py.ParseInt(os.Getenv("COLUMNS")); ok && n.Sign() > 0 {
+		if !n.IsInt64() || n.Int64() > 1<<30 {
+			return 1 << 30
+		}
+		return int(n.Int64())
 	}
 	if c := terminalColumns(); c > 0 {
 		return c
@@ -609,13 +613,13 @@ func termWidth() int {
 }
 
 type formatter struct {
-	prog          string
-	width         int
-	maxHelpPos    int
-	indent        int
-	actionMaxLen  int
-	whitespace    *regexp.Regexp
-	longBreak     *regexp.Regexp
+	prog         string
+	width        int
+	maxHelpPos   int
+	indent       int
+	actionMaxLen int
+	whitespace   *regexp.Regexp
+	longBreak    *regexp.Regexp
 }
 
 func newFormatter(prog string) *formatter {

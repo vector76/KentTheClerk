@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 )
 
@@ -22,8 +23,14 @@ type Document struct {
 	cache        map[[2]int]Object
 	known        map[[2]int]bool
 	root         *Dict
-	depth        int
-	xrefOrder    []int // generations of xref in insertion order
+	// frame is the Python frame number of the code that would call
+	// get_object right now (see frames.go)
+	frame int
+	// work done so far (see frames.go)
+	formRuns, operations, outputRunes int
+	xrefOrder                         []int // generations of xref in insertion order
+	// searchCache memoizes searchObject
+	searchCache map[[2]int][]int
 }
 
 // raised carries a Python-style exception through panics so that the code
@@ -53,20 +60,19 @@ func must(o Object, err error) Object {
 	return o
 }
 
-// resolve is get_object(): references are followed (errors are raised).
+// resolve is get_object(): a reference is followed once (errors are
+// raised). Like pypdf, an object whose body is itself a reference resolves
+// to that reference, not to its target.
 func (d *Document) resolve(o Object) Object {
-	for i := 0; i < 32; i++ {
-		r, ok := o.(Ref)
-		if !ok {
-			return o
-		}
-		v, err := d.getObject(r)
-		if err != nil {
-			raise(err)
-		}
-		o = v
+	r, ok := o.(Ref)
+	if !ok {
+		return o
 	}
-	return o
+	v, err := d.getObject(r)
+	if err != nil {
+		raise(err)
+	}
+	return v
 }
 
 // resolveOpt returns dict[key] resolved, or nil when absent.
@@ -100,6 +106,7 @@ func openDocument(data []byte) (*Document, error) {
 		cache:      map[[2]int]Object{},
 		known:      map[[2]int]bool{},
 	}
+	d.frame = frameOpen
 	if err := catch(d.read); err != nil {
 		return nil, err
 	}
@@ -225,7 +232,11 @@ func (d *Document) read() error {
 			}
 		}
 	}
-	for gen, entries := range d.xref {
+	for _, gen := range append([]int(nil), d.xrefOrder...) { // insertion order, like the Python dict
+		entries, ok := d.xref[gen]
+		if !ok {
+			continue
+		}
 		if gen == 65535 {
 			continue
 		}
@@ -251,11 +262,7 @@ func sortedKeys(m map[int]int) []int {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	for i := 1; i < len(keys); i++ {
-		for j := i; j > 0 && keys[j] < keys[j-1]; j-- {
-			keys[j], keys[j-1] = keys[j-1], keys[j]
-		}
-	}
+	slices.Sort(keys)
 	return keys
 }
 
@@ -563,8 +570,14 @@ func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 				return false, pyErr("PdfReadError", "Unexpected empty line in Xref table.")
 			}
 			for len(line) > 0 && (line[0] == '\r' || line[0] == '\n') {
+				before := p.pos
 				p.back(19)
 				line = p.read(20)
+				if p.pos <= before {
+					// Near the end of the file this realignment stops moving
+					// and pypdf loops forever; fail instead (deliberate).
+					return false, pyErr("PdfReadError", "xref table entry realignment makes no progress")
+				}
 			}
 			if len(line) > 0 {
 				last := line[len(line)-1]
@@ -696,11 +709,17 @@ func loadRecoveryCache(data []byte) map[int][2]int {
 func (d *Document) rebuildXrefTable() error {
 	d.xref = map[int]map[int]int{}
 	d.xrefOrder = nil
+	keyOrder := map[int][]int{} // per generation, first-insertion order
 	findPDFObjects(d.data, func(num, gen, start int) {
-		d.ensureGen(gen)[num] = start
+		m := d.ensureGen(gen)
+		if _, seen := m[num]; !seen {
+			keyOrder[gen] = append(keyOrder[gen], num)
+		}
+		m[num] = start
 	})
-	for _, entries := range d.xref {
-		for _, num := range sortedKeys(entries) {
+	for _, gen := range d.xrefOrder {
+		entries := d.xref[gen]
+		for _, num := range keyOrder[gen] {
 			_ = catch(func() error {
 				q := newParser(d, entries[num])
 				if _, _, err := d.readObjectHeader(q); err != nil {
@@ -955,9 +974,20 @@ func (d *Document) readObjectHeader(p *parser) (int, int, error) {
 	return int(n), int(g), nil
 }
 
+// searchObject finds the first "\s<num>\s+<gen>\s+obj" in the file. The
+// file never changes, so results are cached per object.
 func (d *Document) searchObject(num, gen int) []int {
+	key := [2]int{num, gen}
+	if m, ok := d.searchCache[key]; ok {
+		return m
+	}
 	re := regexp.MustCompile(fmt.Sprintf(`[ \t\n\r\f\v]%d[ \t\n\r\f\v]+%d[ \t\n\r\f\v]+obj`, num, gen))
-	return re.FindIndex(d.data)
+	m := re.FindIndex(d.data)
+	if d.searchCache == nil {
+		d.searchCache = map[[2]int][]int{}
+	}
+	d.searchCache[key] = m
+	return m
 }
 
 // getObject is PdfReader.get_object.
@@ -966,10 +996,9 @@ func (d *Document) getObject(r Ref) (Object, error) {
 	if v, ok := d.cache[key]; ok && v != nil {
 		return v, nil
 	}
-	d.depth++
-	defer func() { d.depth-- }()
-	if d.depth > 300 {
-		return nil, pyErr("RecursionError", "maximum recursion depth exceeded")
+	// IndirectObject.get_object -> PdfReader.get_object -> read_object
+	if d.frame+3 > pyRecursionLimit {
+		return nil, recursionError()
 	}
 	var retval Object
 	if _, inStm := d.xrefObjStm[r.Num]; r.Gen == 0 && inStm {
@@ -1019,12 +1048,30 @@ func (d *Document) getObject(r Ref) (Object, error) {
 		}
 	}
 	d.cache[key] = retval
+	if err := refBodyError(retval); err != nil {
+		return nil, err
+	}
 	return retval, nil
+}
+
+// refBodyError: an object whose body is just a reference is stored in the
+// cache, but setting its indirect_reference then raises AttributeError (the
+// first access fails, later ones return the reference itself).
+func refBodyError(o Object) error {
+	if _, isRef := o.(Ref); isRef {
+		return pyErr("AttributeError", "property 'indirect_reference' of 'IndirectObject' object has no setter")
+	}
+	return nil
 }
 
 func (d *Document) getObjectFromStream(r Ref) (Object, error) {
 	stmnum := d.xrefObjStm[r.Num][0]
+	// _get_object_from_stream runs at frame+3 and resolves the stream
+	// through IndirectObject(stmnum).get_object()
+	base := d.frame
+	d.frame = base + 3
 	so, err := d.getObject(Ref{Num: stmnum})
+	d.frame = base
 	if err != nil {
 		return nil, err
 	}
@@ -1056,7 +1103,7 @@ func (d *Document) getObjectFromStream(r Ref) (Object, error) {
 	if maxN := len(data) / 3; n > maxN {
 		n = maxN
 	}
-	sp := &parser{data: data, doc: d}
+	sp := &parser{data: data, doc: d, frame: base + 4}
 	type entry struct{ num, off int }
 	var index []entry
 	for i := 0; i < n; i++ {
@@ -1102,6 +1149,9 @@ func (d *Document) getObjectFromStream(r Ref) (Object, error) {
 		}
 		if auth, ok := d.xrefObjStm[e.num]; ok && auth[0] == stmnum {
 			d.cache[[2]int{0, e.num}] = o
+			if err := refBodyError(o); err != nil {
+				return nil, err
+			}
 		}
 		if e.num == r.Num {
 			target = o
@@ -1139,7 +1189,10 @@ func (d *Document) rootObject() *Dict {
 				size = int(v)
 			}
 		}
-		for i := 0; i < size && i < 10000; i++ {
+		for i := 0; i < size; i++ {
+			if i >= 10000 { // root_object_recovery_limit
+				raise(pyErr("LimitReachedError", "Maximum Root object recovery limit reached."))
+			}
 			var obj Object
 			_ = catch(func() error {
 				var e error
@@ -1167,6 +1220,9 @@ func (d *Document) rootObject() *Dict {
 // pages is PdfDocCommon._flatten: copies of the page dictionaries, with
 // inherited attributes filled in.
 func (d *Document) pages() []*Dict {
+	saved := d.frame
+	defer func() { d.frame = saved }()
+	d.frame = frameFlattenRoot
 	catalog := d.rootObject()
 	po, ok := catalog.Get("/Pages")
 	if !ok {
@@ -1180,8 +1236,13 @@ func (d *Document) pages() []*Dict {
 	var out []*Dict
 	inherit := newDict()
 	visited := map[*Dict]bool{}
-	var walk func(node *Dict, self Object)
-	walk = func(node *Dict, self Object) {
+	var walk func(node *Dict, self Object, level int)
+	walk = func(node *Dict, self Object, level int) {
+		// _flatten recurses once per tree level
+		if frameFlattenRoot+level > pyRecursionLimit {
+			raise(recursionError())
+		}
+		d.frame = frameFlattenRoot + level
 		var t Object
 		if node.Has("/Type") {
 			t = d.resolve(node.m["/Type"])
@@ -1225,7 +1286,8 @@ func (d *Document) pages() []*Dict {
 					raise(pyErr("PdfReadError", "Detected cyclic page references."))
 				}
 				visited[kd] = true
-				walk(kd, kid)
+				walk(kd, kid, level+1)
+				d.frame = frameFlattenRoot + level
 			}
 		case Name("/Page"):
 			for _, a := range inherit.Keys() {
@@ -1239,7 +1301,7 @@ func (d *Document) pages() []*Dict {
 			out = append(out, node.copyDict())
 		}
 	}
-	walk(pages, po)
+	walk(pages, po, 0)
 	return out
 }
 
