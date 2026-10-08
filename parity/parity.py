@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Parity harness: runs the Python kb (kb.py) and the Go kb side by side and compares what they do.
+"""Parity harness: runs the retired Python recorder and the Go kb side by side and compares what they do.
 
-    python parity/parity.py [--kb ../convkb] [--go path/to/kb.exe] [--work DIR] [--report FILE] [--only SECTION]
+The Python recorder (kb.py, kb/*.py) was retired after commit d1333a5. To run the harness, extract it
+from that commit to a folder of its own, outside this checkout:
+
+    git archive d1333a5 kb.py kb | tar -x -C <folder>
+    python parity/parity.py --python-kb <folder>/kb.py [--kb ../convkb] [--go path/to/kb.exe]
+                            [--work DIR] [--report FILE] [--only SECTION]
 
 Every case runs each version in turn in the same freshly made copy of a knowledge base (a copy of the
 real one, or an empty one), at the same path, so outputs can be compared byte for byte. The real
@@ -10,12 +15,12 @@ session files `kb snapshot` reads are copied into a private projects folder (CLA
 conversation still being written cannot make the two runs differ.
 
 What is compared, per case: exit status, stdout, stderr, and every file the command created, changed
-or deleted. Differences the design allows are normalised away and listed in the report: the snapshot
-and ingest headers' snapshot_at / ingested_at / system_version / system_hash / source, statement-file
-timestamps and stamps, the install folder `kb where` prints, the files `kb version` hashes, and the
-text of an unexpected crash (Python prints a traceback, Go one line; both exit 1).
+or deleted, as raw bytes. Only these values are blanked: the time of an act, system_hash, and
+system_version (the two versions differ; a separate case checks each writes the version it reports).
+An unexpected crash must raise the same exception with the same message in both (Python prints a
+traceback, Go one line). Remaining differences are listed in the report with their reasons.
 
-Needs: Python 3.13 with the repository's kb.py, Go (unless --go is given), Windows or POSIX.
+Needs: Python 3.13 (with pypdf for the PDF cases), Go (unless --go is given), Windows or POSIX.
 """
 from __future__ import annotations
 
@@ -37,7 +42,7 @@ import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-PY_KB = [sys.executable, str(REPO / "kb.py")]
+PY_KB: list[str] = []  # set from --python-kb
 
 # ---------------------------------------------------------------- bookkeeping
 
@@ -122,7 +127,8 @@ def workspace(base: str) -> Path:
 # What legitimately differs between the two runs: the time of the act and the content hash of the system.
 # Only those values are blanked, in the raw bytes; everything else (key order, escaping, number format,
 # source, system_version) must be identical.
-HEADER_VOLATILE_RE = re.compile(rb'"(snapshot_at|ingested_at|system_hash)": "[^"]*"')
+HEADER_VOLATILE_RE = re.compile(rb'"(snapshot_at|ingested_at|system_hash|system_version)": "[^"]*"')
+VERSION_RE = re.compile(rb'^(\s*(?:- )?(?:withdrawn_)?system_version): .*?(\r?)$', re.M)
 TS_RE = re.compile(rb'"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00"')
 HASH_RE = re.compile(rb'^(\s*(?:- )?(?:withdrawn_)?system_hash): "sha256:[0-9a-f]{64}"', re.M)
 
@@ -132,7 +138,7 @@ def norm_file(rel: str, data: bytes) -> bytes:
         first, nl, rest = data.partition(b"\n")
         return HEADER_VOLATILE_RE.sub(rb'"\1": "<volatile>"', first) + nl + rest
     if rel.endswith(".md"):
-        return HASH_RE.sub(rb'\1: "<HASH>"', TS_RE.sub(b'"<TS>"', data))
+        return VERSION_RE.sub(rb"\1: <VERSION>\2", HASH_RE.sub(rb'\1: "<HASH>"', TS_RE.sub(b'"<TS>"', data)))
     return data
 
 
@@ -262,13 +268,13 @@ def documents_of(kb: Path):
 
 
 def meta_of(p: Path) -> dict:
-    sys.path.insert(0, str(REPO))
+    sys.path.insert(0, str(Path(PY_KB[1]).parent))
     from kb.common import parse_frontmatter  # noqa: E402
     return parse_frontmatter(p.read_text(encoding="utf-8"))[0]
 
 
 def body_of(p: Path) -> str:
-    sys.path.insert(0, str(REPO))
+    sys.path.insert(0, str(Path(PY_KB[1]).parent))
     from kb.common import load_statement  # noqa: E402
     return load_statement(p).body
 
@@ -315,10 +321,17 @@ def sec_location():
     pair(S, "kb where, nothing found", [["where"]], base="empty", cwd_sub="..", norm=kent_line)
     # kb version: same version line; the hash covers different files by design
     o = {impl: run(impl, ["version"], G.work) for impl in ("py", "go")}
-    same_ver = o["py"].stdout.splitlines()[0] == o["go"].stdout.splitlines()[0]
-    record(S, "kb version", "expected" if same_ver else "diff",
-           f"version lines {'equal' if same_ver else 'differ'}: {o['py'].stdout.splitlines()[0]!r}; hashes differ by design "
-           f"(py {o['py'].stdout.splitlines()[1][13:30]}…, go {o['go'].stdout.splitlines()[1][13:30]}…)")
+    vers = {impl: o[impl].stdout.splitlines()[0].split(": ", 1)[1] for impl in o}
+    record(S, "kb version", "expected", f"py {vers['py']}, go {vers['go']}: the Go recorder is the newer version, and "
+           "its hash covers its own files")
+    for impl in ("py", "go"):
+        w = workspace("empty")
+        sid = G.session_ids[0][0]
+        run(impl, ["snapshot", sid, "--user", "jamie"], w)
+        written = [json.loads(p.read_text(encoding="utf-8").splitlines()[0]) for p in (w / "evidence").glob("*.jsonl")]
+        ok = written and all(h.get("system_version") == vers[impl] for h in written)
+        record(S, f"{impl} stamps the version it reports", "same" if ok else "diff",
+               f"{vers[impl]}" if ok else repr([h.get("system_version") for h in written]))
     pair(S, "no user id", [["ingest", "x.md"]], base="convkb",
          env=lambda w: base_env({"USERPROFILE": str(w / "evidence"), "HOME": str(w / "evidence")}, drop=("KB_USER",)))
     pair(S, "user from ~/.kenttheclerk.json", [["snapshot", G.session_ids[0][0]]], base="convkb",
@@ -973,11 +986,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--kb", default=next((str(d / "convkb") for d in REPO.parents if (d / "convkb" / "attested").is_dir()), None),
                     help="knowledge base to copy (read only; default: a convkb folder beside the repository)")
+    ap.add_argument("--python-kb", required=True, help="kb.py of the retired Python recorder (see above)")
     ap.add_argument("--go", help="Go kb executable (default: build one)")
     ap.add_argument("--work", help="work folder (default: a new short temp folder)")
     ap.add_argument("--report", default=str(REPO / "parity" / "last-run.md"))
     ap.add_argument("--only", action="append", help="run only these sections: " + ", ".join(SECTIONS))
     a = ap.parse_args()
+    PY_KB[:] = [sys.executable, str(Path(a.python_kb).resolve())]
     G.real_kb = Path(a.kb).resolve()
     G.work = Path(a.work) if a.work else Path(tempfile.mkdtemp(prefix="kp", dir=os.environ.get("TEMP") or None))
     G.work.mkdir(parents=True, exist_ok=True)

@@ -1,16 +1,17 @@
 # Procedure
 
-`kb` is `python <kent>/kb.py`, where `<kent>` is the folder Kent the Clerk is installed in. It
+`kb` is the executable `<kent>/kb` (`kb.exe` on Windows), where `<kent>` is the folder Kent the Clerk
+is installed in. It
 operates on the knowledge base named by the environment variable `KENT_KB`, or, if that is unset, the
 one found in the current folder or above; `kb where` prints both folders. Paths to the record in
 these files, such as `attested/` or `off-record/drafts/`, are inside the knowledge base, and a
 relative draft path given to `kb` is read from there. The human's id comes from `--user`, `KB_USER`,
 or `~/.kenttheclerk.json` (`{"user": "<id>"}`); use stable ids, never display names.
 
-Run `kb` exactly as the CLAUDE.md block writes it, `python "$KENT_HOME/kb.py" <command>` (or the
-PowerShell form), with nothing before it: the project's permissions allow that form, and a prefix such
-as `export ...;` makes each command ask the human again. `PYTHONIOENCODING` is already set in the
-project's settings. Write drafts with your file-writing tool, not through the shell; the permissions
+Run `kb` exactly as the CLAUDE.md block writes it, `"$KENT_HOME/kb" <command>` (or the PowerShell
+form), with nothing before it: the project's permissions allow that form, and a prefix such as
+`export ...;` makes each command ask the human again. Write drafts with your file-writing tool, not
+through the shell; the permissions
 allow writing in `off-record/drafts/` and forbid editing `attested/`, `evidence/` and `agent/`.
 
 ## Attesting a statement

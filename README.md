@@ -156,10 +156,14 @@ them like any other statement.
 
 ## Getting set up and working day to day
 
-- **Install Kent the Clerk once, outside your repositories,** the way you install an interpreter:
-  put its files in a folder of your choosing. Nothing of Kent goes into your code repository or
-  your knowledge base, and it doesn't need to be on your PATH. It needs Python 3 and nothing else,
-  except that reading PDFs needs `pypdf` or `pdftotext`.
+- **Install Kent the Clerk once, outside your repositories,** the way you install a tool: download
+  the zip for your platform from the project's GitHub releases and unpack it into a folder of your
+  choosing. The folder holds the `kb` executable (`kb.exe` on Windows) beside this page, the rules
+  and the front-end block; keep them together. Nothing of Kent goes into your code repository or
+  your knowledge base, it doesn't need to be on your PATH, and nothing else needs installing. On
+  macOS the executable is not notarized, so clear its quarantine flag once:
+  `xattr -d com.apple.quarantine kb`. To build it from a source checkout instead, run
+  `go build -o kb ./cmd/kb` (`-o kb.exe` on Windows) in the checkout's top folder.
 - **Give your knowledge its own folder.** Usually it sits beside your code repository as a
   repository of its own; it can also sit inside the code repository. To start, create it with empty
   `attested/` and `evidence/` folders; `kb` looks for them to find the record. The record fills
@@ -171,14 +175,13 @@ them like any other statement.
   {
     "env": {
       "KENT_HOME": "C:/tools/KentTheClerk",
-      "KENT_KB": "C:/work/myproject-knowledge",
-      "PYTHONIOENCODING": "utf-8"
+      "KENT_KB": "C:/work/myproject-knowledge"
     },
     "permissions": {
       "additionalDirectories": ["C:/tools/KentTheClerk", "C:/work/myproject-knowledge"],
       "allow": [
-        "Bash(python \"$KENT_HOME/kb.py\" *)",
-        "PowerShell(python \"$env:KENT_HOME/kb.py\" *)",
+        "Bash(\"$KENT_HOME/kb\" *)",
+        "PowerShell(& \"$env:KENT_HOME/kb\" *)",
         "Edit(//c/work/myproject-knowledge/off-record/drafts/**)"
       ],
       "deny": [
@@ -215,7 +218,7 @@ them like any other statement.
   `kb` does not commit for you; commit when it suits you, or ask your agent to.
 - Tell `kb` who you are with a stable id, for example in `~/.kenttheclerk.json`: `{"user": "your-id"}`.
 - In your own terminal, run `kb` from inside the knowledge base's folder, where it finds the record
-  by itself: `python <Kent's folder>/kb.py <command>`. `serve` renders the knowledge base as pages
+  by itself: `<Kent's folder>/kb <command>`. `serve` renders the knowledge base as pages
   to read, with statements, conversations and their links all browsable; `check` verifies the whole
   record against the rules; `where` tells you which folders `kb` is using.
 

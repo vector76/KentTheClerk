@@ -27,11 +27,16 @@ jobs:
         run: |
           [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "tag $GITHUB_REF_NAME is not vX.Y.Z"; exit 1; }
       - uses: actions/checkout@v5
+      # the tag must be the version the source declares (defaultVersion in identity.go)
+      - name: check the version
+        shell: bash
+        run: |
+          grep -q "defaultVersion = \"${GITHUB_REF_NAME#v}\"" identity.go || { echo "identity.go does not declare ${GITHUB_REF_NAME#v}"; exit 1; }
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      # the differential tests compare with the exact Python and pypdf the port reproduces; without them
-      # they skip and only the golden-file tests run
+      # the differential tests compare with the Python behaviour the recorder reproduces (CPython 3.13.1's
+      # html.parser, json and mimetypes; pypdf 6.14.2 for pdf-v1); without them only the golden-file tests run
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13.1"

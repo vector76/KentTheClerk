@@ -1,5 +1,7 @@
-// Package kb is the recorder of Kent the Clerk: the Go port of kb.py and kb/*.py. Each command lives in
-// the file named after the Python module it reproduces; this file is kb/common.py.
+// Package kb is the recorder of Kent the Clerk. It began as a port of the Python recorder (kb.py and
+// kb/*.py, retired after commit d1333a5, where they can still be read); each command lives in the file
+// named after the Python module it was ported from, and comments that cite kb/<module>.py refer to that
+// version. This file was kb/common.py.
 package kb
 
 import (

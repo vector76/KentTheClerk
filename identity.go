@@ -8,7 +8,7 @@
 // parity harness, the generators or test data) and the shipped rule files (rules/*.md, procedure.md,
 // README.md, front-ends/*/*). identity_test.go fails if Go source is added where the patterns below do
 // not reach it. The hash is fixed when the binary is built, the same on every platform, and
-// computed the way the Python version computes it (sha256 over "path\0content\0" for each file in
+// computed the way the former Python recorder computed it (sha256 over "path\0content\0" for each file in
 // path order, CRLF normalised to LF). The version comes from the release tag, set at build time with
 //
 //	go build -ldflags "-X kenttheclerk.version=0.8.0" ./cmd/kb
@@ -29,9 +29,9 @@ import (
 //go:embed go.mod go.sum *.go cmd/kb/*.go internal/*/*.go rules/*.md procedure.md README.md front-ends/*/*
 var systemFS embed.FS
 
-// defaultVersion is what an untagged build reports. It is the version of the Python recorder this port
-// reproduces.
-const defaultVersion = "0.7.0"
+// defaultVersion is what an untagged build reports: the version of this source. A release tag must
+// name the same version (the release workflow checks), and it changes whenever the rules do.
+const defaultVersion = "0.8.0"
 
 // version is set from the release tag by the build ("-X kenttheclerk.version=..."); a leading "v" is dropped.
 var version string
