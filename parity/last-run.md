@@ -1,8 +1,8 @@
 # Parity run
 
-- commit: 529e304
+- commit: 156d1f9
 - OS: Windows-11-10.0.26300-SP0; Python 3.13.1; pypdf 6.14.2; Python's SQLite 3.45.3
-- go version go1.25.3 windows/amd64; Go kb: system_version: 0.7.0, system_hash: sha256:01dedd4e02ba22bd46a9fa889d7b6766c43ef787a652d739524a47b575758880
+- go version go1.25.3 windows/amd64; Go kb: system_version: 0.8.0, system_hash: sha256:6bd2a2567e3580368653dc6bde25a1d4faa9b3e39884ee0aaf1b2bea2539f67f
 - knowledge base copied from `convkb`: 15 sessions, 1 document(s)
 
 ## cli: 33 identical, 1 expected differences, 0 differing
@@ -42,7 +42,7 @@
 - same: kb attest -h, COLUMNS=50 — rc=0; 0 file(s) written
 - same: kb -h, COLUMNS=200 — rc=0; 0 file(s) written
 
-## location: 10 identical, 1 expected differences, 0 differing
+## location: 12 identical, 1 expected differences, 0 differing
 
 - same: no knowledge base — rc=1; 0 file(s) written
 - same: KENT_KB names a folder without the record — rc=1; 0 file(s) written
@@ -51,7 +51,9 @@
 - same: kb where (install folder normalised) — rc=0; 0 file(s) written
 - same: kb where, KENT_KB in other case (normalised) — rc=0; 0 file(s) written
 - same: kb where, nothing found — rc=1; 0 file(s) written
-- EXPECTED: kb version — version lines equal: 'system_version: 0.7.0'; hashes differ by design (py sha256:f94c210761…, go sha256:01dedd4e02…)
+- EXPECTED: kb version — py 0.7.0, go 0.8.0: the Go recorder is the newer version, and its hash covers its own files
+- same: py stamps the version it reports — 0.7.0
+- same: go stamps the version it reports — 0.8.0
 - same: no user id — rc=1; 0 file(s) written
 - same: user from ~/.kenttheclerk.json — rc=0; 2 file(s) written
 - same: user from the older ~/.convkb.json — rc=0; 2 file(s) written
@@ -304,17 +306,17 @@
 
 ## index: 7 identical, 0 expected differences, 0 differing
 
-- same: index.db contents (every table, sqlite3) — 5952 rows identical
-- same: search 'attest': Python and Go readers on Python- and Go-built indexes — 18 rows, all four combinations equal
+- same: index.db contents (every table, sqlite3) — 6176 rows identical
+- same: search 'attest': Python and Go readers on Python- and Go-built indexes — 19 rows, all four combinations equal
 - same: search 'kent rule': Python and Go readers on Python- and Go-built indexes — 11 rows, all four combinations equal
 - same: search 'python OR go': Python and Go readers on Python- and Go-built indexes — 18 rows, all four combinations equal
 - same: search '"S-0090"': Python and Go readers on Python- and Go-built indexes — 0 rows, all four combinations equal
 - same: search '"agent statement"': Python and Go readers on Python- and Go-built indexes — 18 rows, all four combinations equal
-- same: search 'superses*': Python and Go readers on Python- and Go-built indexes — 16 rows, all four combinations equal
+- same: search 'superses*': Python and Go readers on Python- and Go-built indexes — 18 rows, all four combinations equal
 
 ## serve: 2 identical, 1 expected differences, 0 differing
 
-- same: GET 136 pages (status, content type, body) — 136/136 identical
+- same: GET 140 pages (status, content type, body) — 140/140 identical
 - same: GET /reindex (redirect to /: status and Location) — py 302 /, go 302 /
 - EXPECTED: HTTP framing (not compared) — Python's http.server answers HTTP/1.0 (501 for other methods, its own error pages, odd URL forms); Go's net/http answers HTTP/1.1 (405 for other methods, Go's URL parsing). The pages themselves are compared above.
 
@@ -356,7 +358,7 @@
 - same: refused: amends an agent statement — rc=1; 1 file(s) written
 - same: refused: rests_on a missing statement — rc=1; 1 file(s) written
 - same: refused: rests_on written as a scalar — rc=1; 1 file(s) written
-- EXPECTED: crash: draft file missing — both raised FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Vector\\AppData\\Local\\Temp\\kp10\\kb\\off-record\\drafts\\missing.md' (Python prints a traceback, Go one line)
+- EXPECTED: crash: draft file missing — both raised FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Vector\\AppData\\Local\\Temp\\kp11\\kb\\off-record\\drafts\\missing.md' (Python prints a traceback, Go one line)
 - same: refused: snapshot mode change — rc=1; 0 file(s) written
 - same: record (seen in the turn it was made) — rc=0; 1 file(s) written
 - same: record (not yet seen) — rc=0; 1 file(s) written
@@ -377,14 +379,14 @@
 - same: refused: withdraw twice — rc=1; 1 file(s) written
 - same: refused: withdraw with a blank reason — rc=1; 0 file(s) written
 - same: refused: withdraw from an off-record turn — rc=1; 0 file(s) written
-- EXPECTED: absolute draft path — deliberate: Python's attest crashes on an absolute draft path (load_statement is given a str and calls .read_text on it); Go attests the draft / exit status py=1 go=0 / stdout: py has 0 lines, go has 1 lines /   go: 'attested S-0095 (proposed-and-agreed) by jamie: attested\\S-0095-recorder-in-go-parity-copy.md' / changed files differ: py only ['off-record/drafts/d.md'], go only ['attested/S-0095-r
+- EXPECTED: absolute draft path — deliberate: Python's attest crashes on an absolute draft path (load_statement is given a str and calls .read_text on it); Go attests the draft / exit status py=1 go=0 / stdout: py has 0 lines, go has 1 lines /   go: 'attested S-0099 (proposed-and-agreed) by jamie: attested\\S-0099-recorder-in-go-parity-copy.md' / changed files differ: py only ['off-record/drafts/d.md'], go only ['attested/S-0099-r
 - EXPECTED: absolute draft path (record) — deliberate: Python's record crashes the same way; Go records the draft / exit status py=1 go=0 / stdout: py has 0 lines, go has 1 lines /   go: 'recorded A-0006 by agent:claude-opus-5-5 (seen in the turn it was made): agent\\A-0006-agent-choice-parity-copy.md' / changed files differ: py only ['off-record/drafts/a.md'], go only ['agent/A-0006-agent-choice-parity-copy.md'] / stderr: py has 13 lines,
 
 ## cross: 3 identical, 0 expected differences, 0 differing
 
 - same: the same acts by each version — rc=0; 7 file(s) written
-- same: py kb check accepts the acts go made — 16 session(s), 1 document(s), 96 statement(s), 7 agent statement(s) (1 unseen): 0 error(s), 2 warning(s)
-- same: go kb check accepts the acts py made — 16 session(s), 1 document(s), 96 statement(s), 7 agent statement(s) (1 unseen): 0 error(s), 2 warning(s)
+- same: py kb check accepts the acts go made — 16 session(s), 1 document(s), 100 statement(s), 7 agent statement(s) (1 unseen): 0 error(s), 2 warning(s)
+- same: go kb check accepts the acts py made — 16 session(s), 1 document(s), 100 statement(s), 7 agent statement(s) (1 unseen): 0 error(s), 2 warning(s)
 
 ## re-snapshot vs the snapshot in the record
 
@@ -401,5 +403,5 @@
 - 445aec6b: py 450/450 recorded turn lines reproduced; go 450/450 recorded turn lines reproduced
 - 0bcc63e5: py 426/426 recorded turn lines reproduced; go 426/426 recorded turn lines reproduced
 - 8235b9f8: py 97/97 recorded turn lines reproduced; go 97/97 recorded turn lines reproduced
-- 3781af31: py 116/116 recorded turn lines reproduced; go 116/116 recorded turn lines reproduced
+- 3781af31: py 214/214 recorded turn lines reproduced; go 214/214 recorded turn lines reproduced
 - d10d91aa: py 78/78 recorded turn lines reproduced; go 78/78 recorded turn lines reproduced
