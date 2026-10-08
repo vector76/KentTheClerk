@@ -1,0 +1,51 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Pages /Kids [6 0 R] /Count 1 >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Font << /F1 2 0 R /F2 3 0 R >> >>
+endobj
+5 0 obj
+<< /Length 152 >>
+stream
+BT
+/F1 12 Tf
+72 720 Td
+(Times without encoding entry) Tj
+/F2 10 Tf
+0 -14 Td
+(Courier fixed pitch    spaces) Tj
+0 -14 Td
+(\351 latin1 via charmap) Tj
+ET
+
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Type /Catalog /Pages 1 0 R >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000072 00000 n 
+0000000144 00000 n 
+0000000239 00000 n 
+0000000292 00000 n 
+0000000495 00000 n 
+0000000599 00000 n 
+trailer
+<< /Size 8 /Root 7 0 R >>
+startxref
+648
+%%EOF

@@ -1,0 +1,598 @@
+package kb
+
+// kb serve — local HTML reading surface over index.db (kb/serve.py). The pages are byte-for-byte those
+// of the Python version; the HTTP framing is Go's (HTTP/1.1 and its own headers).
+
+import (
+	"database/sql"
+	"fmt"
+	"math/big"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"unicode/utf8"
+
+	"kenttheclerk/internal/argparse"
+	"kenttheclerk/internal/mimetypes"
+	"kenttheclerk/internal/py"
+)
+
+const serveCSS = `
+:root{--bg:#fff;--fg:#1b1b1b;--muted:#6b6b6b;--line:#e3e3e3;--accent:#2a5db0;--human:#f4f7fb;--agent:#fafafa;--client:#fff8e6;--doc:#f3f6f3;--mono:ui-monospace,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#161618;--fg:#e6e6e6;--muted:#9a9a9a;--line:#333;--accent:#8ab4ff;--human:#1d2330;--agent:#1c1c1e;--client:#2b2614;--doc:#1b211b}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,Segoe UI,sans-serif}
+header{border-bottom:1px solid var(--line);padding:.6rem 1.2rem;display:flex;gap:1.2rem;align-items:center}
+header a{color:var(--fg);text-decoration:none;font-weight:600}
+header form{margin-left:auto}header input{padding:.3rem .5rem;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg)}
+main{max-width:60rem;margin:0 auto;padding:1.2rem}
+a{color:var(--accent)}
+h1{font-size:1.5rem;margin:.2rem 0 .8rem}h2{font-size:1.15rem;margin:1.6rem 0 .5rem;border-bottom:1px solid var(--line)}
+.meta{color:var(--muted);font-size:.9rem}.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:0 .55rem;font-size:.8rem;color:var(--muted)}
+.stmt{border:1px solid var(--line);border-radius:6px;padding:1rem 1.2rem;margin:.8rem 0}
+.stmt .body{font-size:1.05rem}
+.turn{border-left:3px solid var(--line);padding:.5rem 1rem;margin:.6rem 0;border-radius:0 6px 6px 0}
+.turn.user{background:var(--human);border-color:var(--accent)}.turn.assistant{background:var(--agent)}.turn.client{background:var(--client)}.turn.document{background:var(--doc);border-color:var(--muted)}
+.turn:target{outline:2px solid var(--accent)}
+.turn .hd{font-size:.8rem;color:var(--muted);display:flex;gap:.8rem}.turn .hd a{color:var(--muted)}
+.tool{font:.82rem var(--mono);color:var(--muted)}
+table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--line);vertical-align:top}
+code{font:.9em var(--mono)}pre{overflow-x:auto;background:var(--agent);padding:.6rem;border-radius:4px}
+.dead{color:var(--muted);text-decoration:line-through dotted}
+table.dense{font-size:.88rem;line-height:1.3}table.dense td,table.dense th{padding:.15rem .5rem;white-space:nowrap}
+table.dense td:nth-child(3){white-space:normal}table.dense td:first-child a{font:.85em var(--mono)}tr.old td{color:var(--muted)}
+`
+
+// esc is html.escape("" if s is None else str(s)).
+func esc(v any) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return htmlEscape(s, true)
+	}
+	return htmlEscape(sqlStr(v), true)
+}
+
+func page(title, body string) []byte {
+	return []byte(`<!doctype html><html><head><meta charset="utf-8"><title>` + esc(title) + ` · Kent the Clerk</title>
+<style>` + serveCSS + `</style></head><body><header><a href="/">Kent the Clerk</a>
+<a href="/cards" style="font-weight:400">cards</a><a href="/e/" style="font-weight:400">evidence</a>
+<form action="/search"><input name="q" placeholder="search…"></form></header><main>` + body + `</main></body></html>`)
+}
+
+// sqlS is a TEXT column read as a Python str (None stays nil).
+func sqlS(v any) string {
+	if v == nil {
+		return ""
+	}
+	return sqlStr(v)
+}
+
+func truthy(v any) bool { return py.Truthy(sqlTruthy(v)) }
+
+func linkPointer(db *sql.DB, ptr any) string {
+	p, ok := ptr.(string)
+	if !truthy(ptr) || !ok || !strings.Contains(p, "#") {
+		return esc(ptr)
+	}
+	sess, uuid, _ := strings.Cut(p, "#")
+	rows := query(db, "SELECT t.session, t.label, t.author FROM turns t WHERE t.session LIKE ? AND t.uuid = ?", sess+"%", uuid)
+	if len(rows) == 0 {
+		return `<span class="dead" title="does not resolve here (off-record or missing)">` + esc(p) + `</span>`
+	}
+	r := rows[0]
+	return `<a href="/e/` + esc(r["session"]) + `#` + esc(uuid) + `">` + esc(r["label"]) + ` · ` + esc(py.Head(sess, 8)) + `#` + esc(py.Head(uuid, 8)) + `</a>`
+}
+
+func renderTurn(db *sql.DB, t row) string {
+	cls := sqlStr(t["role"])
+	if a := t["author"]; a == "client" || a == "tool" {
+		cls = "client"
+	}
+	body := ""
+	if truthy(t["text"]) {
+		body = renderMarkdown(sqlStr(t["text"]))
+	}
+	when := strings.ReplaceAll(py.Head(sqlS(t["timestamp"]), 19), "T", " ")
+	if truthy(t["locator"]) {
+		when = sqlStr(t["locator"])
+	}
+	var tools strings.Builder
+	for _, x := range strings.Split(sqlS(t["tool_calls"]), "; ") {
+		if x != "" {
+			tools.WriteString(`<div class="tool">⟨tool: ` + esc(x) + `⟩</div>`)
+		}
+	}
+	cites := query(db, "SELECT DISTINCT statement, kind FROM citations WHERE turn = ?", sqlStr(t["session"])+"#"+sqlStr(t["uuid"]))
+	citeHTML := ""
+	if len(cites) > 0 {
+		var parts []string
+		for _, c := range cites {
+			parts = append(parts, `<a href="/s/`+esc(c["statement"])+`">`+esc(c["statement"])+`</a> (`+esc(c["kind"])+`)`)
+		}
+		citeHTML = `<div class="meta">cited by ` + strings.Join(parts, ", ") + `</div>`
+	}
+	return `<div class="turn ` + cls + `" id="` + esc(t["uuid"]) + `"><div class="hd"><b>` + esc(t["label"]) + `</b>` +
+		`<span>` + esc(t["author"]) + `</span><span>` + esc(when) + `</span>` +
+		`<a href="#` + esc(t["uuid"]) + `">#</a></div>` + body + tools.String() + citeHTML + `</div>`
+}
+
+func splitComma(v any) []string { return strings.Split(sqlS(v), ",") }
+
+func statementCard(db *sql.DB, s row, full bool) string {
+	atts := query(db, "SELECT * FROM attestations WHERE statement = ? ORDER BY at", s["id"])
+	var whoParts []string
+	for _, a := range atts {
+		whoParts = append(whoParts, `<a href="/u/`+esc(a["by_user"])+`">`+esc(a["by_user"])+`</a>`)
+	}
+	who := strings.Join(whoParts, ", ")
+	if who == "" {
+		who = "<i>unattested</i>"
+	}
+	byline := "attested by " + who
+	if s["kind"] == "agent" {
+		seen := "<i>not yet seen</i>"
+		if truthy(s["seen_count"]) {
+			seen = "seen " + sqlStr(s["seen_count"]) + "×"
+		}
+		byline = `agent statement by <a href="/u/` + esc(s["originator"]) + `">` + esc(s["originator"]) + `</a> · ` + seen
+		if truthy(s["withdrawn_in"]) {
+			byline += ` · <span class="pill">withdrawn</span>`
+		}
+	}
+	sup := ""
+	if truthy(s["superseded_by"]) {
+		sup = ` <span class="pill">superseded by <a href="/s/` + esc(s["superseded_by"]) + `">` + esc(s["superseded_by"]) + `</a></span>`
+	}
+	for _, kl := range [][2]string{{"amended_by", "amended by"}, {"clarified_by", "clarified by"}} {
+		for _, x := range splitComma(s[kl[0]]) {
+			if x != "" {
+				sup += ` <span class="pill">` + kl[1] + ` <a href="/s/` + esc(x) + `">` + esc(x) + `</a></span>`
+			}
+		}
+	}
+	for _, key := range []string{"supersedes", "amends", "clarifies"} {
+		if truthy(s[key]) {
+			sup += ` <span class="pill">` + key + ` <a href="/s/` + esc(s[key]) + `">` + esc(s[key]) + `</a></span>`
+		}
+	}
+	head := `<div class="meta"><a href="/s/` + esc(s["id"]) + `"><b>` + esc(s["id"]) + `</b></a>` +
+		sup + ` · ` + byline + `</div><h3 style="margin:.2rem 0 .5rem">` + esc(s["title"]) + `</h3>`
+	bodyText := sqlStr(s["body"])
+	if !full {
+		bodyText = strings.SplitN(bodyText, "\n\n", 2)[0]
+	}
+	body := renderMarkdown(bodyText)
+	answers := ""
+	if truthy(s["answers"]) {
+		answers = `<div class="meta">answers: ` + esc(s["answers"]) + `</div>`
+	}
+	return `<div class="stmt">` + head + answers + `<div class="body">` + body + `</div></div>`
+}
+
+type kbServer struct{ root string }
+
+func (h *kbServer) send(w http.ResponseWriter, content []byte, status int, ctype string) {
+	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("Content-Length", fmt.Sprint(len(content)))
+	w.WriteHeader(status)
+	w.Write(content)
+}
+
+func (h *kbServer) html(w http.ResponseWriter, content []byte, status int) {
+	h.send(w, content, status, "text/html; charset=utf-8")
+}
+
+const unsupportedMethod = `<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Error response</title>
+    </head>
+    <body>
+        <h1>Error response</h1>
+        <p>Error code: 501</p>
+        <p>Message: Unsupported method (%s).</p>
+        <p>Error code explanation: 501 - Server does not support this operation.</p>
+    </body>
+</html>
+`
+
+// unquote is urllib.parse.unquote: %XX sequences decoded as UTF-8 with errors="replace"; malformed ones
+// are kept as they are.
+func unquote(s string, plus bool) string {
+	if plus {
+		s = strings.ReplaceAll(s, "+", " ")
+	}
+	if !strings.Contains(s, "%") {
+		return s
+	}
+	var out []byte
+	for i := 0; i < len(s); {
+		if s[i] == '%' && i+2 < len(s)+0 && i+2 <= len(s)-1 && isHex(s[i+1]) && isHex(s[i+2]) {
+			out = append(out, unhex(s[i+1])<<4|unhex(s[i+2]))
+			i += 3
+			continue
+		}
+		out = append(out, s[i])
+		i++
+	}
+	return strings.ToValidUTF8(string(out), "�")
+}
+
+func isHex(c byte) bool { return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F' }
+func unhex(c byte) byte {
+	switch {
+	case c >= 'a':
+		return c - 'a' + 10
+	case c >= 'A':
+		return c - 'A' + 10
+	}
+	return c - '0'
+}
+
+// firstQueryValue is (parse_qs(query).get(name) or [""])[0].
+func firstQueryValue(query, name string) string {
+	for _, part := range strings.Split(query, "&") {
+		k, v, ok := strings.Cut(part, "=")
+		if !ok || v == "" {
+			continue
+		}
+		if unquote(k, true) == name {
+			return unquote(v, true)
+		}
+	}
+	return ""
+}
+
+func (h *kbServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		h.html(w, []byte(fmt.Sprintf(unsupportedMethod, htmlEscape(py.StrRepr(r.Method), false))), 501)
+		return
+	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			// the Python handler would die with a traceback and drop the connection
+			fmt.Fprintf(os.Stderr, "kb serve: %v\n", rec)
+			panic(http.ErrAbortHandler)
+		}
+	}()
+	target := r.RequestURI
+	if i := strings.Index(target, "://"); i >= 0 {
+		rest := target[i+3:]
+		if j := strings.Index(rest, "/"); j >= 0 {
+			target = rest[j:]
+		} else {
+			target = ""
+		}
+	}
+	if i := strings.Index(target, "#"); i >= 0 {
+		target = target[:i]
+	}
+	rawPath, rawQuery, _ := strings.Cut(target, "?")
+	path := unquote(rawPath, false)
+	db := connectIndex(h.root)
+	defer db.Close()
+	switch {
+	case path == "/":
+		h.html(w, page("overview", h.overview(db)), 200)
+	case path == "/cards":
+		h.html(w, page("cards", h.cards(db)), 200)
+	case strings.HasPrefix(path, "/s/"):
+		h.statement(w, db, path[3:])
+	case strings.HasPrefix(path, "/e/"):
+		h.evidence(w, db, path[3:])
+	case strings.HasPrefix(path, "/u/"):
+		h.user(w, db, path[3:])
+	case strings.HasPrefix(path, "/o/"):
+		h.original(w, path[3:])
+	case path == "/search":
+		h.search(w, db, firstQueryValue(rawQuery, "q"))
+	case path == "/reindex":
+		db.Close()
+		buildIndex(h.root)
+		w.Header().Set("Location", "/")
+		w.WriteHeader(302)
+	default:
+		h.html(w, page("not found", "<h1>not found</h1>"), 404)
+	}
+}
+
+func (h *kbServer) original(w http.ResponseWriter, name string) {
+	if !originalNameRE.MatchString(name) {
+		h.html(w, page("not found", "<h1>not found</h1>"), 404)
+		return
+	}
+	for _, mode := range []string{"on-record", "off-record"} {
+		p := filepath.Join(originalsDir(h.root, mode), name)
+		if py.IsFile(p) {
+			ctype := mimetypes.GuessType(name)
+			if ctype == "" {
+				ctype = "application/octet-stream"
+			}
+			b, err := os.ReadFile(p)
+			if err != nil {
+				py.RaiseOS(err)
+			}
+			h.send(w, b, 200, ctype)
+			return
+		}
+	}
+	h.html(w, page("not found", "<h1>original not found</h1>"), 404)
+}
+
+func (h *kbServer) overview(db *sql.DB) string {
+	out := []string{`<h1>Kent the Clerk</h1><table class="dense"><tr><th>id</th><th>statement</th><th>relations</th><th>attested by</th></tr>`}
+	for _, s := range query(db, "SELECT * FROM statements ORDER BY id") {
+		var whos []string
+		for _, r := range query(db, "SELECT by_user FROM attestations WHERE statement = ? ORDER BY at", s["id"]) {
+			if r["by_user"] == nil {
+				py.Raise("TypeError", "sequence item 0: expected str instance, NoneType found")
+			}
+			whos = append(whos, sqlStr(r["by_user"]))
+		}
+		who := strings.Join(whos, ", ")
+		if s["kind"] == "agent" {
+			who = "agent: " + sqlStr(s["originator"])
+			if !truthy(s["seen_count"]) {
+				who += " (unseen)"
+			}
+		}
+		var marks []string
+		for _, kl := range [][2]string{{"superseded_by", "→"}, {"supersedes", "⇐"}, {"amends", "amends"},
+			{"amended_by", "amended by"}, {"clarifies", "clarifies"}, {"clarified_by", "clarified by"}} {
+			for _, x := range splitComma(s[kl[0]]) {
+				if x != "" {
+					marks = append(marks, kl[1]+` <a href="/s/`+esc(x)+`">`+esc(x)+`</a>`)
+				}
+			}
+		}
+		cls := ""
+		if truthy(s["superseded_by"]) || truthy(s["withdrawn_in"]) {
+			cls = ` class="old"`
+		}
+		out = append(out, `<tr`+cls+`><td><a href="/s/`+esc(s["id"])+`">`+esc(s["id"])+`</a></td>`+
+			`<td><a href="/s/`+esc(s["id"])+`">`+esc(s["title"])+`</a></td><td>`+strings.Join(marks, " ")+`</td><td>`+esc(who)+`</td></tr>`)
+	}
+	out = append(out, `</table>`)
+	out = append(out, `<h2><a href="/e/">evidence</a></h2><table class="dense"><tr><th>item</th><th>title</th><th>mode</th><th>turns</th></tr>`)
+	for _, s := range query(db, "SELECT * FROM sessions ORDER BY snapshot_at") {
+		var size string
+		if s["kind"] == "document" {
+			size = esc(s["turn_count"]) + ` chunks of ` + esc(s["original_name"])
+		} else {
+			size = esc(s["human_turns"]) + ` human / ` + esc(s["turn_count"])
+		}
+		out = append(out, `<tr><td><a href="/e/`+esc(s["id"])+`">`+esc(py.Head(sqlStr(s["id"]), 8))+`</a> <span class="pill">`+esc(s["kind"])+`</span></td>`+
+			`<td>`+esc(s["title"])+`</td><td>`+esc(s["mode"])+`</td><td>`+size+`</td></tr>`)
+	}
+	out = append(out, `</table><p class="meta"><a href="/cards">card view</a> · <a href="/reindex">rebuild index</a></p>`)
+	return strings.Join(out, "")
+}
+
+func (h *kbServer) cards(db *sql.DB) string {
+	out := []string{"<h1>Kent the Clerk</h1>"}
+	for _, s := range query(db, "SELECT * FROM statements ORDER BY id") {
+		out = append(out, statementCard(db, s, false))
+	}
+	return strings.Join(out, "")
+}
+
+func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
+	rows := query(db, "SELECT * FROM statements WHERE id = ?", sid)
+	if len(rows) == 0 {
+		h.html(w, page(sid, "<h1>"+esc(sid)+" not found</h1>"), 404)
+		return
+	}
+	s := rows[0]
+	out := []string{statementCard(db, s, true)}
+	out = append(out, "<h2>provenance</h2><table>")
+	agent := s["kind"] == "agent"
+	l1, l2 := "originator", "proposed in"
+	if agent {
+		l1, l2 = "author", "made in"
+	}
+	out = append(out, "<tr><th>"+l1+"</th><td><a href='/u/"+esc(s["originator"])+"'>"+esc(s["originator"])+"</a></td></tr>")
+	out = append(out, "<tr><th>"+l2+"</th><td>"+linkPointer(db, s["proposed_in"])+"</td></tr>")
+	for _, c := range query(db, "SELECT turn, kind FROM citations WHERE statement = ? AND kind IN ('seen', 'withdrawal')", sid) {
+		out = append(out, "<tr><th>"+esc(c["kind"])+"</th><td>"+linkPointer(db, c["turn"])+"</td></tr>")
+	}
+	if truthy(s["rests_on"]) {
+		var links []string
+		for _, x := range splitComma(s["rests_on"]) {
+			if x != "" {
+				links = append(links, "<a href='/s/"+esc(x)+"'>"+esc(x)+"</a>")
+			}
+		}
+		out = append(out, "<tr><th>rests on</th><td>"+strings.Join(links, ", ")+"</td></tr>")
+	}
+	if truthy(s["modified_in"]) {
+		out = append(out, "<tr><th>modified in</th><td>"+linkPointer(db, s["modified_in"])+"</td></tr>")
+	}
+	for _, a := range query(db, "SELECT * FROM attestations WHERE statement = ? ORDER BY at", sid) {
+		out = append(out, "<tr><th>attested ("+esc(a["form"])+")</th><td><a href='/u/"+esc(a["by_user"])+"'>"+esc(a["by_user"])+"</a> "+
+			"at "+esc(py.Head(sqlS(a["at"]), 19))+" · "+linkPointer(db, a["turn"])+"</td></tr>")
+	}
+	for _, c := range query(db, "SELECT turn FROM citations WHERE statement = ? AND kind = 'background'", sid) {
+		out = append(out, "<tr><th>background</th><td>"+linkPointer(db, c["turn"])+"</td></tr>")
+	}
+	for _, key := range []string{"supersedes", "superseded_by", "amends", "amended_by", "clarifies", "clarified_by"} {
+		if truthy(s[key]) {
+			var links []string
+			for _, x := range splitComma(s[key]) {
+				if x != "" {
+					links = append(links, "<a href='/s/"+esc(x)+"'>"+esc(x)+"</a>")
+				}
+			}
+			out = append(out, "<tr><th>"+esc(strings.ReplaceAll(key, "_", " "))+"</th><td>"+strings.Join(links, ", ")+"</td></tr>")
+		}
+	}
+	if truthy(s["topics"]) {
+		out = append(out, "<tr><th>topics</th><td>"+esc(s["topics"])+"</td></tr>")
+	}
+	out = append(out, "<tr><th>file</th><td><code>"+esc(s["path"])+"</code></td></tr></table>")
+	if truthy(s["modified_in"]) {
+		out = append(out, "<h2>agreed with modification — check by reading</h2>")
+		for _, lp := range [][2]any{{"proposal", s["proposed_in"]}, {"modification", s["modified_in"]}} {
+			sess, uuid, ok := strings.Cut(sqlStr(lp[1]), "#")
+			if !ok {
+				py.Raise("ValueError", "not enough values to unpack (expected 2, got 1)")
+			}
+			ts := query(db, "SELECT * FROM turns WHERE session LIKE ? AND uuid = ?", sess+"%", uuid)
+			if len(ts) > 0 {
+				out = append(out, "<h3 style='margin:.8rem 0 .2rem'>"+lp[0].(string)+"</h3>"+renderTurn(db, ts[0]))
+			}
+		}
+	}
+	inbound := query(db, "SELECT id, title FROM statements WHERE body LIKE ? AND id != ? ORDER BY id", "%"+sid+"%", sid)
+	if len(inbound) > 0 {
+		var b strings.Builder
+		b.WriteString("<h2>inbound links</h2><ul>")
+		for _, r := range inbound {
+			b.WriteString(`<li><a href="/s/` + esc(r["id"]) + `">` + esc(r["id"]) + `</a> ` + esc(r["title"]) + `</li>`)
+		}
+		b.WriteString("</ul>")
+		out = append(out, b.String())
+	}
+	h.html(w, page(sid+" "+sqlStr(s["title"]), strings.Join(out, "")), 200)
+}
+
+func (h *kbServer) evidence(w http.ResponseWriter, db *sql.DB, sid string) {
+	if sid == "" {
+		out := []string{"<h1>evidence</h1><table><tr><th>item</th><th>title</th><th>mode</th><th>filter / extractor</th><th>recorded</th></tr>"}
+		for _, s := range query(db, "SELECT * FROM sessions ORDER BY snapshot_at") {
+			out = append(out, `<tr><td><a href="/e/`+esc(s["id"])+`">`+esc(py.Head(sqlStr(s["id"]), 8))+`</a> <span class="pill">`+esc(s["kind"])+`</span></td>`+
+				`<td>`+esc(s["title"])+`</td><td>`+esc(s["mode"])+`</td>`+
+				`<td>`+esc(s["filter"])+`</td><td>`+esc(py.Head(sqlS(s["snapshot_at"]), 19))+`</td></tr>`)
+		}
+		h.html(w, page("evidence", strings.Join(out, "")+"</table>"), 200)
+		return
+	}
+	rows := query(db, "SELECT * FROM sessions WHERE id LIKE ?", sid+"%")
+	if len(rows) == 0 {
+		h.html(w, page(sid, "<h1>session "+esc(sid)+" not found</h1>"), 404)
+		return
+	}
+	s := rows[0]
+	var out []string
+	titleOrID := s["title"]
+	if !truthy(titleOrID) {
+		titleOrID = s["id"]
+	}
+	if s["kind"] == "document" {
+		op := sqlS(s["original_path"])
+		oname := op[strings.LastIndex(op, "/")+1:]
+		out = []string{`<h1>` + esc(titleOrID) + `</h1><div class="meta">document ` + esc(s["id"]) + ` · mode ` + esc(s["mode"]) + ` · ` +
+			`extractor ` + esc(s["filter"]) + ` · ingested by ` + esc(s["participants"]) + ` ` + esc(py.Head(sqlS(s["snapshot_at"]), 19)) + `<br>` +
+			`original <a href="/o/` + esc(oname) + `">` + esc(s["original_name"]) + `</a> · ` + esc(s["original_media_type"]) + ` · ` +
+			esc(s["original_size"]) + ` bytes · <code>` + esc(s["original_hash"]) + `</code></div>`}
+	} else {
+		out = []string{`<h1>` + esc(titleOrID) + `</h1><div class="meta">` + esc(s["id"]) + ` · mode ` + esc(s["mode"]) + ` · filter ` + esc(s["filter"]) + ` · ` +
+			`participants ` + esc(s["participants"]) + ` · agents ` + esc(s["agents"]) + `</div>`}
+	}
+	for _, t := range query(db, "SELECT * FROM turns WHERE session = ? ORDER BY seq", s["id"]) {
+		out = append(out, renderTurn(db, t))
+	}
+	h.html(w, page(sqlStr(titleOrID), strings.Join(out, "")), 200)
+}
+
+func (h *kbServer) user(w http.ResponseWriter, db *sql.DB, uid string) {
+	out := []string{"<h1>" + esc(uid) + "</h1><h2>attested</h2>"}
+	for _, s := range query(db, "SELECT s.* FROM statements s JOIN attestations a ON a.statement = s.id WHERE a.by_user = ? ORDER BY s.id", uid) {
+		out = append(out, statementCard(db, s, false))
+	}
+	out = append(out, "<h2>originated</h2>")
+	for _, s := range query(db, "SELECT * FROM statements WHERE originator = ? ORDER BY id", uid) {
+		out = append(out, statementCard(db, s, false))
+	}
+	out = append(out, "<h2>sessions</h2><ul>")
+	for _, s := range query(db, "SELECT * FROM sessions WHERE participants LIKE ? OR agents LIKE ?", "%"+uid+"%", "%"+uid+"%") {
+		t := s["title"]
+		if !truthy(t) {
+			t = s["id"]
+		}
+		out = append(out, `<li><a href="/e/`+esc(s["id"])+`">`+esc(t)+`</a></li>`)
+	}
+	h.html(w, page(uid, strings.Join(out, "")+"</ul>"), 200)
+}
+
+// tryQuery runs a query, returning the error the Python version's `except Exception` would catch.
+func tryQuery(db *sql.DB, q string, args ...any) (rows []row, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(*py.Exception); ok {
+				rows, err = nil, fmt.Errorf("%s", e.Msg)
+				return
+			}
+			panic(r)
+		}
+	}()
+	return query(db, q, args...), nil
+}
+
+func (h *kbServer) search(w http.ResponseWriter, db *sql.DB, q string) {
+	out := []string{`<h1>search</h1><form><input name="q" value="` + esc(q) + `" size="50"></form>`}
+	if q != "" {
+		out = append(out, "<h2>statements</h2>")
+		func() {
+			rows, err := tryQuery(db, "SELECT s.*, snippet(statements_fts, 2, '<mark>', '</mark>', '…', 16) AS snip FROM statements_fts "+
+				"JOIN statements s ON s.id = statements_fts.id WHERE statements_fts MATCH ? ORDER BY rank LIMIT 25", q)
+			if err != nil {
+				out = append(out, `<p class="meta">query error: `+esc(err.Error())+`</p>`)
+				return
+			}
+			for _, r := range rows {
+				out = append(out, `<div class="stmt"><a href="/s/`+esc(r["id"])+`"><b>`+esc(r["id"])+`</b></a> `+esc(r["title"])+`<div class="meta">`+sqlStr(r["snip"])+`</div></div>`)
+			}
+			out = append(out, "<h2>evidence</h2>")
+			rows, err = tryQuery(db, "SELECT t.*, snippet(turns_fts, 1, '<mark>', '</mark>', '…', 16) AS snip FROM turns_fts "+
+				"JOIN turns t ON t.uuid = turns_fts.uuid WHERE turns_fts MATCH ? ORDER BY rank LIMIT 25", q)
+			if err != nil {
+				out = append(out, `<p class="meta">query error: `+esc(err.Error())+`</p>`)
+				return
+			}
+			for _, r := range rows {
+				out = append(out, `<div class="turn `+sqlStr(r["role"])+`"><div class="hd"><a href="/e/`+esc(r["session"])+`#`+esc(r["uuid"])+`">`+esc(r["label"])+`</a>`+
+					`<span>`+esc(r["author"])+`</span></div>`+sqlStr(r["snip"])+`</div>`)
+			}
+		}()
+	}
+	h.html(w, page("search", strings.Join(out, "")), 200)
+}
+
+func runServe(ns argparse.Namespace) int {
+	root := repoRoot()
+	buildIndex(root)
+	host, _ := ns.Str("host")
+	port := ns["port"].(*big.Int)
+	if !port.IsInt64() || port.Int64() < 0 || port.Int64() > 65535 {
+		py.Raise("OverflowError", "bind(): port must be 0-65535.")
+	}
+	ln, err := net.Listen("tcp", net.JoinHostPort(host, port.String()))
+	if err != nil {
+		py.RaiseOS(err)
+	}
+	println(fmt.Sprintf("serving http://%s:%s/  (Ctrl+C to stop)", host, port.String()))
+	flushStdout()
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt)
+	srv := &http.Server{Handler: &kbServer{root}, ErrorLog: nil}
+	go func() {
+		<-stop
+		ln.Close()
+	}()
+	_ = srv.Serve(ln)
+	return 0
+}
+
+var _ = utf8.RuneError
+
+func addServeParser(sub *argparse.Parser) {
+	p := sub.AddParser("serve", "HTML reading surface over the index")
+	p.Option("--host", "", "127.0.0.1", false)
+	p.IntOption("--port", "", 8765)
+	p.Run = runServe
+}

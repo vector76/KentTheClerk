@@ -1,0 +1,379 @@
+# Parity run
+
+- Python: 3.13.1; knowledge base copied from `convkb`; 15 sessions, 1 document(s)
+
+## cli: 33 identical, 1 expected differences, 0 differing
+
+- same: kb  — rc=2; 0 file(s) written
+- same: kb -h — rc=0; 0 file(s) written
+- same: kb foo — rc=2; 0 file(s) written
+- same: kb snapshot -h — rc=0; 0 file(s) written
+- same: kb ingest — rc=2; 0 file(s) written
+- same: kb ingest -h — rc=0; 0 file(s) written
+- same: kb show -h — rc=0; 0 file(s) written
+- same: kb attest -h — rc=0; 0 file(s) written
+- same: kb record — rc=2; 0 file(s) written
+- same: kb record -h — rc=0; 0 file(s) written
+- same: kb seen -h — rc=0; 0 file(s) written
+- same: kb withdraw -h — rc=0; 0 file(s) written
+- same: kb withdraw A-1 — rc=2; 0 file(s) written
+- same: kb search — rc=2; 0 file(s) written
+- same: kb search -h — rc=0; 0 file(s) written
+- same: kb search x --limit q — rc=2; 0 file(s) written
+- same: kb index extra — rc=2; 0 file(s) written
+- same: kb version -h — rc=0; 0 file(s) written
+- same: kb serve -h — rc=0; 0 file(s) written
+- same: kb show a --human-only b — rc=2; 0 file(s) written
+- same: kb check --x — rc=2; 0 file(s) written
+- same: kb snapshot a b — rc=2; 0 file(s) written
+- same: kb --hel — rc=0; 0 file(s) written
+- same: kb -hx — rc=0; 0 file(s) written
+- same: kb snapshot --mode — rc=2; 0 file(s) written
+- same: kb snapshot --force=1 — rc=2; 0 file(s) written
+- same: kb attest --tu x — rc=1; 0 file(s) written
+- same: kb where -h — rc=0; 0 file(s) written
+- same: kb --foo snapshot — rc=2; 0 file(s) written
+- same: kb check -h — rc=0; 0 file(s) written
+- same: kb index -h — rc=0; 0 file(s) written
+- EXPECTED: kb search -- -x --limit 2 —  both crashed (py: sqlite3.OperationalError: no such column: x | go: kb: unexpected sqlite3.OperationalError: no such column: x)
+- same: kb attest -h, COLUMNS=50 — rc=0; 0 file(s) written
+- same: kb -h, COLUMNS=200 — rc=0; 0 file(s) written
+
+## location: 10 identical, 1 expected differences, 0 differing
+
+- same: no knowledge base — rc=1; 0 file(s) written
+- same: KENT_KB names a folder without the record — rc=1; 0 file(s) written
+- same: KENT_KB names the knowledge base (run from elsewhere) — rc=0; 0 file(s) written
+- same: found from a folder above — rc=0; 0 file(s) written
+- same: kb where (install folder normalised) — rc=0; 0 file(s) written
+- same: kb where, KENT_KB in other case (normalised) — rc=0; 0 file(s) written
+- same: kb where, nothing found — rc=1; 0 file(s) written
+- EXPECTED: kb version — version lines equal: 'system_version: 0.7.0'; hashes differ by design (py sha256:f94c210761…, go sha256:2a0b12fd90…)
+- same: no user id — rc=1; 0 file(s) written
+- same: user from ~/.kenttheclerk.json — rc=0; 2 file(s) written
+- same: user from the older ~/.convkb.json — rc=0; 2 file(s) written
+
+## snapshot: 53 identical, 0 expected differences, 0 differing
+
+- same: re-snapshot c5744d95 (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base c5744d95 — rc=0; 1 file(s) written
+- same: re-snapshot 42273a9e (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base 42273a9e — rc=0; 1 file(s) written
+- same: re-snapshot 8340bb5d (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base 8340bb5d — rc=0; 1 file(s) written
+- same: re-snapshot e8ca85c4 (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base e8ca85c4 — rc=0; 1 file(s) written
+- same: re-snapshot fbc2f1b6 (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base fbc2f1b6 — rc=0; 1 file(s) written
+- same: re-snapshot 51291d3e (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base 51291d3e — rc=0; 1 file(s) written
+- same: re-snapshot c34588d0 (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base c34588d0 — rc=0; 1 file(s) written
+- same: re-snapshot 05b4d8f0 (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base 05b4d8f0 — rc=0; 1 file(s) written
+- same: re-snapshot 6baaabbc (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base 6baaabbc — rc=0; 1 file(s) written
+- same: re-snapshot 053d883c (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base 053d883c — rc=0; 1 file(s) written
+- same: re-snapshot 445aec6b (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base 445aec6b — rc=0; 1 file(s) written
+- same: re-snapshot 0bcc63e5 (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base 0bcc63e5 — rc=0; 1 file(s) written
+- same: re-snapshot 8235b9f8 (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base 8235b9f8 — rc=0; 1 file(s) written
+- same: re-snapshot 3781af31 (on-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base 3781af31 — rc=0; 1 file(s) written
+- same: re-snapshot d10d91aa (off-record, human-visible-v1) — rc=0; 1 file(s) written
+- same: full-v1 into an empty base d10d91aa — rc=0; 1 file(s) written
+- same: mode change refused (on-record session as off-record) — rc=1; 0 file(s) written
+- same: mode change refused (off-record session as on-record) — rc=1; 0 file(s) written
+- same: filter change refused without --force — rc=1; 0 file(s) written
+- same: filter change with --force — rc=0; 1 file(s) written
+- same: append-only: a re-snapshot that would drop a turn — rc=1; 1 file(s) written
+- same: append-only with --force — rc=0; 1 file(s) written
+- same: existing file has another mode — rc=1; 1 file(s) written
+- same: bad --mode — rc=1; 0 file(s) written
+- same: bad --filter — rc=1; 0 file(s) written
+- same: unknown session id — rc=1; 0 file(s) written
+- same: ambiguous session id — rc=1; 0 file(s) written
+- same: --title overrides the title — rc=0; 1 file(s) written
+- same: snapshot by path to the .jsonl — rc=0; 1 file(s) written
+- same: crafted session, human-visible-v1 — rc=0; 1 file(s) written
+- same: crafted session, full-v1 — rc=0; 1 file(s) written
+- same: crafted fork: other session's records dropped, branch point found — rc=0; 1 file(s) written
+- same: crafted: several sessionIds, none requested — rc=1; 0 file(s) written
+- same: crafted: bad JSON line — rc=1; 0 file(s) written
+- same: crafted: no human turns — rc=1; 0 file(s) written
+- same: crafted: ambiguous prefix — rc=1; 0 file(s) written
+- same: no session and no CLAUDE_CODE_SESSION_ID — rc=1; 0 file(s) written
+- same: default from CLAUDE_CODE_SESSION_ID (newest file) — rc=0; 1 file(s) written
+- same: default refused: stale file and a newer one beside it — rc=1; 0 file(s) written
+
+## ingest: 100 identical, 2 expected differences, 0 differing
+
+- same: ingest af65024150b02d16ec7be710829ce868f027450a16595edde594f577244bba93.md — rc=0; 2 file(s) written
+- same: ingest headings.md — rc=0; 2 file(s) written
+- same: ingest paragraphs.txt — rc=0; 2 file(s) written
+- same: ingest crlf_bom.md — rc=0; 2 file(s) written
+- same: ingest latin1.txt — rc=1; 0 file(s) written
+- same: ingest empty.txt — rc=1; 0 file(s) written
+- same: ingest blank.txt — rc=1; 0 file(s) written
+- same: ingest data.csv — rc=0; 2 file(s) written
+- same: ingest data.json — rc=0; 2 file(s) written
+- same: ingest UPPER.MD — rc=0; 2 file(s) written
+- same: ingest unicode-heading.md — rc=0; 2 file(s) written
+- same: ingest long-heading.md — rc=0; 2 file(s) written
+- same: ingest image.png — rc=0; 2 file(s) written
+- same: ingest blob.xyz — rc=0; 2 file(s) written
+- same: ingest archive.tar.gz — rc=0; 2 file(s) written
+- same: ingest noext — rc=0; 2 file(s) written
+- same: ingest .hidden — rc=0; 2 file(s) written
+- same: ingest blog-article.html — rc=0; 2 file(s) written
+- same: ingest docs-page.html — rc=0; 2 file(s) written
+- same: ingest legacy-latin1.html — rc=0; 2 file(s) written
+- same: ingest malformed-wild.html — rc=0; 2 file(s) written
+- same: ingest word-export.html — rc=0; 2 file(s) written
+- same: ingest small.html — rc=0; 2 file(s) written
+- same: ingest page.htm — rc=0; 2 file(s) written
+- EXPECTED: ingest crash.html —  both crashed (py: AssertionError: unknown status keyword 'foo' in marked section | go: kb: unexpected AssertionError: AssertionError: unknown status keyword "foo" in marked section)
+- same: ingest headings.docx — rc=0; 2 file(s) written
+- same: ingest table.docx — rc=0; 2 file(s) written
+- same: ingest runs.docx — rc=0; 2 file(s) written
+- same: ingest nodocxml.docx — rc=1; 0 file(s) written
+- same: ingest nobody.docx — rc=1; 0 file(s) written
+- same: ingest notazip.docx — rc=1; 0 file(s) written
+- same: ingest ascii_hex.pdf — rc=0; 2 file(s) written
+- same: ingest crlf_xref.pdf — rc=0; 2 file(s) written
+- same: ingest differences.pdf — rc=0; 2 file(s) written
+- same: ingest empty_title.pdf — rc=0; 2 file(s) written
+- same: ingest filter_chain.pdf — rc=0; 2 file(s) written
+- same: ingest flate.pdf — rc=0; 2 file(s) written
+- same: ingest hybrid_xref.pdf — rc=0; 2 file(s) written
+- same: ingest incremental.pdf — rc=0; 2 file(s) written
+- same: ingest inline_image.pdf — rc=0; 2 file(s) written
+- same: ingest line_moves.pdf — rc=0; 2 file(s) written
+- same: ingest lzw.pdf — rc=0; 2 file(s) written
+- same: ingest multipage.pdf — rc=0; 2 file(s) written
+- same: ingest no_title.pdf — rc=0; 2 file(s) written
+- same: ingest orientations.pdf — rc=0; 2 file(s) written
+- same: ingest page_tree.pdf — rc=0; 2 file(s) written
+- same: ingest plain_lines.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00000.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00001.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00002.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00003.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00004.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00005.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00006.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00007.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00008.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00009.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00010.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00011.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00012.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00013.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00014.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00015.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00016.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00017.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00018.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00019.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00020.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00021.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00022.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00023.pdf — rc=0; 2 file(s) written
+- same: ingest rand_00024.pdf — rc=0; 2 file(s) written
+- same: ingest runlength.pdf — rc=0; 2 file(s) written
+- EXPECTED: ingest shifted_offsets.pdf — pypdf's repair warnings on stderr are not reproduced (stdout, exit status and files identical) /  stderr: py has 12 lines, go has 0 lines /   py: 'Ignoring wrong pointing object 2 0 (offset 72)'
+- same: ingest space_title.pdf — rc=0; 2 file(s) written
+- same: ingest title_bytes_even.pdf — rc=0; 2 file(s) written
+- same: ingest title_bytes_gbk.pdf — rc=0; 2 file(s) written
+- same: ingest title_bytes_odd.pdf — rc=0; 2 file(s) written
+- same: ingest title_name.pdf — rc=0; 2 file(s) written
+- same: ingest title_utf8.pdf — rc=0; 2 file(s) written
+- same: ingest tj_kerning.pdf — rc=0; 2 file(s) written
+- same: ingest tm_positioning.pdf — rc=0; 2 file(s) written
+- same: ingest tounicode_simple.pdf — rc=0; 2 file(s) written
+- same: ingest type0_identity.pdf — rc=0; 2 file(s) written
+- same: ingest type3.pdf — rc=0; 2 file(s) written
+- same: ingest winansi.pdf — rc=0; 2 file(s) written
+- same: ingest word_spacing.pdf — rc=0; 2 file(s) written
+- same: ingest xobjects.pdf — rc=0; 2 file(s) written
+- same: ingest xref_stream.pdf — rc=0; 2 file(s) written
+- same: same bytes, same extractor: refused (frozen) — rc=1; 2 file(s) written
+- same: same bytes, another extractor: new item, original reused — rc=0; 3 file(s) written
+- same: same bytes under another extension: original reused — rc=0; 3 file(s) written
+- same: same bytes in the other mode: refused — rc=1; 2 file(s) written
+- same: off-record ingest — rc=0; 2 file(s) written
+- same: --caption on a text extractor: refused — rc=1; 0 file(s) written
+- same: bad --extractor — rc=1; 0 file(s) written
+- same: bad --mode — rc=1; 0 file(s) written
+- same: missing file — rc=1; 0 file(s) written
+- same: relative path with ./ and .. — rc=1; 0 file(s) written
+- same: --title — rc=0; 2 file(s) written
+- same: forced extractor text-v1 on html — rc=0; 2 file(s) written
+- same: into the convkb copy — rc=0; 2 file(s) written
+
+## read: 59 identical, 4 expected differences, 0 differing
+
+- same: kb check — rc=0; 0 file(s) written
+- same: kb show (list) — rc=0; 0 file(s) written
+- same: kb show c5744d95 — rc=0; 0 file(s) written
+- same: kb show 42273a9e — rc=0; 0 file(s) written
+- same: kb show 8340bb5d — rc=0; 0 file(s) written
+- same: kb show e8ca85c4 — rc=0; 0 file(s) written
+- same: kb show fbc2f1b6 — rc=0; 0 file(s) written
+- same: kb show 51291d3e — rc=0; 0 file(s) written
+- same: kb show c34588d0 — rc=0; 0 file(s) written
+- same: kb show 05b4d8f0 — rc=0; 0 file(s) written
+- same: kb show 6baaabbc — rc=0; 0 file(s) written
+- same: kb show 053d883c — rc=0; 0 file(s) written
+- same: kb show 445aec6b — rc=0; 0 file(s) written
+- same: kb show 0bcc63e5 — rc=0; 0 file(s) written
+- same: kb show 8235b9f8 — rc=0; 0 file(s) written
+- same: kb show 3781af31 — rc=0; 0 file(s) written
+- same: kb show d10d91aa — rc=0; 0 file(s) written
+- same: kb show document c73666a5 — rc=0; 0 file(s) written
+- same: kb show --human-only (all sessions) — rc=0; 0 file(s) written
+- same: kb show 24 pointers — rc=0; 0 file(s) written
+- same: kb show unknown session — rc=1; 0 file(s) written
+- same: kb show unknown turn — rc=1; 0 file(s) written
+- same: kb show bad pointer — rc=1; 0 file(s) written
+- same: kb show by date prefix (substring match) — rc=0; 0 file(s) written
+- same: kb search attest — rc=0; 0 file(s) written
+- same: kb search kent rule — rc=0; 0 file(s) written
+- same: kb search snapshot NOT python — rc=0; 0 file(s) written
+- same: kb search "agent statement" — rc=0; 0 file(s) written
+- same: kb search superses* — rc=0; 0 file(s) written
+- EXPECTED: kb search S-0090 —  both crashed (py: sqlite3.OperationalError: no such column: 0090 | go: kb: unexpected sqlite3.OperationalError: no such column: 0090)
+- same: kb search ü — rc=0; 0 file(s) written
+- same: kb search go AND pipeline — rc=0; 0 file(s) written
+- same: kb search zzzzunmatched — rc=0; 0 file(s) written
+- EXPECTED: kb search a.b —  both crashed (py: sqlite3.OperationalError: fts5: syntax error near "." | go: kb: unexpected sqlite3.OperationalError: fts5: syntax error near ".")
+- EXPECTED: kb search ( —  both crashed (py: sqlite3.OperationalError: fts5: syntax error near "" | go: kb: unexpected sqlite3.OperationalError: fts5: syntax error near "")
+- EXPECTED: kb search title:recorder —  both crashed (py: sqlite3.OperationalError: no such column: title | go: kb: unexpected sqlite3.OperationalError: no such column: title)
+- same: kb search NEAR(kent rule) — rc=0; 0 file(s) written
+- same: kb search --limit 2 — rc=0; 0 file(s) written
+- same: kb search --limit -1 — rc=0; 0 file(s) written
+- same: kb index — rc=0; 0 file(s) written
+- same: kb check: statement body changed — rc=1; 1 file(s) written
+- same: kb check: attestation by another user — rc=1; 1 file(s) written
+- same: kb check: duplicate attestation — rc=1; 1 file(s) written
+- same: kb check: unknown attestation form, no stamp — rc=1; 1 file(s) written
+- same: kb check: malformed system hash — rc=1; 1 file(s) written
+- same: kb check: supersession not reciprocal — rc=1; 1 file(s) written
+- same: kb check: statement id missing — rc=1; 1 file(s) written
+- same: kb check: statement id mismatches filename — rc=1; 1 file(s) written
+- same: kb check: indented frontmatter line — rc=1; 1 file(s) written
+- same: kb check: bad pointer in cites — rc=0; 1 file(s) written
+- same: kb check: no answers line on a 0.7.0 statement — rc=1; 1 file(s) written
+- same: kb check: agent statement seen turn wrong — rc=1; 1 file(s) written
+- same: kb check: agent statement relates to a human one — rc=1; 1 file(s) written
+- same: kb check: agent statement with attestations and bad stamp — rc=1; 1 file(s) written
+- same: kb check: rests_on a missing statement — rc=1; 1 file(s) written
+- same: kb check: agent rests on a superseded statement — rc=0; 1 file(s) written
+- same: kb check: original bytes modified — rc=1; 1 file(s) written
+- same: kb check: original missing — rc=1; 1 file(s) written
+- same: kb check: unreferenced original — rc=0; 1 file(s) written
+- same: kb check: statement deleted (id gap, dangling references) — rc=0; 1 file(s) written
+- same: kb check: session header mode disagrees with its folder — rc=1; 1 file(s) written
+- same: kb check: document chunk role changed — rc=1; 1 file(s) written
+- same: kb check: statement with CRLF and BOM — rc=1; 1 file(s) written
+
+## index: 7 identical, 0 expected differences, 0 differing
+
+- same: index.db contents (every table, sqlite3) — 5840 rows identical
+- same: search 'attest': Python and Go readers on Python- and Go-built indexes — 18 rows, all four combinations equal
+- same: search 'kent rule': Python and Go readers on Python- and Go-built indexes — 11 rows, all four combinations equal
+- same: search 'python OR go': Python and Go readers on Python- and Go-built indexes — 18 rows, all four combinations equal
+- same: search '"S-0090"': Python and Go readers on Python- and Go-built indexes — 0 rows, all four combinations equal
+- same: search '"agent statement"': Python and Go readers on Python- and Go-built indexes — 18 rows, all four combinations equal
+- same: search 'superses*': Python and Go readers on Python- and Go-built indexes — 15 rows, all four combinations equal
+
+## serve: 3 identical, 1 expected differences, 0 differing
+
+- same: GET 133 pages (status, content type, body) — 133/133 identical
+- same: POST / (unsupported method) — {'py': (501, b'<!DOCTYPE HTML>\n<html lang="en">\n    <head>\n        <meta charset="utf-8">\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method (\'POST\').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n'), 'go': (501, b'<!DOCTYPE HTML>\n<html lang="en">\n    <head>\n        <meta charset="utf-8">\n        <title>E
+- same: GET /reindex (redirect) — {'py': (302, '/'), 'go': (302, '/')}
+- EXPECTED: HTTP framing — Python answers HTTP/1.0 with Server/Date headers from http.server; Go answers HTTP/1.1 with its own headers. Status, Content-Type and body are compared above.
+
+## acts: 53 identical, 1 expected differences, 0 differing
+
+- same: proposed-and-agreed — rc=0; 1 file(s) written
+- same: --keep-draft — rc=0; 2 file(s) written
+- same: agreed-with-modification (text contained: warns) — rc=0; 1 file(s) written
+- same: self — rc=0; 1 file(s) written
+- same: supersedes, amends, clarifies, rests_on, cites, topics — rc=0; 4 file(s) written
+- same: supersedes an agent statement (adopting it) — rc=0; 2 file(s) written
+- same: refused: --turn authored by the agent — rc=1; 1 file(s) written
+- same: refused: --turn authored by another user — rc=1; 1 file(s) written
+- same: refused: text not in the proposal — rc=1; 1 file(s) written
+- same: refused: agreement before the proposal — rc=1; 1 file(s) written
+- same: refused: proposal in another session — rc=1; 1 file(s) written
+- same: refused: re-attestation (endorsing what I attested) — rc=1; 0 file(s) written
+- same: endorsement (another user's own turn is required) — rc=1; 0 file(s) written
+- same: refused: endorsement without --statement — rc=1; 0 file(s) written
+- same: refused: endorsing an agent statement — rc=1; 0 file(s) written
+- same: refused: endorsing a missing statement — rc=1; 0 file(s) written
+- same: refused: missing answers line — rc=1; 1 file(s) written
+- same: refused: blank answers line — rc=1; 1 file(s) written
+- same: refused: missing title — rc=1; 1 file(s) written
+- same: refused: draft carries an id — rc=1; 1 file(s) written
+- same: refused: empty body — rc=1; 1 file(s) written
+- same: refused: proposed-and-agreed without --proposed — rc=1; 1 file(s) written
+- same: refused: no draft — rc=1; 0 file(s) written
+- same: refused: bad form — rc=1; 1 file(s) written
+- same: refused: bad pointer — rc=1; 1 file(s) written
+- same: refused: unknown session — rc=1; 1 file(s) written
+- same: refused: unknown turn — rc=1; 1 file(s) written
+- same: refused: off-record turn — rc=1; 1 file(s) written
+- same: refused: document chunk as the turn — rc=1; 1 file(s) written
+- same: refused: self text not in the turn — rc=1; 1 file(s) written
+- same: refused: supersedes a missing statement — rc=1; 1 file(s) written
+- same: refused: amends an agent statement — rc=1; 1 file(s) written
+- same: refused: rests_on a missing statement — rc=1; 1 file(s) written
+- same: refused: rests_on written as a scalar — rc=1; 1 file(s) written
+- EXPECTED: crash: draft file missing —  both crashed (py: FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Vector\\AppData\\Local\\Temp\\kp4\\kb\\off-record\\drafts\\missing.md' | go: kb: unexpected FileNotFoundError: open C:\Users\Vector\AppData\Local\Temp\kp4\kb\off-record\drafts\missing.md: The system cannot find the file specified.)
+- same: refused: snapshot mode change — rc=1; 0 file(s) written
+- same: record (seen in the turn it was made) — rc=0; 1 file(s) written
+- same: record (not yet seen) — rc=0; 1 file(s) written
+- same: record superseding an agent statement, then seen, then withdraw — rc=0; 2 file(s) written
+- same: refused: record from a human turn — rc=1; 1 file(s) written
+- same: refused: record from a document — rc=1; 1 file(s) written
+- same: refused: record from an off-record session — rc=1; 1 file(s) written
+- same: refused: record revising a human statement — rc=1; 1 file(s) written
+- same: refused: record revising a missing agent statement — rc=1; 1 file(s) written
+- same: refused: record revising a withdrawn one — rc=1; 2 file(s) written
+- same: refused: record without answers — rc=1; 1 file(s) written
+- same: refused: seen, text not shown — rc=1; 0 file(s) written
+- same: refused: seen, already recorded there — rc=1; 0 file(s) written
+- same: refused: seen of a human statement id — rc=1; 0 file(s) written
+- same: refused: seen of a missing agent statement — rc=1; 0 file(s) written
+- same: withdraw — rc=0; 1 file(s) written
+- same: refused: withdraw twice — rc=1; 1 file(s) written
+- same: refused: withdraw with a blank reason — rc=1; 0 file(s) written
+- same: refused: withdraw from an off-record turn — rc=1; 0 file(s) written
+
+## cross: 3 identical, 0 expected differences, 0 differing
+
+- same: the same acts by each version — rc=0; 6 file(s) written
+- same: py kb check accepts the acts go made — 15 session(s), 1 document(s), 95 statement(s), 7 agent statement(s) (1 unseen): 0 error(s), 2 warning(s)
+- same: go kb check accepts the acts py made — 15 session(s), 1 document(s), 95 statement(s), 7 agent statement(s) (1 unseen): 0 error(s), 2 warning(s)
+
+## re-snapshot vs the snapshot in the record
+
+- c5744d95: py 322/322 recorded turn lines reproduced; go 322/322 recorded turn lines reproduced
+- 42273a9e: py 77/77 recorded turn lines reproduced; go 77/77 recorded turn lines reproduced
+- 8340bb5d: py 46/46 recorded turn lines reproduced; go 46/46 recorded turn lines reproduced
+- e8ca85c4: py 40/40 recorded turn lines reproduced; go 40/40 recorded turn lines reproduced
+- fbc2f1b6: py 39/39 recorded turn lines reproduced; go 39/39 recorded turn lines reproduced
+- 51291d3e: py 139/139 recorded turn lines reproduced; go 139/139 recorded turn lines reproduced
+- c34588d0: py 97/97 recorded turn lines reproduced; go 97/97 recorded turn lines reproduced
+- 05b4d8f0: py 259/259 recorded turn lines reproduced; go 259/259 recorded turn lines reproduced
+- 6baaabbc: py 125/125 recorded turn lines reproduced; go 125/125 recorded turn lines reproduced
+- 053d883c: py 314/314 recorded turn lines reproduced; go 314/314 recorded turn lines reproduced
+- 445aec6b: py 450/450 recorded turn lines reproduced; go 450/450 recorded turn lines reproduced
+- 0bcc63e5: py 426/426 recorded turn lines reproduced; go 426/426 recorded turn lines reproduced
+- 8235b9f8: py 97/97 recorded turn lines reproduced; go 97/97 recorded turn lines reproduced
+- 3781af31: py 75/75 recorded turn lines reproduced; go 75/75 recorded turn lines reproduced
+- d10d91aa: py 78/78 recorded turn lines reproduced; go 78/78 recorded turn lines reproduced

@@ -1,0 +1,66 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Pages /Kids [7 0 R] /Count 1 >>
+endobj
+2 0 obj
+<< /Length 285 >>
+stream
+/CIDInit /ProcSet findresource begin 12 dict begin begincmap
+/CMapName /Custom def 1 begincodespacerange <00> <FF> endcodespacerange
+2 beginbfchar <21> <0058> <22> <0059> endbfchar
+1 beginbfrange <41> <43> <0061> endbfrange
+endcmap CMapName currentdict /CMap defineresource pop end end
+endstream
+endobj
+3 0 obj
+<< /Type /Font /Subtype /TrueType /BaseFont /CustomTT /FirstChar 32 /LastChar 90 /Widths [500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500] /ToUnicode 2 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /NotAStandardFont /Encoding /MacRomanEncoding >>
+endobj
+5 0 obj
+<< /Font << /F1 3 0 R /F2 4 0 R >> >>
+endobj
+6 0 obj
+<< /Length 172 >>
+stream
+BT
+/F1 12 Tf
+72 720 Td
+(ABC!"DEF) Tj
+/F2 12 Tf
+0 -14 Td
+(Mac Roman \216\217 text) Tj
+/F9 12 Tf
+0 -14 Td
+(Unknown font resource) Tj
+/F2 12 Tf
+0 -14 Td
+(Back to known) Tj
+ET
+
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Resources 5 0 R /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Type /Catalog /Pages 1 0 R >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000072 00000 n 
+0000000408 00000 n 
+0000000770 00000 n 
+0000000875 00000 n 
+0000000928 00000 n 
+0000001151 00000 n 
+0000001255 00000 n 
+trailer
+<< /Size 9 /Root 8 0 R >>
+startxref
+1304
+%%EOF

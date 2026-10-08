@@ -1,0 +1,75 @@
+# Builds the Go kb for Windows, macOS and Linux (amd64 and arm64) on a version tag, and attaches one zip
+# per platform to a GitHub release. Each zip holds the executable beside the files the agent reads:
+#   kent-<version>-<os>-<arch>/kb[.exe], README.md, procedure.md, rules/, front-ends/
+# The version is the tag without its leading "v"; it is built into the executable as system_version.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # the differential tests compare with CPython 3.13 where it is present, and skip where it is not
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: go vet ./...
+      - run: go test ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [windows, darwin, linux]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          name="kent-${version}-${GOOS}-${GOARCH}"
+          exe=kb; [ "$GOOS" = windows ] && exe=kb.exe
+          mkdir -p "dist/$name"
+          go build -trimpath -ldflags "-s -w -X kenttheclerk.version=${version}" -o "dist/$name/$exe" ./cmd/kb
+          cp README.md procedure.md "dist/$name/"
+          cp -r rules front-ends "dist/$name/"
+          (cd dist && zip -qr "$name.zip" "$name")
+          echo "ZIP=dist/$name.zip" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zip-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.ZIP }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: zip-*
+          merge-multiple: true
+          path: dist
+      - name: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" \
+            --title "Kent the Clerk ${GITHUB_REF_NAME#v}" --generate-notes

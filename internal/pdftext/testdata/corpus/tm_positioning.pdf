@@ -1,0 +1,49 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+3 0 obj
+<< /Font << /F1 2 0 R >> >>
+endobj
+4 0 obj
+<< /Length 414 >>
+stream
+BT
+/F1 12 Tf
+1 0 0 1 72 700 Tm (Left) Tj
+1 0 0 1 120 700 Tm (gap of a few points) Tj
+1 0 0 1 230.3 700 Tm (adjacent) Tj
+1 0 0 1 280 700.5 Tm (tiny rise) Tj
+1 0 0 1 72 680 Tm (Next line by Tm) Tj
+/F1 1 Tf 12 0 0 12 72 650 Tm (Scaled font via matrix) Tj
+12 0 0 12 300 650 Tm (same line far right) Tj
+12 0 0 12 72 630 Tm (and below) Tj
+/F1 10 Tf 1 0 0 1 400 600 Tm (backwards) Tj 1 0 0 1 72 600 Tm (moved left) Tj
+ET
+
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Resources 3 0 R /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Type /Catalog /Pages 1 0 R >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000072 00000 n 
+0000000169 00000 n 
+0000000212 00000 n 
+0000000677 00000 n 
+0000000781 00000 n 
+trailer
+<< /Size 7 /Root 6 0 R >>
+startxref
+830
+%%EOF

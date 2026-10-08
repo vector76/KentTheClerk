@@ -1,0 +1,70 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+3 0 obj
+<< /Font << /F1 2 0 R >> >>
+endobj
+4 0 obj
+<< /Length 238 >>
+stream
+BT
+/F1 10 Tf
+72 720 Td
+(Line A) Tj
+0 -7 Td (small drop) Tj
+0 -9 Td (larger drop) Tj
+0 20 Td (jump up) Tj
+50 0 Td (right) Tj
+3 0 Td (close) Tj
+/F1 20 Tf 0 -30 Td (Big font) Tj
+/F1 8 Tf 0 -10 Td (small font) Tj
+0 -0.5 Td (half point) Tj
+ET
+
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Resources 3 0 R /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Length 130 >>
+stream
+BT
+/F1 12 Tf 100 700 Td (second) Tj
+ET
+BT
+/F1 12 Tf 100 700 Td (same place new BT) Tj
+ET
+BT
+/F1 12 Tf 100 680 Td (lower BT) Tj
+ET
+
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Resources 3 0 R /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Type /Catalog /Pages 1 0 R >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000078 00000 n 
+0000000175 00000 n 
+0000000218 00000 n 
+0000000507 00000 n 
+0000000611 00000 n 
+0000000792 00000 n 
+0000000896 00000 n 
+trailer
+<< /Size 9 /Root 8 0 R >>
+startxref
+945
+%%EOF

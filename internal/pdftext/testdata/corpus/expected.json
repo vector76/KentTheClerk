@@ -1,0 +1,554 @@
+[
+  {
+    "file": "ascii_hex.pdf",
+    "pages": [
+      "ASCIIHex encoded content"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "crlf_xref.pdf",
+    "pages": [
+      "CRLF xref entries"
+    ],
+    "title": "CRLF",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "differences.pdf",
+    "pages": [
+      "BCCéçc\nword wordﬁﬂ /odd.glyph/uni263A\nPléin text stéys"
+    ],
+    "title": "Differences",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "empty_title.pdf",
+    "pages": [
+      "Empty title string"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "filter_chain.pdf",
+    "pages": [
+      "ASCII85 over Flate"
+    ],
+    "title": "Chain",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "flate.pdf",
+    "pages": [
+      "Compressed with FlateDecode\nsecond line"
+    ],
+    "title": "Flate title",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "hybrid_xref.pdf",
+    "pages": [
+      "Hybrid reference file\nfont found via XRefStm"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "incremental.pdf",
+    "pages": [
+      "Updated text after incremental save"
+    ],
+    "title": "Updated title",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "inline_image.pdf",
+    "pages": [
+      "Text before the inline image\nText after the inline image"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "line_moves.pdf",
+    "pages": [
+      "Line Asmall drop\nlarger drop\njump up rightclose\nBig font\nsmall fonthalf point",
+      "secondsame place new BT\nlower BT"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "lzw.pdf",
+    "pages": [
+      "LZW encoded content stream with some repeated repeated repeated words\nabcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc abcabcabc "
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "multipage.pdf",
+    "pages": [
+      "Page one, first line\nPage one, second line",
+      "",
+      "",
+      "Page four after two empty pages"
+    ],
+    "title": "Multi page",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "no_title.pdf",
+    "pages": [
+      "Times without encoding entry\nCourier fixed pitch    spaces\né latin1 via charmap"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "orientations.pdf",
+    "pages": [
+      "Upright\nUpside downmore\nVertical up\nVertical down\nUpright again\nCourier inside q\nafter Q"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "page_tree.pdf",
+    "pages": [
+      "First part of split across streams\nthird stream",
+      "Rotated page, inherited resources",
+      "Third page directly under root"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "plain_lines.pdf",
+    "pages": [
+      "The quick brown fox\njumps over the lazy dog.\nThird line via T-star.\nFourth line via TD.\nFifth line, TD leading."
+    ],
+    "title": "Plain lines été",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00000.pdf",
+    "pages": [
+      "of   3.14 \n\u0000G\u0003\u0000\n   end. 1234 a-b\nbetax \n瑡戉\nꁮ扳瀠ㄲ㌴\ntab\t of\nϧEDCA \n3.14Gamma 3.14 fiEpF\nEpF café beta\nx\n⁜⁡ⵢ₠湢獰\n瑨攠扥瑡⁴桥\nEpF delta\n㌮ㄴ⁴慢ठ圠扥瑡\nPKNQ the tab\t\n",
+      "fi fi a-b\ndelta \\\nthe\nend.  nbsp x\n3.14Gamma 3.14 fi3.14 “q” 1234x fitab\t end.  tab\tdelta beta fi\n⡰⤠尠呥硴   endK  nbsp\ntab\t Text\n",
+      " nbsp ㄲ㌴ \nq  Gamma beta tab\t tab\t beta NOPQ \n  EpF 鍱鐠圠†㌮ㄴx\n fi Gamma⡰⤠敮搮‱㈳㐠敮搮"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00001.pdf",
+    "pages": [
+      "a-b café    \\alpha the \n té \t \\\n\u0000\u0003\u0000%\u0001\u0001\u0000D\u0002\u00001234 \\ W fi (p) \\  eté é-     of\n���\ncéfØ end. élphé\n1234 deltécéfØ W of 1234 q uro W\na-b (p) (p) delta“q” Gamma café x 3.14 W3.14 x  eté W\nélphé fi \n  3.14 élphé é-  té \t"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00002.pdf",
+    "pages": [
+      "of W x tab\tW x W   \n tab\t delta x alpha \\€uro \\fi\n\u0003\u0000\u0003ç\u0000D\u0003\u0000\u0003ç\u0000$x\nGamma\n†⁤敬瑡⁤敬瑡⁗\ndelta EpF x砠⡰⤠呥硴\nϧBȁGE alpha  nbsp tab\t x",
+      "delta  nbsp betaé-  uro Wuro q céfØ uroWof q uroélphé té \t 3.14W \\céfØ fi W fi x    etéthe x Gémmé 3.143.14 of Gammaa-b 1234\n(p) of\ntab\t a-b\n(p) x  nbsp  \ncafé W (p) (p)\nthe €uro tab\t \\\n(p)\n\\ delta tab\t 1234\n1234\ndelta\ncafé Text\nthe (p)\n",
+      "of tab\t “q” (p)of��������������������������\n ��� \n���� \n�������������� ������� ������������� ���� tab\t   a-b Text\n"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00003.pdf",
+    "pages": [
+      " nbsp   \n\u0000G\u0000E nbsp\\xfi\ncafé x café\nGamma \\ of  \n nbsp W 3.14\nof\nbeta ofend. of of\n\u0002\u0001\u0000G\u0002\u0000\u0000G\u0000%\u0002\u0000\n nbsp end.\nGémmé  n sp \\élphé x 1234 té \tend. (p) 3.14 Gémméfi é-   eté end.\n",
+      "a-b a-b ofthe of a-b the Gamma end. 3.14\n(p)  nbsp W tab\t\n�������uro uro",
+      "“q” café x tab\t of tab\t “q” tab\t W \\ delta \n  “q” \nfi a-b café  café of \n €uro beta "
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00004.pdf",
+    "pages": [
+      " (p) beta Textfi  delta Gamma€uro of tab\t\\ 3.14 end. Gémmé(p)\nthe  of  n sp\n \u0003ç\u0000D\u0003\u0000\u0000\u0003\u0000\u0003\u0000D \n \nq3.14 delté of é- 1234 uro uro 3.14\u0000\u0026\u0000\u0026\n���������������������� a-b  nbsp tab\tq"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00005.pdf",
+    "pages": [
+      "x  nbsp beta �������� ������������� ��������� ����������� ������ ��������� tab\t beta\nW   end.   beta  \n瑨攠瑨攠ㄲ㌴ₓ熔\n聵牯 †⁡ⵢ   W beta q晩 呥硴CAȀ Ȁ\nfi 晩alpha nbsp EpF aJb delta圠鍱鐠敮搮\u0003\u0000\u0000\u0003\u0000E\n\u0000D\n \n ",
+      "Gamma fi “q” 1234 café beta3.14\nof  (p) fi "
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00006.pdf",
+    "pages": [
+      "delta\n\u0000E\u0000%\u0000\u0026café fi alpha \\ of\nGamma x delta \nof W\n nbsp tab\t",
+      "delta a-btab\t thealpha W Text ofbeta a-b x (p)\n \\ tab\t\n   Gamma W€uro delta a-b a-b\nté \t\nend. x alpha tab\t\n(p) 1234 end.\n(p) “q” \n1234 x 1234 of the \\ 1234 (p) \\ \n1234 beta delta delta \\ (p)  café\nText  nbsp of of q 3.14 é- W(p)Gémmé 1234 the\n"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00007.pdf",
+    "pages": [
+      "delta  beta a-bend.  nbsp\ndelta Text \\\ntab\t of\nof    café\n"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00008.pdf",
+    "pages": [
+      "alpha   “q” delta\nalphax  alpha of\nfi Text W\ncaféfi thex    delta tab\t"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00009.pdf",
+    "pages": [
+      "end. \ndelta Gamma end.tab\t €uro  nbsp \n(p) x beta 1234 Text alphaof (p) 3.14x €urodelta tab\t 3.14\n 1234 1234 deltadelta of 1234\nx café €uro the\n\\ (p)(p) W \\ W\u0000\u0003\u0000$"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00010.pdf",
+    "pages": [
+      "\u0000E\n愭戠†\n潦⁔數琠捡曩鍱鐠ㄲ㌴\nalpha theF  Bϧ\nalpha",
+      "\\ \n3.14 1234 of\n €uro     nbsp €uro \\ delta   \nalpha alpha “q”3.14 fi “q” \nof delta x      café \n���� ���� �������������� � �������� �������������� ��������� ���������������� ���� ��������� ������� \nText  Gamma\u0000F\u0000F\nof  nbsp   “q”3.14 Gamma €uro3.14 \\ of \n“q”\n  ficafé café  nbsp W"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00011.pdf",
+    "pages": [
+      "end.  nbsp\n end. (p) a-b\nend.\\\n",
+      "alpha\n\\ a-b W  nbsp������������\n"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00012.pdf",
+    "pages": [
+      "\\ end. delta uro3.14 alpha   tab\t 3.14 xend. end.\u0000\u0026\n "
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00013.pdf",
+    "pages": [
+      " nbsp\n\u0000E\u0000\u0026ofdelta (p)Text of  “q”café W “q”\n3.14 a-bbeta (p) (p) a-b the\n  café 3.14",
+      "\u0000F\u0003ç\u0002\u0001café delta\\ alpha theof  nbsp Gamma of  nbsp 3.14   \ndelta(p) €uro\n€uro of    deltacafé alphabeta 1234 alpha café3.14  nbsp 3.14x 1234",
+      "end. end.\n3.14 a-bbeta (p) (p) a-b the\n   beta\n3.14 deltaa-b end. beta\n\u0001\u0001\u0000\u0003\u0000$\u0000E\u0001\u0001\u0002\u0001\n"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00014.pdf",
+    "pages": [
+      "delta\nGamma Text €uro 3.14\n  n sp \\ 1234 \\ x \\ delté x \n n sp Gémmé  \n\u0000\u0003\u0000\u0003\u0003\u0000Gémmé end. é- \ncafé 3.14 café GammaéFaJb"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00015.pdf",
+    "pages": [
+      "\u0002\u0000 \nbeta beta x 3.14\nGamma tab\t betaend. (p) of alpha\nalpha\ntab\t Text  \n1234 Gamma alpha Gamma\n����������� ���� \nx Gamma Texta-b Text a-b(p) 3.14 x  nbspGamma \\ tab\tx beta of\na-b\u0000%\u0002\u0000\u0000\u0026\u0000%\u0000\u0026\nx end.\n nbsp\n\\ delta Gamma café\nGamma W \\ alpha\\ a-b 3.14\n",
+      "of nbsp €uro the €uro\n€uroend. alpha café Gamma    beta café beta\n   tab\t\n“q”\ncéfØ delté the W\n1234 (p) céfØfi q  n spélphé  eté\n€uroend. alpha café Gamma    beta café beta(p) uro the\n\\ \\ Text\n",
+      "x €uro end. “q”alpha\n€uroend. alpha café Gamma    beta café betafifi a-b xalpha   \\ \u0001\u0001\u0002\u0001\u0003\u0000\u0000$\u0000\u0003\u0002\u0000\n(p) a-b Text3.14 €uro \\  Text beta end. a-b\nx  Text 3.14 \nof  nbsp (p) delta x €uro "
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00016.pdf",
+    "pages": [
+      "beta beta\n x end.\nthe  nbsp 3.14 tab\t\n“q” tab\t Text of café    alpha the x \n “q” x x tab\t of \\\ntab\t of café 3.14\n\u0000\u0003\u0003ç\u0002\u0001\u0000F\n",
+      "\u0000G\u0000E\u0002\u0001\u0000D\u0000E\u0002\u0000\n(p) 1234 xW 1234\n “q” x x tab\t of \\\nendK x Gamma tab\t\n",
+      "of delta x end.a-b a-b  nbspalpha Text of tab\t nbsp Textof fi beta €uro\n3.14 alpha Text\n1234 fi\ncafé alpha\n€uro \\ (p)\nend.\n “q” x x tab\t of \\"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00017.pdf",
+    "pages": [
+      "3.14    “q”a-b  nbsp end. delta Gamma晩⁴慢ठㄲ㌴⁤敬瑡\nꁮ扳瀠鍱鐠敮搮 \nGamma x †⁣慦†敮搮 \n"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00018.pdf",
+    "pages": [
+      "ㄲ㌴\u2028瀩\n of  eté q x\nof té \t q W  eté end.(p) (p) fiof   the Gémmé  n sp1234 3.14 xText céfØ Text té \t eté céfØ  eté  n spdelté   GémméText (p) 3.14 3.14\n   end.alpha NOPQ uro\n㌮ㄴEpF delta\nbeta beta q \\ aJb x tab\t   砠摥汴愠呥硴ꁮ扳瀠ꁮ扳瀠†愭戠\nText 3.14 \\\n\u0000E\u0002\u0001\u0000Fthe  nbsp\u0000F\ntab\t   of deltaꁮ扳瀠敮搮 \n  nbsp  nbsp Text   x PKNQ endK ",
+      "fi €uro\n�����������\n��������������������������������������\n�������������������������������������������\n ��������� \n  “q”   end.  nbsp    tab\ta-b tab\t\ntab\t\nalpha 1234 of\n1234 tab\t  €uro the a-b慬灨愠ㄲ㌴   endK of捡曩\u2028瀩⁜⁜  qꁮ扳瀠捡曩"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00019.pdf",
+    "pages": [
+      "Gamma tab\t    Text1234\nend.   tab\t tab\tcafé  Gamma\n1234  \nText of x a-b \nof   Text 1234 \n",
+      "\u0002\u0001\u0000E\u0000\u0026\u0003ç\u0000\u0003\u0001\u0001�� ��� \n������������ ����� ���������������� \u0000$\n   a-b\na-b of beta x "
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00020.pdf",
+    "pages": [
+      "café café uro Text1234   3.14 q x uro\\\ntab\t café fitab\t fi Text 3.14    Text W alpha alpha €uro 1234 \nText W W Gamma a-b \nfi 3.14 x fi\n(p) \\ (p)\n����������\n"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00021.pdf",
+    "pages": [
+      "the\na-b \\\nalpha\u0000G\u0000G\u0001\u0001\u0001\u0001\u0003ç\u0000\u0003 eté q céfØ\n\u0003\u0000\u0002\u0000\u0000F\nW \nté \t W \u0000G\nW     \nq fi W "
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00022.pdf",
+    "pages": [
+      "x\n3.14 fiend. tab\t€uro\n \n Text\ncafé  end. of\nq \\ 摥汴愠†呥硴⁡ⵢW瑡戉\n \n  endK \na-b end. W the \n“q” €uro Text ",
+      "tab\t   3.14 fi tab\t\nbeta Text\nW \n nbsp W\n\u0000F\u0000$\u0000\u0003\u0000Gthe “q” \n     fix tab\t of\nW of €uro Wxthe W\n������������������� 愭戠⡰⤠聵牯 ㌮ㄴ⁇慭浡 砠捡曩₠湢獰 ⁡汰桡₠湢獰⁡ⵢ 尠潦 敮搮⁸ₓ熔 PKNQ the beta q W \n\\ 圠聵牯⁡汰桡⁇慭浡 \n",
+      "end.(p)\n\\ 3.14 1234 ofxx  nbsp a-b caféx café 3.14 x  \\ delta end.   x delta end. 1234 Gamma\n摥汴愠ㄲ㌴\u2028瀩⁡汰桡\nq fi\nend. delté\n\u0003\u0000\u0000\u0003\u0002\u0000\u0000$\u0000$\u0000D\nté \t\nfi\n eté\n n sp é- \n té \t\nélphé\n \\\nGémmé \\ (p)\n\\\nof \n\u0000\u0003\u0000\u0003\u0000D\u0000D\u0003\u0000\n"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00023.pdf",
+    "pages": [
+      "xalpha\nthe delta 1234 delta of  nbsp x",
+      "1234 café    nbsp\n \ncafé urobeta delta W endK 瑡戉\n1234   1234 3.14“q” Text tab\t尠⡰⤠⡰⤠ㄲ㌴  of 瑡戉†the\nq W\n3.14 1234“q”   delta “q”delta1234 W 1234 א \n nbsp uro aJb NOPQ \nC \n"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "rand_00024.pdf",
+    "pages": [
+      " nbsp beta 3.14 \\ \n“q” café a-b (p)fiText the  nbspGamma alpha W a-bbeta   €uro  nbsp“q”1234 Gamma theend. Gamma x \ntab\t Text\n \n   delta 3.14 alphaa-b  €uro  café the  delta Textdelta\nText café €uro\nGamma fi café\n\u0000G\u0003ç\u0000E\u0000E\u0002\u0001\n\\ of (p)    Text\n\\ Text Text  nbsp",
+      "delta   x\u0000F\u0003\u0000\n",
+      "“q” end.\nend. (p) \\a-bfibeta café\nbeta  Gamma \\\nalpha alphaText Text \n1234      end.\n€uroof tab\t  nbsp Wx W    (p) \nGamma   \nfi 1234 beta 3.14\n nbsp a-b a-b “q” fi (p) 1234delta\n€uro   \ntab\t“q” €uro\\ tab\t \\W end. tab\t €uro€uro Text W  nbsp\n\u0000E\u0000$\u0000D\u0000G\u0000\u0026\ndelta 3.14 delta x ��������\n���������\nText  nbsp"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "runlength.pdf",
+    "pages": [
+      "RunLength       encoded      text"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "shifted_offsets.pdf",
+    "pages": [
+      "CRLF xref entries"
+    ],
+    "title": "CRLF",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "space_title.pdf",
+    "pages": [
+      "Spaces title"
+    ],
+    "title": "  Padded Title  ",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "title_bytes_even.pdf",
+    "pages": [
+      "Even length byte title"
+    ],
+    "title": "慂齤祢整",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "title_bytes_gbk.pdf",
+    "pages": [
+      "GBK bytes in the title"
+    ],
+    "title": "煛x",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "title_bytes_odd.pdf",
+    "pages": [
+      "Odd length byte title"
+    ],
+    "title": "Bad  bytes",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "title_name.pdf",
+    "pages": [
+      "Title is a name object"
+    ],
+    "title": "/Some Name",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "title_utf8.pdf",
+    "pages": [
+      "UTF-8 bytes in the title"
+    ],
+    "title": "Café!",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "tj_kerning.pdf",
+    "pages": [
+      "Worldwide web x yz\nAVAT a b\nnospaceheremaybe\ntrailing space next\nafter empty"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "tm_positioning.pdf",
+    "pages": [
+      "Left gap of a few points adjacent tiny rise\nNext line by Tm\nScaled font via matrix same line far right\nand below\nbackwardsmoved left"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "tounicode_simple.pdf",
+    "pages": [
+      "abcXYDEF\nMac Roman éè text\n���������������������\nBack to known"
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "type0_identity.pdf",
+    "pages": [
+      "Hello World\nKerned Text\né😀fiff\nafter\nAB \nBack to Helvetica"
+    ],
+    "title": "Unicode title: café – 日本語 😀",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "type3.pdf",
+    "pages": [
+      "AB BA é/custom1\nA B"
+    ],
+    "title": "LittĆť endian",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "winansi.pdf",
+    "pages": [
+      "Café crème brûlée, naïve über\n“Smart quotes” and ‘single’ – dash — em\nEuro € pound £ yen ¥ section § degree °\n(parens) back\\slash ABC tab\there linecontinued\nHex string\n\b1 short octal"
+    ],
+    "title": "Accents éè •",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "word_spacing.pdf",
+    "pages": [
+      "Words with word spacing\nChar spacing applied\nHorizontal scaling\nDouble quote operator\nSingle quote operator\n "
+    ],
+    "title": null,
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "xobjects.pdf",
+    "pages": [
+      "Before the form\nText inside a form XObject\nsecond form line\nBetween\nText then image \nRotated ninety\nsecond rotated\nScaled by cm\nnext scaled line\nAfter everything"
+    ],
+    "title": "Indirect title object",
+    "error": null,
+    "pypdf": "6.14.2"
+  },
+  {
+    "file": "xref_stream.pdf",
+    "pages": [
+      "Objects live in an object stream\nand the xref is a stream",
+      "Second page"
+    ],
+    "title": "Über été — Жизнь",
+    "error": null,
+    "pypdf": "6.14.2"
+  }
+]

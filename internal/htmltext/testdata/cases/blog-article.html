@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en-US" class="no-js">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How We Cut Our Build Times in Half &#8211; Engineering Blog</title>
+  <link rel='stylesheet' id='theme-css' href='/wp-content/themes/x/style.css?ver=6.2' type='text/css' media='all' />
+  <script type="application/ld+json">{"@context":"https://schema.org","headline":"How We Cut </p> Build Times"}</script>
+  <!--[if lt IE 9]><script src="html5shiv.js"></script><![endif]-->
+  <style>
+    .post > p:first-child::first-letter { font-size: 2em; }
+  </style>
+</head>
+<body class="post-template-default single single-post postid-1234">
+<a class="skip-link screen-reader-text" href="#content">Skip to content</a>
+<header id="masthead" class="site-header">
+  <nav class="main-navigation" aria-label="Primary">
+    <ul id="menu-main" class="menu"><li><a href="/">Home</a></li><li><a href="/about/">About</a></li><li class="current"><a href="/blog/">Blog</a></li></ul>
+  </nav>
+</header>
+<main id="content">
+<article id="post-1234">
+  <header class="entry-header">
+    <h1 class="entry-title">How We Cut Our Build Times in Half</h1>
+    <div class="entry-meta">Posted on <time datetime="2024-03-02T10:00:00+00:00">March 2, 2024</time> by <span class="author">Jane&nbsp;Doe</span></div>
+  </header>
+  <div class="entry-content">
+    <p>Our CI pipeline used to take <strong>42&nbsp;minutes</strong>. That&#8217;s too long &mdash; developers were context-switching while waiting.</p>
+    <h2 id="caching">Step 1: Caching</h2>
+    <p>We started by caching dependencies:</p>
+    <pre><code>cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - node_modules/
+</code></pre>
+    <h2 id="parallel">Step 2: Parallelism &amp; Sharding</h2>
+    <p>Tests were split into <em>8 shards</em>.<br>Each shard runs in ~4 minutes.<br/>
+    The results:</p>
+    <table class="results">
+      <thead><tr><th>Stage</th><th>Before</th><th>After</th></tr></thead>
+      <tbody>
+        <tr><td>Install</td><td>9m</td><td>1m</td></tr>
+        <tr><td>Test</td><td>28m</td><td>4m</td></tr>
+        <tr><td>Deploy</td><td>5m</td><td>5m</td></tr>
+      </tbody>
+    </table>
+    <blockquote><p>&ldquo;Fast feedback is a feature.&rdquo;</p><cite>&mdash; Someone wise</cite></blockquote>
+    <figure><img src="chart.png" alt="Build time chart"><figcaption>Figure 1: build time over 6 months</figcaption></figure>
+    <h3>Footnotes</h3>
+    <ol><li id="fn1">Numbers are medians.&#160;<a href="#ref1">&#8617;</a></li></ol>
+  </div>
+</article>
+<aside class="widget-area"><section class="widget"><h2 class="widget-title">Recent Posts</h2><ul><li><a href="/p/1">One</a></li></ul></section></aside>
+</main>
+<footer class="site-footer"><p>&copy; 2024 Example Corp. All rights reserved.</p></footer>
+<script>
+  var s = "<div>" + '</scr' + 'ipt>';
+  if (a < b && c > d) { document.write("<p>hi</p>"); }
+</script>
+<noscript><img src="pixel.gif"></noscript>
+</body>
+</html>

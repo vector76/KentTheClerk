@@ -1,0 +1,55 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+3 0 obj
+<< /Font << /F1 2 0 R >> >>
+endobj
+4 0 obj
+<< /Length 193 >>
+stream
+BT
+/F1 12 Tf
+72 720 Td
+(The quick brown fox) Tj
+0 -14 Td
+(jumps over the lazy dog.) Tj
+14 TL
+T*
+(Third line via T-star.) Tj
+0 -28 TD
+(Fourth line via TD.) Tj
+T*
+(Fifth line, TD leading.) Tj
+ET
+
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Resources 3 0 R /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Type /Catalog /Pages 1 0 R >>
+endobj
+7 0 obj
+<< /Title (Plain lines \351t\351) /Producer (gen_corpus.py) >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000072 00000 n 
+0000000169 00000 n 
+0000000212 00000 n 
+0000000456 00000 n 
+0000000560 00000 n 
+0000000609 00000 n 
+trailer
+<< /Size 8 /Root 6 0 R /Info 7 0 R >>
+startxref
+687
+%%EOF
