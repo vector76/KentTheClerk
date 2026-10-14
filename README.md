@@ -74,7 +74,10 @@ claim you never made.
 An attested statement's text never changes. When you change your mind, you attest a new statement
 that **supersedes** the old one, and the old one stays on the record marked as superseded. You can
 also **amend** a statement, adding to it, or **clarify** it, stating its scope or meaning, as long as
-the addition doesn't contradict it.
+the addition doesn't contradict it. Only you change what you said: someone else who sees it
+differently says so in a statement of their own, linked to yours with a short note on how it changes
+the reading, and yours is marked as having extra context. Both stay on the record, and a disagreement
+stays a disagreement instead of being settled by whoever spoke last.
 
 So you can't simply ask the agent to fix a statement's wording, not even a typo. The agent will
 propose a new statement, or raise the typo with you, and you decide. Keeping the history means anyone

@@ -39,7 +39,8 @@ agent statement that supersedes it. A choice unlikely to be depended on can be c
 change that touches human intent is raised with the human first: they must be able to trust that
 agent statements will not shift out from under them. `kb withdraw` retires one with nothing in its
 place, and says why. Only an agent statement still in force can be revised or withdrawn. You never
-revise a human statement.
+revise a human statement; when a choice of yours changes how one reads, link to it with
+`context_for` (Kent Rule 47).
 
 **Kent Rule 36.** Keep extrapolations within the participants' shared intent. If a choice
 contravenes what one human intended, warn that someone intended otherwise and ask before going
@@ -47,7 +48,7 @@ ahead; the warning is mainly for the human, who may recognise their own mistake.
 
 **Kent Rule 37.** An agent statement carries no attestations. A human overrides or adopts one by
 attesting a human statement that supersedes it; a human statement never amends or clarifies an agent
-statement. When a human agrees with an agent
+statement, and is never context for one. When a human agrees with an agent
 statement outright, it becomes a human statement that way, so the two kinds stay separate.
 
 `kb check` warns when an agent statement rests on a statement no longer in force. That list is where

@@ -21,7 +21,15 @@ allow writing in `off-record/drafts/` and forbid editing `attested/`, `evidence/
 1. Draft it in `off-record/drafts/<slug>.md` with frontmatter `title`, `answers` (the question it
    answers and the role it plays), and `cites` (background pointers). A draft that changes an
    existing statement also carries `supersedes: S-####`, `amends: S-####` or `clarifies: S-####`,
-   each naming a single statement. It may carry `rests_on` (statement ids it depends on).
+   each naming a single statement; only that statement's author may attest such a draft. It may
+   carry `rests_on` (statement ids it depends on) and `context_for`, a list of the statements whose
+   reading it changes, each with a note of one line:
+
+   ```
+   context_for:
+     - statement: S-0012
+       note: holds only for exports since the migration
+   ```
 2. Post the exact final text as a clean block and ask for agreement, in the last message of your
    turn, after any tool calls. Text written before a tool call in the same turn may not reach the
    session file, and a proposal the snapshot does not contain cannot be attested.
@@ -46,8 +54,8 @@ from the human's latest message, and pass its id.
 
 1. State the choice in a turn of your own, in an on-record session, in the last message of that
    turn, for the same reason as above.
-2. Draft it in `off-record/drafts/` with `title`, `answers`, optional `rests_on` and `cites`. A
-   revision of an agent statement carries `supersedes: A-####`.
+2. Draft it in `off-record/drafts/` with `title`, `answers`, optional `rests_on`, `context_for` and
+   `cites`. A revision of an agent statement carries `supersedes: A-####`.
 3. `kb snapshot`, then `kb record <draft> --turn <session>#<your-turn-uuid>`.
 4. When a human is later shown one in full: `kb seen A-#### --turn <ptr>`. To retire one with nothing
    in its place: `kb withdraw A-#### --turn <ptr> --reason <text>`.
@@ -62,6 +70,7 @@ kb attest <draft> --turn <ptr> [--proposed <ptr>] [--form proposed-and-agreed|ag
 kb record <draft> --turn <ptr>
 kb seen A-#### --turn <ptr>
 kb withdraw A-#### --turn <ptr> --reason <text>
+kb links <S-####|A-####> ... [--depth N]
 kb check
 kb index
 kb search <terms>
@@ -73,7 +82,9 @@ kb pin [--set | --remove]
 kb --launcher [version]
 ```
 
-`kb check` re-verifies every recorded act against the rules. A clean write path never makes it
+`kb links` maps the links around one or more statements in one call: each statement's file, title
+and standing, and its links in both directions with their notes (Kent Rule 49). `kb check`
+re-verifies every recorded act against the rules. A clean write path never makes it
 fail; it exists for the day someone touched the files by hand. `kb serve` renders the knowledge base
 as linked HTML for reading. `kb where` prints the folder Kent is installed in and the
 knowledge base `kb` operates on, with how it was found. `kb rules` lists Kent's rules and the
@@ -87,7 +98,9 @@ would run and why.
 confirming a statement, and its record. **Attested**: the state of a statement with at least one
 attestation. **Agent statement**: a working choice recorded by an agent. **On-record**: material
 statements may be attested from. **Off-record**: recorded material nothing can be attested from.
-**Private**: never recorded. **Supersede**: replace a statement's currency with a newer one.
+**Private**: never recorded. **Supersede**: replace a statement's currency with a newer one, which
+only its author does. **Context for**: a link from one statement to another whose reading it
+changes; it marks the other `extra_context`.
 **Promotion** is plain language for movement from off-record or draft material to attested, not a
 term of art. Avoid *ratified*, *canon*, *queue*, *tentative*, and *incognito*.
 

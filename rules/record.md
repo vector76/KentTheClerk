@@ -45,13 +45,14 @@ draft in `off-record/drafts/` or a turn in the conversation, never a file in `at
 
 ## Changing a statement
 
-**Kent Rule 4.** An attested statement's text never changes. To change what the record says, a
-new statement is attested that supersedes, amends or clarifies the old one, and `kb attest` marks
-the old one. Supersession replaces the old statement's currency; it stays on the record, and what
-cited it is orphaned, not invalidated. An amendment adds to a statement and a clarification states
-its scope or meaning; neither may contradict it, and if a change would make any sentence of the
-original false, it is a supersession. When marks pile up on one statement, the next change
-consolidates the original and its additions into one superseding statement.
+**Kent Rule 4.** An attested statement's text never changes. To change what the record says, the
+old statement's author attests a new one that supersedes, amends or clarifies it (Kent Rule 46), and
+`kb attest` marks the old one. Anyone else who reads it differently links to it with `context_for`
+instead (Kent Rule 47). Supersession replaces the old statement's currency; it stays on the record,
+and what cited it is orphaned, not invalidated. An amendment adds to a statement and a
+clarification states its scope or meaning; neither may contradict it, and if a change would make any
+sentence of the original false, it is a supersession. When marks pile up on one statement, the next
+change consolidates the original and its additions into one superseding statement.
 
 **Kent Rule 5.** A typo fix that does not change meaning is allowed in principle, but `kb` has
 no way to make one. Propose the fix in conversation and let the human decide.

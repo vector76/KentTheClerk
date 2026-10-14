@@ -430,9 +430,61 @@ func runCheck(ns argparse.Namespace) int {
 				}
 			}
 		}
+		// only the author changes a human statement (from 0.10.0; earlier supersessions were claims anyone
+		// could record)
+		if strings.HasPrefix(py.Str(sid), "S-") && madeFrom(st, []int64{0, 10, 0}) {
+			for _, r := range relations {
+				old := st.Meta.Get(r)
+				if o := lookup(py.Or(old, "")); py.Truthy(old) && o != nil && strings.HasPrefix(py.Str(old), "S-") && !mayChange(authorOf(st), o) {
+					errorf("%s: %s %s, whose author is %s, not %s (%s)", py.Str(sid), r, py.Str(old), py.Repr(authorOf(o)), py.Repr(authorOf(st)), rule("author-only"))
+				}
+			}
+		}
 		nMarks := len(listOf(st.Meta.Get("amended_by"))) + len(listOf(st.Meta.Get("clarified_by")))
 		if nMarks > 2 && !py.Truthy(st.Meta.Get("superseded_by")) {
 			warnf("%s: %d amendment/clarification marks; consider consolidating by supersession (%s)", py.Str(sid), nMarks, rule("change-by-supersession"))
+		}
+	}
+
+	// context_for and the extra_context mark it sets, both ways
+	incoming := map[string]bool{}
+	for _, st := range all {
+		sid := py.Str(st.Meta.Get("id"))
+		if v := st.Meta.Get("context_for"); py.Truthy(v) {
+			if _, ok := v.([]any); !ok {
+				errorf("%s: context_for is not a list of entries (%s)", sid, rule("context-for"))
+				continue
+			}
+		}
+		seen := map[string]bool{}
+		for _, l := range contextLinks(st.Meta) {
+			if p := contextProblem(root, sid, l); p != "" {
+				errorf("%s: context_for: %s (%s)", sid, p, rule("context-for"))
+				continue
+			}
+			if seen[l.target] {
+				errorf("%s: context_for names %s twice (%s)", sid, l.target, rule("context-for"))
+			}
+			seen[l.target] = true
+			incoming[l.target] = true
+			if strings.HasPrefix(sid, "S-") && strings.HasPrefix(l.target, "A-") {
+				errorf("%s: context_for %s, an agent statement; a human statement relates to one only by superseding it (%s)", sid, l.target, rule("agent-no-attestations"))
+			}
+			if t := lookup(l.target); t != nil && t.Meta.Get(extraContextKey) != true {
+				errorf("%s: not marked %s, though %s is context for it", l.target, extraContextKey, sid)
+			}
+		}
+	}
+	for _, st := range all {
+		sid := py.Str(st.Meta.Get("id"))
+		v, present := st.Meta.Lookup(extraContextKey)
+		if !present {
+			continue
+		}
+		if v != true {
+			errorf("%s: %s is %s; the mark is only ever true", sid, extraContextKey, py.Repr(v))
+		} else if !incoming[sid] {
+			errorf("%s: marked %s, but no statement is context for it", sid, extraContextKey)
 		}
 	}
 
@@ -487,6 +539,19 @@ func runCheck(ns argparse.Namespace) int {
 		return 1
 	}
 	return 0
+}
+
+// madeFrom says whether a statement's first attestation was made under at least version v.
+func madeFrom(st *Statement, v []int64) bool {
+	atts := listOf(st.Meta.Get("attestations"))
+	if len(atts) == 0 {
+		return false
+	}
+	d, ok := atts[0].(*py.Dict)
+	if !ok || !py.Truthy(d.Get("system_version")) {
+		return false
+	}
+	return tupleGE(versionTuple(d.Get("system_version")), v)
 }
 
 // containsValue is `x in v` for a list (or a str, as a substring).

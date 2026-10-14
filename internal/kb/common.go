@@ -34,7 +34,7 @@ var productRules = map[string]int{
 	"fork-ancestry": 17, "own-turn": 21, "after-proposal": 22, "same-session": 23, "exact-text": 25,
 	"attest-once": 26, "title-and-answers": 27, "agent-from-conversation": 31, "agent-own-turn": 32,
 	"seen-in-full": 34, "agent-revision": 35, "agent-no-attestations": 37, "system-stamp": 44,
-	"pinned-version": 44,
+	"pinned-version": 44, "author-only": 46, "context-for": 47,
 }
 
 // rule is how a message cites a rule, saying how to read it (S-0106), e.g. "Kent Rule 7: `kb rules 7` to
@@ -594,6 +594,15 @@ func (st *Statement) ID() any { return st.Meta.Get("id") }
 
 func parseScalar(v string) any {
 	v = py.Strip(v)
+	// a double-quoted value is written by fmQuote as a JSON string, so it is read back as one; otherwise
+	// each rewrite of the file would escape its quotes and backslashes once more
+	if strings.HasPrefix(v, `"`) && strings.HasSuffix(v, `"`) && py.Len(v) >= 2 {
+		if x, err := py.Loads(v); err == nil {
+			if s, ok := x.(string); ok {
+				return s
+			}
+		}
+	}
 	if (strings.HasPrefix(v, "'") || strings.HasPrefix(v, `"`)) && strings.HasSuffix(v, v[:1]) && py.Len(v) >= 2 {
 		return v[1 : len(v)-1]
 	}

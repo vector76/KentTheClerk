@@ -158,6 +158,9 @@ func statementCard(db *sql.DB, s row, full bool) string {
 			sup += ` <span class="pill">` + key + ` <a href="/s/` + esc(s[key]) + `">` + esc(s[key]) + `</a></span>`
 		}
 	}
+	if n := len(query(db, "SELECT 1 FROM context_links WHERE target = ?", s["id"])); n > 0 {
+		sup += ` <span class="pill"><a href="/s/` + esc(s["id"]) + `#context">extra context</a> (` + fmt.Sprint(n) + `)</span>`
+	}
 	head := `<div class="meta"><a href="/s/` + esc(s["id"]) + `"><b>` + esc(s["id"]) + `</b></a>` +
 		sup + ` · ` + byline + `</div><h3 style="margin:.2rem 0 .5rem">` + esc(s["title"]) + `</h3>`
 	bodyText := sqlStr(s["body"])
@@ -269,6 +272,12 @@ func (h *kbServer) overview(db *sql.DB) string {
 				}
 			}
 		}
+		for _, r := range query(db, "SELECT target FROM context_links WHERE statement = ? ORDER BY target", s["id"]) {
+			marks = append(marks, `context for <a href="/s/`+esc(r["target"])+`">`+esc(r["target"])+`</a>`)
+		}
+		for _, r := range query(db, "SELECT statement FROM context_links WHERE target = ? ORDER BY statement", s["id"]) {
+			marks = append(marks, `context from <a href="/s/`+esc(r["statement"])+`">`+esc(r["statement"])+`</a>`)
+		}
 		cls := ""
 		if truthy(s["superseded_by"]) || truthy(s["withdrawn_in"]) {
 			cls = ` class="old"`
@@ -349,6 +358,9 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 			out = append(out, "<tr><th>"+esc(strings.ReplaceAll(key, "_", " "))+"</th><td>"+strings.Join(links, ", ")+"</td></tr>")
 		}
 	}
+	for _, c := range query(db, "SELECT target, note FROM context_links WHERE statement = ? ORDER BY target", sid) {
+		out = append(out, "<tr><th>context for</th><td><a href='/s/"+esc(c["target"])+"'>"+esc(c["target"])+"</a>: "+esc(c["note"])+"</td></tr>")
+	}
 	if truthy(s["topics"]) {
 		out = append(out, "<tr><th>topics</th><td>"+esc(s["topics"])+"</td></tr>")
 	}
@@ -365,6 +377,24 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 				out = append(out, "<h3 style='margin:.8rem 0 .2rem'>"+lp[0].(string)+"</h3>"+renderTurn(db, ts[0]))
 			}
 		}
+	}
+	// statements that change how this one is read, with their notes; those in force first
+	context := query(db, "SELECT c.statement, c.note, s.title, s.superseded_by, s.withdrawn_in FROM context_links c "+
+		"LEFT JOIN statements s ON s.id = c.statement WHERE c.target = ? "+
+		"ORDER BY (s.superseded_by IS NOT NULL AND s.superseded_by != '') OR (s.withdrawn_in IS NOT NULL AND s.withdrawn_in != ''), c.statement", sid)
+	if len(context) > 0 {
+		var b strings.Builder
+		b.WriteString(`<h2 id="context">extra context: statements that change how this one is read</h2><table class="dense">`)
+		for _, r := range context {
+			cls := ""
+			if truthy(r["superseded_by"]) || truthy(r["withdrawn_in"]) {
+				cls = ` class="old"`
+			}
+			b.WriteString(`<tr` + cls + `><td><a href="/s/` + esc(r["statement"]) + `">` + esc(r["statement"]) + `</a></td><td>` + esc(r["title"]) +
+				`</td><td>` + esc(r["note"]) + `</td></tr>`)
+		}
+		b.WriteString("</table>")
+		out = append(out, b.String())
 	}
 	inbound := query(db, "SELECT id, title FROM statements WHERE body LIKE ? AND id != ? ORDER BY id", "%"+sid+"%", sid)
 	if len(inbound) > 0 {

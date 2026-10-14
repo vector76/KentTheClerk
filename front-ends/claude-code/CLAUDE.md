@@ -28,6 +28,7 @@ Two rules hold before any of those documents is read:
 | Recording a choice you made as an agent statement | `kb rules agent-statements`, then `kb rules procedure` |
 | Session modes, forks, snapshots, off-record material | `kb rules sessions` |
 | The layers of the record, citing, documents, changing a statement | `kb rules record` |
+| Linking statements, or reading one that carries `extra_context: true` | `kb rules links` |
 
 Settings for this project:
 

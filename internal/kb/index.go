@@ -38,6 +38,8 @@ CREATE TABLE attestations (
   statement TEXT, by_user TEXT, at TEXT, turn TEXT, form TEXT
 );
 CREATE TABLE citations (statement TEXT, turn TEXT, kind TEXT);
+CREATE TABLE context_links (statement TEXT, target TEXT, note TEXT);
+CREATE INDEX context_links_target ON context_links(target);
 CREATE VIRTUAL TABLE turns_fts USING fts5(uuid UNINDEXED, text);
 CREATE VIRTUAL TABLE statements_fts USING fts5(id UNINDEXED, title, body);
 `
@@ -217,6 +219,9 @@ func buildIndex(root string) string {
 		}
 		for _, c := range listOf(m.Get("cites")) {
 			exec("INSERT INTO citations VALUES (?,?,?)", id, c, "background")
+		}
+		for _, l := range contextLinks(m) {
+			exec("INSERT INTO context_links VALUES (?,?,?)", id, l.target, l.note)
 		}
 	}
 	must(tx.Commit())

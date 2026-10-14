@@ -91,6 +91,7 @@ func runRecord(ns argparse.Namespace) int {
 			die(fmt.Sprintf("%s: %s is no longer in force (%s)", r, py.Str(target), rule("agent-revision")))
 		}
 	}
+	context := contextFor(root, "A", meta, rels)
 	rests := restsOn(root, meta)
 
 	cites := py.Or(getOr(meta, "cites", []any{}), []any{})
@@ -108,6 +109,9 @@ func runRecord(ns argparse.Namespace) int {
 	ordered.Set("cites", cites)
 	for _, r := range rels.Keys() {
 		ordered.Set(r, rels.Get(r))
+	}
+	if len(context) > 0 {
+		ordered.Set("context_for", context)
 	}
 	ordered.Set("topics", py.Or(getOr(meta, "topics", []any{}), []any{}))
 	shown := textContained(body, turnText(turn))
@@ -132,6 +136,7 @@ func runRecord(ns argparse.Namespace) int {
 	for _, r := range rels.Keys() {
 		markRelation(root, rels.Get(r), r, aid)
 	}
+	markContext(root, context, aid)
 	return 0
 }
 

@@ -193,6 +193,9 @@ func runAttest(ns argparse.Namespace) int {
 				"(overriding or adopting it; %s)", r, rule("agent-no-attestations")))
 		}
 	}
+	// only a statement's author changes it; anyone else links to it with context_for
+	requireAuthor(root, user, rels)
+	context := contextFor(root, "S", meta, rels)
 	rests := restsOn(root, meta)
 
 	sid := nextStatementID(root, "S")
@@ -208,6 +211,9 @@ func runAttest(ns argparse.Namespace) int {
 	for _, r := range rels.Keys() {
 		ordered.Set(r, rels.Get(r))
 	}
+	if len(context) > 0 {
+		ordered.Set("context_for", context)
+	}
 	ordered.Set("topics", py.Or(getOr(meta, "topics", []any{}), []any{}))
 	ordered.Set("attestations", []any{record})
 	dest := filepath.Join(root, "attested", sid+"-"+slugify(py.AsStr(meta.Get("title")), 60)+".md")
@@ -219,6 +225,7 @@ func runAttest(ns argparse.Namespace) int {
 	for _, r := range rels.Keys() {
 		markRelation(root, rels.Get(r), r, sid)
 	}
+	markContext(root, context, sid)
 	return 0
 }
 
