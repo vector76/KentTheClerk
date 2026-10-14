@@ -424,6 +424,7 @@ func writeJSONL(dest string, header *py.Dict, records []*py.Dict) {
 
 func runSnapshot(ns argparse.Namespace) int {
 	root := repoRoot()
+	requirePin(root)
 	userArg, _ := ns.Str("user")
 	user := currentUser(userArg, root)
 	mode, _ := ns.Str("mode")

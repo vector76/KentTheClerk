@@ -68,13 +68,15 @@ kb serve [--port 8765]
 kb version [--files]
 kb where
 kb rules [<number>|<name>]
+kb pin [--set | --remove]
 ```
 
 `kb check` re-verifies every recorded act against the rules. A clean write path never makes it
 fail; it exists for the day someone touched the files by hand. `kb serve` renders the knowledge base
 as linked HTML for reading. `kb where` prints the folder Kent is installed in and the
 knowledge base `kb` operates on, with how it was found. `kb rules` lists Kent's rules and the
-documents built into `kb`, this one included.
+documents built into `kb`, this one included. `kb pin` shows the version of Kent the knowledge base is
+pinned to, if any; run `--set` or `--remove` only when the human asks.
 
 ## Vocabulary
 

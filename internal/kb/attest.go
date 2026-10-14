@@ -64,6 +64,7 @@ func deleteDraft(path string) { _ = os.Remove(path) }
 
 func runAttest(ns argparse.Namespace) int {
 	root := repoRoot()
+	requirePin(root)
 	userArg, _ := ns.Str("user")
 	user := currentUser(userArg, root)
 	form, _ := ns.Str("form")

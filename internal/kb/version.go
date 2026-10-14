@@ -49,6 +49,7 @@ func runWhere(ns argparse.Namespace) int {
 		return 1
 	}
 	println(fmt.Sprintf("knowledge base: %s (%s)", root, how))
+	println("pin: " + pinStatus(root))
 	return 0
 }
 

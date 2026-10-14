@@ -46,6 +46,7 @@ func loadAgent(root, aid string) (string, *Statement) {
 
 func runRecord(ns argparse.Namespace) int {
 	root := repoRoot()
+	requirePin(root)
 	turnArg, _ := ns.Str("turn")
 	sess, turn := onRecordTurn(root, turnArg, "--turn")
 	if !py.Equal(item(turn, "role"), "assistant") || !strings.HasPrefix(py.Str(item(turn, "author")), "agent:") {
@@ -136,6 +137,7 @@ func runRecord(ns argparse.Namespace) int {
 
 func runSeen(ns argparse.Namespace) int {
 	root := repoRoot()
+	requirePin(root)
 	statement, _ := ns.Str("statement")
 	p, st := loadAgent(root, statement)
 	turnArg, _ := ns.Str("turn")
@@ -163,6 +165,7 @@ func runSeen(ns argparse.Namespace) int {
 
 func runWithdraw(ns argparse.Namespace) int {
 	root := repoRoot()
+	requirePin(root)
 	statement, _ := ns.Str("statement")
 	p, st := loadAgent(root, statement)
 	if py.Truthy(st.Meta.Get("withdrawn_in")) || py.Truthy(st.Meta.Get("superseded_by")) {

@@ -8,7 +8,9 @@ import (
 	"regexp"
 	"strings"
 
+	kent "kenttheclerk"
 	"kenttheclerk/internal/argparse"
+	"kenttheclerk/internal/pin"
 	"kenttheclerk/internal/py"
 )
 
@@ -39,6 +41,15 @@ func runCheck(ns argparse.Namespace) int {
 	errorf := func(f string, a ...any) { errors = append(errors, fmt.Sprintf(f, a...)) }
 	warnf := func(f string, a ...any) { warnings = append(warnings, fmt.Sprintf(f, a...)) }
 	sessions := loadAllSessions(root)
+
+	// the pin (S-0093): unreadable is an error; another version's is a warning, since this kb would
+	// refuse to write here but the record itself is not at fault
+	if p, ok, err := pin.Read(root); err != nil {
+		errorf("the knowledge base's pin cannot be read: %v (%s)", err, rule("pinned-version"))
+	} else if ok && !p.Matches(kent.Version(), kent.Hash()) {
+		warnf("this knowledge base is pinned to %s; this kb is %s and would refuse to write here (%s)",
+			p, thisBuild(), rule("pinned-version"))
+	}
 
 	// resolve is same-session resolution by default; background citations may resolve through the
 	// fork's ancestry chain (S-0034); attestation and proposal turns may not (S-0032).

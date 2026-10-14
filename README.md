@@ -218,6 +218,10 @@ them like any other statement.
 - Keep the knowledge base in git, with `off-record/`, `index.db` and `render/` left out: the first
   is outside the record by design, and the other two are rebuilt from the record whenever needed.
   `kb` does not commit for you; commit when it suits you, or ask your agent to.
+- To keep everyone who writes to the knowledge base on the same version of Kent, pin it: `kb pin
+  --set` writes `kent.pin` naming the version you are running, and `kb` then refuses to write under
+  any other. Commit the pin; to move to a new version, set it again under that version. A pin is
+  optional while you work alone.
 - `kb` names you in the record by your git `user.email`. To use a different stable id, set it in
   `~/.kenttheclerk.json`: `{"user": "your-id"}`.
 - In your own terminal, run `kb` from inside the knowledge base's folder, where it finds the record

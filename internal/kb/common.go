@@ -34,6 +34,7 @@ var productRules = map[string]int{
 	"fork-ancestry": 17, "own-turn": 21, "after-proposal": 22, "same-session": 23, "exact-text": 25,
 	"attest-once": 26, "title-and-answers": 27, "agent-from-conversation": 31, "agent-own-turn": 32,
 	"seen-in-full": 34, "agent-revision": 35, "agent-no-attestations": 37, "system-stamp": 44,
+	"pinned-version": 44,
 }
 
 // rule is how a message cites a rule, saying how to read it (S-0106), e.g. "Kent Rule 7: `kb rules 7` to

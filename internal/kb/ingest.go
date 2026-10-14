@@ -206,6 +206,7 @@ func extractOpaque(path, caption, mediaType string) ([]chunk, any) {
 
 func runIngest(ns argparse.Namespace) int {
 	root := repoRoot()
+	requirePin(root)
 	userArg, _ := ns.Str("user")
 	user := currentUser(userArg, root)
 	mode, _ := ns.Str("mode")
