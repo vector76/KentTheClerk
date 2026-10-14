@@ -1,16 +1,17 @@
 # Procedure
 
-`kb` is the executable `<kent>/kb` (`kb.exe` on Windows), where `<kent>` is the folder Kent the Clerk
-is installed in. It
-operates on the knowledge base named by the environment variable `KENT_KB`, or, if that is unset, the
-one found in the current folder or above; `kb where` prints both folders. Paths to the record in
+`kb` is Kent the Clerk's command, on the PATH. It is a launcher: it runs the version of Kent the
+knowledge base is pinned to, or else the one `KENT_VERSION` names in the project's settings, or else the
+highest version installed. It operates on the knowledge base named by the environment variable
+`KENT_KB`, or, if that is unset, the one found in the current folder or above; `kb where` prints where
+Kent and the knowledge base are and which version ran. Paths to the record in
 these files, such as `attested/` or `off-record/drafts/`, are inside the knowledge base, and a
 relative draft path given to `kb` is read from there. The human's id comes from `--user`, `KB_USER`,
 or `~/.kenttheclerk.json` (`{"user": "<id>"}`), and otherwise from git's `user.email` as git reports it
 in the knowledge base's folder; use stable ids, never display names.
 
-Run `kb` exactly as the CLAUDE.md block writes it, `"$KENT_HOME/kb" <command>` (or the PowerShell
-form), with nothing before it: the project's permissions allow that form, and a prefix such as
+Run `kb` exactly as the CLAUDE.md block writes it, `kb <command>`, with nothing before it: the
+project's permissions allow that form, and a prefix such as
 `export ...;` makes each command ask the human again. Write drafts with your file-writing tool, not
 through the shell; the permissions
 allow writing in `off-record/drafts/` and forbid editing `attested/`, `evidence/` and `agent/`.
@@ -69,6 +70,7 @@ kb version [--files]
 kb where
 kb rules [<number>|<name>]
 kb pin [--set | --remove]
+kb --launcher [version]
 ```
 
 `kb check` re-verifies every recorded act against the rules. A clean write path never makes it
@@ -76,7 +78,8 @@ fail; it exists for the day someone touched the files by hand. `kb serve` render
 as linked HTML for reading. `kb where` prints the folder Kent is installed in and the
 knowledge base `kb` operates on, with how it was found. `kb rules` lists Kent's rules and the
 documents built into `kb`, this one included. `kb pin` shows the version of Kent the knowledge base is
-pinned to, if any; run `--set` or `--remove` only when the human asks.
+pinned to, if any; run `--set` or `--remove` only when the human asks. `kb --launcher` is answered by the launcher itself: the versions installed, and which one it
+would run and why.
 
 ## Vocabulary
 

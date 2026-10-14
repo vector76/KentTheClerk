@@ -5,7 +5,8 @@
 // compiled binary. The design implemented here: the hash is computed over the files the binary is built
 // from, which are embedded in it at build time — the Go source of the executable (go.mod, go.sum, and
 // every .go file, tests included, of the root package, cmd/kb and the internal/ packages; not the
-// parity harness, the generators or test data) and the shipped rule files (rules/*.md, procedure.md,
+// launcher in cmd/launcher, which is outside the system it dispatches to, nor the parity harness, the
+// generators or test data) and the shipped rule files (rules/*.md, procedure.md,
 // README.md, front-ends/*/*). identity_test.go fails if Go source is added where the patterns below do
 // not reach it. The hash is fixed when the binary is built, the same on every platform, and
 // computed the way the former Python recorder computed it (sha256 over "path\0content\0" for each file in

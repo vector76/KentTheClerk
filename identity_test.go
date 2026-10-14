@@ -25,6 +25,10 @@ func TestHashCoversSource(t *testing.T) {
 			case ".git", ".claude", ".github", "testdata", "parity":
 				return fs.SkipDir
 			}
+			// the launcher is infrastructure outside the system it dispatches to, never hashed or pinned
+			if rel == "cmd/launcher" {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		if strings.HasSuffix(rel, ".go") && !embedded[rel] {

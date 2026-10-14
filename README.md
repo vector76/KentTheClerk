@@ -159,31 +159,35 @@ them like any other statement.
 ## Getting set up and working day to day
 
 - **Install Kent the Clerk once, outside your repositories,** the way you install a tool: download
-  the zip for your platform from the project's GitHub releases and unpack it into a folder of your
-  choosing. The zip holds the `kb` executable (`kb.exe` on Windows) and nothing else: this page, the
-  rules and the front-end block are built into it. Nothing of Kent goes into your code repository or
-  your knowledge base, it doesn't need to be on your PATH, and nothing else needs installing. On
-  macOS the executable is not notarized, so clear its quarantine flag once:
-  `xattr -d com.apple.quarantine kb`. To build it from a source checkout instead, run
-  `go build -o kb ./cmd/kb` (`-o kb.exe` on Windows) in the checkout's top folder.
+  the zip for your platform from the project's GitHub releases, unpack it into a folder of your
+  choosing, such as `%LOCALAPPDATA%\Programs\KentTheClerk` on Windows or
+  `~/.local/share/kenttheclerk` on macOS and Linux, and add that folder to your PATH. The zip holds
+  `kb` (`kb.exe` on Windows), which is a launcher, and the version itself in `versions/<version>/`;
+  this page, the rules and the front-end block are built into the version. To add another version,
+  unpack its zip into the same folder. `kb` runs the version your knowledge base is pinned to, or
+  else the one `KENT_VERSION` names in your project's settings, or else the highest version
+  installed; `kb --launcher` shows which, and why. Nothing of Kent goes into your code repository or
+  your knowledge base, and nothing else needs installing. On macOS the executables are not
+  notarized, so clear their quarantine flag once: `xattr -dr com.apple.quarantine <folder>`. To
+  build from a source checkout instead, run `build-dev.ps1 -Install` (or `build-dev.sh --install`)
+  in the checkout; it installs a development build beside the launcher.
 - **Give your knowledge its own folder.** Usually it sits beside your code repository as a
   repository of its own; it can also sit inside the code repository. To start, create it with empty
   `attested/` and `evidence/` folders; `kb` looks for them to find the record. The record fills
   them, and `agent/`, as you go.
-- **Tell your project where both are, and what the agent may do there,** in the code repository's
-  `.claude/settings.local.json`:
+- **Tell your project where the knowledge is, and what the agent may do there,** in the code
+  repository's `.claude/settings.local.json`:
 
   ```json
   {
     "env": {
-      "KENT_HOME": "C:/tools/KentTheClerk",
       "KENT_KB": "C:/work/myproject-knowledge"
     },
     "permissions": {
       "additionalDirectories": ["C:/work/myproject-knowledge"],
       "allow": [
-        "Bash(\"$KENT_HOME/kb\" *)",
-        "PowerShell(& \"$env:KENT_HOME/kb\" *)",
+        "Bash(kb *)",
+        "PowerShell(kb *)",
         "Edit(//c/work/myproject-knowledge/off-record/drafts/**)"
       ],
       "deny": [
@@ -198,7 +202,9 @@ them like any other statement.
   Set these there, for this project, not as environment variables for your whole user account:
   those would point every project at the same knowledge base. The file is yours and not committed,
   so each person on a team keeps their own paths. Claude Code keeps it out of git when Claude Code
-  creates it; if you create it yourself, add `.claude/settings.local.json` to your `.gitignore`.
+  creates it; if you create it yourself, add `.claude/settings.local.json` to your `.gitignore`. To
+  run a particular installed version of Kent for this project, add `"KENT_VERSION": "<version>"` to
+  `env`; a pin in the knowledge base takes its place, and `kb` refuses if the two disagree.
 
   The deny rules stop the agent from editing the record's files directly, so only `kb` writes
   there. The other permissions let it read the knowledge base, run `kb`, which also serves Kent's
@@ -226,7 +232,7 @@ them like any other statement.
 - `kb` names you in the record by your git `user.email`. To use a different stable id, set it in
   `~/.kenttheclerk.json`: `{"user": "your-id"}`.
 - In your own terminal, run `kb` from inside the knowledge base's folder, where it finds the record
-  by itself: `<Kent's folder>/kb <command>`. `serve` renders the knowledge base as pages
+  by itself: `kb <command>`. `serve` renders the knowledge base as pages
   to read, with statements, conversations and their links all browsable; `check` verifies the whole
   record against the rules; `where` tells you which folders `kb` is using.
 

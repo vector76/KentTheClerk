@@ -11,8 +11,8 @@ import (
 	"kenttheclerk/internal/argparse"
 )
 
-// productDir is where Kent is installed: the folder holding the kb executable, beside which the rules
-// are shipped.
+// productDir is where this version of Kent is installed: the folder holding its executable, under the
+// launcher's versions/ folder when it is installed beside the launcher.
 func productDir() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -43,6 +43,11 @@ func runVersion(ns argparse.Namespace) int {
 
 func runWhere(ns argparse.Namespace) int {
 	println("kent: " + productDir())
+	if l := os.Getenv("KENT_LAUNCHED"); l != "" {
+		println("launched: " + l)
+	} else {
+		println("launched: directly, not by the launcher")
+	}
 	root, how := findKBRoot()
 	if root == "" {
 		println(fmt.Sprintf("knowledge base: none (%s)", how))
