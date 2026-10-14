@@ -42,7 +42,7 @@ var systemFS embed.FS
 // defaultVersion is what an untagged build reports: the version of this source. A release tag must
 // name the same version (the release workflow checks). It is bumped when work on the next version
 // starts (S-0112), and it changes whenever the rules do.
-const defaultVersion = "0.9.0"
+const defaultVersion = "0.10.0"
 
 // devSuffix is the pre-release suffix a development build adds to its version.
 const devSuffix = "-dev"
