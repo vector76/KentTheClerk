@@ -1,3 +1,6 @@
 # Test fixtures are compared byte for byte (PDF offsets, CRLF and latin-1 cases): never convert them.
 *.pdf binary
 internal/*/testdata/** -text
+
+# Shell scripts run under sh, which needs LF line endings even in a Windows checkout.
+*.sh text eol=lf
