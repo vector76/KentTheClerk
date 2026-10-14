@@ -162,23 +162,26 @@ them like any other statement.
   install a tool. This is strongly recommended. On Windows, in PowerShell:
 
   ```powershell
-  Invoke-WebRequest https://raw.githubusercontent.com/vector76/KentTheClerk/main/install.ps1 -OutFile install.ps1
+  Invoke-WebRequest https://github.com/vector76/KentTheClerk/releases/latest/download/install.ps1 -OutFile install.ps1
   powershell -ExecutionPolicy Bypass -File .\install.ps1
   ```
 
   On macOS or Linux:
 
   ```sh
-  curl -fsSLO https://raw.githubusercontent.com/vector76/KentTheClerk/main/install.sh
+  curl -fsSLO https://github.com/vector76/KentTheClerk/releases/latest/download/install.sh
   sh install.sh
   ```
 
-  The script is short; read it before you run it. It installs the latest release, or the one you
-  name with `-Version 0.9.0` (`--version 0.9.0`), and checks the download against the release's
-  checksums. It puts that version in `%LOCALAPPDATA%\Programs\KentTheClerk` on Windows, or
-  `~/.local/share/kenttheclerk` on macOS and Linux, beside any versions already there, replaces the
-  launcher `kb` only if the new one is newer, and adds the folder to your PATH the first time. Run
-  it again to add another version. `kb` runs the version your knowledge base is pinned to, or else
+  Each release carries its own install script, which installs that release and no other. These
+  links always lead to the latest release's; to install an older version, download the script from
+  that version's release instead, for example
+  `https://github.com/vector76/KentTheClerk/releases/download/v0.9.0/install.ps1`. The script is
+  short; read it before you run it. It holds its release's version and the checksums of that
+  release's downloads, and checks what it downloads against them. It puts the version in
+  `%LOCALAPPDATA%\Programs\KentTheClerk` on Windows, or `~/.local/share/kenttheclerk` on macOS and
+  Linux, beside any versions already there, replaces the launcher `kb` only if the new one is newer,
+  and adds the folder to your PATH the first time. `kb` runs the version your knowledge base is pinned to, or else
   the one `KENT_VERSION` names in your project's settings, or else the highest version installed;
   `kb --launcher` shows which, and why. This page, the rules and the front-end block are built into
   each version, so nothing of Kent goes into your code repository or your knowledge base, and

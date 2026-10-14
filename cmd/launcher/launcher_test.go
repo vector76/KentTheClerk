@@ -82,7 +82,7 @@ func TestChoose(t *testing.T) {
 
 func TestMissingWarnsAgents(t *testing.T) {
 	err := missing("This knowledge base is pinned to Kent 0.7.0", "0.7.0", []string{"0.8.0"}, "/kent")
-	for _, want := range []string{"0.7.0", "Installed: 0.8.0", "Note for agents", "without their agreement"} {
+	for _, want := range []string{"0.7.0", "Installed: 0.8.0", "releases/download/v0.7.0/install.", "Note for agents", "without their agreement"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("message lacks %q:\n%s", want, err)
 		}

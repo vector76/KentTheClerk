@@ -1,26 +1,39 @@
 #!/bin/sh
-# Installs a version of Kent the Clerk, and its launcher, for the current user (S-0111).
+# Installs the version of Kent the Clerk this script is attached to, and its launcher, for the current user
+# (S-0116). Each release carries its own copy of this script, with that release's version and the checksums
+# of its zips written in below when the release is built. To install another version, use the script
+# attached to that version's release.
 #
-#   sh install.sh                    installs the latest release
-#   sh install.sh --version 0.9.0    installs that release
+#   sh install.sh
 #
-# It downloads the release's zip for this platform and the release's SHA256SUMS, checks the zip against its
-# checksum, and places the version in <root>/versions/<version>/ beside any versions already installed. It
-# replaces the launcher, <root>/kb, only if the one in the zip is newer, and adds <root> to your PATH the
-# first time, in ~/.profile, and in ~/.bashrc and ~/.zshenv where those shells are used. Nothing is run from
-# the download except, after its checksum is checked, the launcher's report of its own version.
+# It downloads this release's zip for this platform, checks it against the checksum written in below, and
+# places the version in <root>/versions/<version>/ beside any versions already installed. It replaces the
+# launcher, <root>/kb, only if the one in the zip is newer, and adds <root> to your PATH the first time, in
+# ~/.profile, and in ~/.bashrc and ~/.zshenv where those shells are used. Nothing is run from the download
+# except, after its checksum is checked, the launcher's report of its own version.
 #
-# Other options:
+# Options:
 #   --root <folder>   where Kent is installed (default ${XDG_DATA_HOME:-$HOME/.local/share}/kenttheclerk)
-#   --zip <zip>       install from a zip already downloaded; SHA256SUMS must be beside it
-#   --force           reinstall a version that is already installed
+#   --zip <zip>       install from this release's zip, already downloaded
+#   --force           reinstall the version if it is already installed
 #   --no-path         do not change your PATH
+#
+# In the source repository this file is a template, with no version or checksums. There it installs only
+# from --zip, taking the version from the zip's name and the checksums from a SHA256SUMS beside it, for
+# testing a build before it is released.
 set -eu
 
 # The GitHub repository releases are published from.
 REPO="vector76/KentTheClerk"
 
-version=latest
+# The release this script installs, written in when the release is built: "<sha256>  <zip>" per line.
+VERSION="@VERSION@"
+CHECKSUMS="
+@CHECKSUMS@
+"
+template=false
+[ "$VERSION" = "@""VERSION@" ] && template=true
+
 root="${XDG_DATA_HOME:-$HOME/.local/share}/kenttheclerk"
 zip=""
 force=false
@@ -30,7 +43,6 @@ fail() { echo "install: $*" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
 	case "$1" in
-	--version) [ $# -ge 2 ] || fail "--version needs a value"; version="$2"; shift 2 ;;
 	--root) [ $# -ge 2 ] || fail "--root needs a value"; root="$2"; shift 2 ;;
 	--zip) [ $# -ge 2 ] || fail "--zip needs a value"; zip="$2"; shift 2 ;;
 	--force) force=true; shift ;;
@@ -81,34 +93,35 @@ command -v unzip >/dev/null 2>&1 || fail "unzip is needed to unpack the download
 work=$(mktemp -d "${TMPDIR:-/tmp}/kent-install.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
-# the zip and its checksums
+# the zip
+version="$VERSION"
+sums="$work/checksums"
+printf '%s\n' "$CHECKSUMS" >"$sums"
 if [ -n "$zip" ]; then
 	[ -f "$zip" ] || fail "no such file: $zip"
-	sums="$(dirname "$zip")/SHA256SUMS"
-	[ -f "$sums" ] || fail "no SHA256SUMS beside $zip"
-	base=$(basename "$zip")
-	version=$(echo "$base" | sed -n "s/^kent-\(.*\)-$os-$arch\.zip\$/\1/p")
-	[ -n "$version" ] || fail "$zip is not named kent-<version>-$os-$arch.zip"
-else
-	if [ "$version" = latest ]; then
-		download "https://api.github.com/repos/$REPO/releases/latest" "$work/latest.json"
-		version=$(sed -n 's/.*"tag_name"[^"]*"\([^"]*\)".*/\1/p' "$work/latest.json" | head -n 1)
-		[ -n "$version" ] || fail "cannot tell which release is the latest"
+	zip_version=$(basename "$zip" | sed -n "s/^kent-\(.*\)-$os-$arch\.zip\$/\1/p")
+	[ -n "$zip_version" ] || fail "$zip is not named kent-<version>-$os-$arch.zip"
+	if $template; then
+		# testing a build: the checksums come from beside the zip
+		version="$zip_version"
+		[ -f "$(dirname "$zip")/SHA256SUMS" ] || fail "no SHA256SUMS beside $zip"
+		cp "$(dirname "$zip")/SHA256SUMS" "$sums"
+	elif [ "$zip_version" != "$version" ]; then
+		fail "$zip is Kent $zip_version, and this script installs Kent $version; use the script attached to the release of $zip_version"
 	fi
-	version=${version#v}
-	url="https://github.com/$REPO/releases/download/v$version"
+else
+	$template && fail "this is the template from Kent's source repository, which names no release; use the install script attached to a release, or --zip"
+	url="https://github.com/$REPO/releases/download/v$version/kent-$version-$os-$arch.zip"
 	zip="$work/kent-$version-$os-$arch.zip"
-	sums="$work/SHA256SUMS"
 	echo "downloading Kent $version for $os-$arch"
-	download "$url/kent-$version-$os-$arch.zip" "$zip" || fail "cannot download Kent $version from $url"
-	download "$url/SHA256SUMS" "$sums" || fail "cannot download SHA256SUMS from $url"
+	download "$url" "$zip" || fail "cannot download $url"
 fi
 echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || fail "$version is not a version"
 name="kent-$version-$os-$arch"
 
 # the checksum
 want=$(awk -v f="$name.zip" '{ n = $2; sub(/^\*/, "", n) } n == f { print tolower($1); exit }' "$sums")
-[ -n "$want" ] || fail "SHA256SUMS has no checksum for $name.zip"
+[ -n "$want" ] || fail "this script has no checksum for $name.zip"
 got=$(sha256 "$zip")
 [ "$got" = "$want" ] || fail "$name.zip does not match its checksum (expected $want, got $got); nothing was installed"
 

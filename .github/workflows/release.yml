@@ -82,15 +82,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           pattern: zip-*
           merge-multiple: true
           path: dist
+      # the release's own install scripts, with its version and its zips' checksums written in (S-0116)
       - name: release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           (cd dist && sha256sum *.zip > SHA256SUMS)
-          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" \
-            --title "Kent the Clerk ${GITHUB_REF_NAME#v}" --generate-notes
+          sh .github/fill-install-scripts.sh "${GITHUB_REF_NAME#v}" dist/SHA256SUMS dist
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS dist/install.ps1 dist/install.sh \
+            --repo "$GITHUB_REPOSITORY" --title "Kent the Clerk ${GITHUB_REF_NAME#v}" --generate-notes

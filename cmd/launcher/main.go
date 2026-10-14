@@ -32,6 +32,8 @@ import (
 var launcherVersion = "0.1.0"
 
 const (
+	// repo is the GitHub repository Kent's releases are published from.
+	repo       = "vector76/KentTheClerk"
 	versionEnv = "KENT_VERSION"
 	kbEnv      = "KENT_KB"
 	// launchedEnv tells the version that it was started by the launcher, and how its version was chosen.
@@ -141,6 +143,15 @@ func choose(versions []string, p *pin.Pin, pinPath, envVersion, dir string) (cho
 	return choice{versions[0], "the highest version installed"}, nil
 }
 
+// installScriptURL is where the install script for a version is published: each release carries its own,
+// which installs that release (S-0116). With no version, it is the latest release's.
+func installScriptURL(version, script string) string {
+	if version == "" {
+		return "https://github.com/" + repo + "/releases/latest/download/" + script
+	}
+	return "https://github.com/" + repo + "/releases/download/v" + version + "/" + script
+}
+
 // missing says that a version is not installed and how the human would install it, without inviting an
 // agent to do it (S-0108).
 func missing(what, version string, versions []string, dir string) error {
@@ -153,16 +164,16 @@ func missing(what, version string, versions []string, dir string) error {
 	if len(versions) > 0 {
 		fmt.Fprintf(&b, " Installed: %s.", strings.Join(versions, ", "))
 	}
-	want := version
-	if want == "" {
-		want = "<version>"
+	which := "the latest release"
+	if version != "" {
+		which = "Kent " + version
 	}
-	script := "sh install.sh --version " + want
+	script, run := "install.sh", "sh install.sh"
 	if runtime.GOOS == "windows" {
-		script = `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version ` + want
+		script, run = "install.ps1", `powershell -ExecutionPolicy Bypass -File .\install.ps1`
 	}
-	fmt.Fprintf(&b, "\n\nHow the human would install it: with Kent the Clerk's install script, from its "+
-		"repository on GitHub, as its README describes:\n\n    %s", script)
+	fmt.Fprintf(&b, "\n\nHow the human would install it: download the install script for %s,\n\n    %s\n\n"+
+		"read it, and run it:\n\n    %s", which, installScriptURL(version, script), run)
 	b.WriteString("\n\nNote for agents: tell the human which version is missing. Do not download or install " +
 		"it yourself without their agreement.")
 	return errors.New(b.String())

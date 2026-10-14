@@ -1,21 +1,26 @@
-# Installs a version of Kent the Clerk, and its launcher, for the current user (S-0111).
+# Installs the version of Kent the Clerk this script is attached to, and its launcher, for the current user
+# (S-0116). Each release carries its own copy of this script, with that release's version and the checksums
+# of its zips written in below when the release is built. To install another version, use the script
+# attached to that version's release.
 #
-#   ./install.ps1                    installs the latest release
-#   ./install.ps1 -Version 0.9.0     installs that release
+#   powershell -ExecutionPolicy Bypass -File .\install.ps1
 #
-# It downloads the release's zip for this platform and the release's SHA256SUMS, checks the zip against its
-# checksum, and places the version in <Root>\versions\<version>\ beside any versions already installed. It
-# replaces the launcher, <Root>\kb.exe, only if the one in the zip is newer, and adds <Root> to your user
-# PATH the first time. Nothing is run from the download except, after its checksum is checked, the
-# launcher's report of its own version.
+# It downloads this release's zip for this platform, checks it against the checksum written in below, and
+# places the version in <Root>\versions\<version>\ beside any versions already installed. It replaces the
+# launcher, <Root>\kb.exe, only if the one in the zip is newer, and adds <Root> to your user PATH the first
+# time. Nothing is run from the download except, after its checksum is checked, the launcher's report of
+# its own version.
 #
-# Other options:
+# Options:
 #   -Root <folder>     where Kent is installed (default %LOCALAPPDATA%\Programs\KentTheClerk)
-#   -ZipFile <zip>     install from a zip already downloaded; SHA256SUMS must be beside it
-#   -Force             reinstall a version that is already installed
+#   -ZipFile <zip>     install from this release's zip, already downloaded
+#   -Force             reinstall the version if it is already installed
 #   -NoPath            do not change your PATH
+#
+# In the source repository this file is a template, with no version or checksums. There it installs only
+# from -ZipFile, taking the version from the zip's name and the checksum from a SHA256SUMS beside it, for
+# testing a build before it is released.
 param(
-    [string]$Version = 'latest',
     [string]$Root = (Join-Path $env:LOCALAPPDATA 'Programs\KentTheClerk'),
     [string]$ZipFile,
     [switch]$Force,
@@ -26,6 +31,13 @@ $ProgressPreference = 'SilentlyContinue'
 
 # The GitHub repository releases are published from.
 $Repo = 'vector76/KentTheClerk'
+
+# The release this script installs, written in when the release is built.
+$Version = '@VERSION@'
+$Checksums = @{
+    # @CHECKSUMS@
+}
+$Template = $Version -eq ('@' + 'VERSION@')
 
 function Fail([string]$msg) { Write-Host "install: $msg" -ForegroundColor Red; exit 1 }
 
@@ -49,35 +61,35 @@ $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
 $work = Join-Path ([IO.Path]::GetTempPath()) ("kent-install-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $work | Out-Null
 try {
-    # the zip and its checksums
+    # the zip
     if ($ZipFile) {
         $zip = (Resolve-Path $ZipFile).Path
-        $sums = Join-Path (Split-Path $zip) 'SHA256SUMS'
-        if (-not (Test-Path $sums)) { Fail "no SHA256SUMS beside $zip" }
         if ((Split-Path $zip -Leaf) -notmatch '^kent-(.+)-windows-(amd64|arm64)\.zip$') { Fail "$zip is not named kent-<version>-windows-<arch>.zip" }
-        $Version = $Matches[1]
-    } else {
-        if ($Version -eq 'latest') {
-            $tag = (Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest").tag_name
-            $Version = $tag.TrimStart('v')
+        $zipVersion = $Matches[1]
+        if ($Template) {
+            # testing a build: the checksums come from beside the zip
+            $Version = $zipVersion
+            $sums = Join-Path (Split-Path $zip) 'SHA256SUMS'
+            if (-not (Test-Path $sums)) { Fail "no SHA256SUMS beside $zip" }
+            foreach ($l in Get-Content $sums) {
+                if ($l -match '^([0-9a-fA-F]{64})\s+\*?(\S+)$') { $Checksums[$Matches[2]] = $Matches[1].ToLower() }
+            }
+        } elseif ($zipVersion -ne $Version) {
+            Fail "$zip is Kent $zipVersion, and this script installs Kent $Version; use the script attached to the release of $zipVersion"
         }
-        $Version = $Version.TrimStart('v')
-        $base = "https://github.com/$Repo/releases/download/v$Version"
+    } else {
+        if ($Template) { Fail "this is the template from Kent's source repository, which names no release; use the install script attached to a release, or -ZipFile" }
         $zip = Join-Path $work "kent-$Version-windows-$arch.zip"
-        $sums = Join-Path $work 'SHA256SUMS'
+        $url = "https://github.com/$Repo/releases/download/v$Version/kent-$Version-windows-$arch.zip"
         Write-Host "downloading Kent $Version for windows-$arch"
-        try {
-            Invoke-WebRequest "$base/kent-$Version-windows-$arch.zip" -OutFile $zip
-            Invoke-WebRequest "$base/SHA256SUMS" -OutFile $sums
-        } catch { Fail "cannot download Kent $Version from $base ($($_.Exception.Message))" }
+        try { Invoke-WebRequest $url -OutFile $zip } catch { Fail "cannot download $url ($($_.Exception.Message))" }
     }
     if ($Version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { Fail "$Version is not a version" }
     $name = "kent-$Version-windows-$arch"
 
     # the checksum
-    $line = Get-Content $sums | Where-Object { $_ -match "^([0-9a-fA-F]{64})\s+\*?$([regex]::Escape("$name.zip"))$" } | Select-Object -First 1
-    if (-not $line) { Fail "SHA256SUMS has no checksum for $name.zip" }
-    $want = $Matches[1].ToLower()
+    $want = $Checksums["$name.zip"]
+    if (-not $want) { Fail "this script has no checksum for $name.zip" }
     $got = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
     if ($got -ne $want) { Fail "$name.zip does not match its checksum (expected $want, got $got); nothing was installed" }
 
