@@ -9,24 +9,26 @@ by the environment variable `KENT_HOME`; the knowledge base is the folder named 
 are set per user in this project's `.claude/settings.local.json`. Run `kb` as
 `"$KENT_HOME/kb" <command>` (in PowerShell, `& "$env:KENT_HOME/kb" <command>`),
 in exactly that form with nothing before it, since the project's permissions allow that form.
-`kb where` prints both folders; below, `<kent>/` and `<kb>/` stand for them. Kent's rules are in
-`<kent>/rules/`, one file per topic. Read a file when its topic comes up, not before.
+`kb where` prints both folders; below, `<kb>/` stands for the knowledge base's. Kent's rules and the
+documents you read are built into `kb`: `kb rules` lists them, `kb rules <name>` prints a document,
+`kb rules <number>` prints one rule, and a refusal names the rule it enforces and how to view it.
+Read a document when its topic comes up, not before.
 
-Two rules hold before any of those files is read:
+Two rules hold before any of those documents is read:
 
 - **Write to the record only through `kb`.** Never create or edit anything in `<kb>/evidence/`,
   `<kb>/attested/` or `<kb>/agent/` by hand, not even to fix a typo (Kent Rule 1).
 - **A session nobody declared is off-record.** When statements worth recording come up, ask the
   human whether this session goes on the record before recording anything (Kent Rule 12).
 
-| When | Read |
+| When | Run `kb` as above with |
 |---|---|
-| The human is new, or asks why the knowledge base works as it does | `<kent>/README.md` |
-| Answering a question from the knowledge base | `<kent>/rules/answering.md` |
-| Proposing, drafting or attesting a statement | `<kent>/rules/attestation.md`, then `<kent>/procedure.md` |
-| Recording a choice you made as an agent statement | `<kent>/rules/agent-statements.md`, then `<kent>/procedure.md` |
-| Session modes, forks, snapshots, off-record material | `<kent>/rules/sessions.md` |
-| The layers of the record, citing, documents, changing a statement | `<kent>/rules/record.md` |
+| The human is new, or asks why the knowledge base works as it does | `rules introduction` |
+| Answering a question from the knowledge base | `rules answering` |
+| Proposing, drafting or attesting a statement | `rules attestation`, then `rules procedure` |
+| Recording a choice you made as an agent statement | `rules agent-statements`, then `rules procedure` |
+| Session modes, forks, snapshots, off-record material | `rules sessions` |
+| The layers of the record, citing, documents, changing a statement | `rules record` |
 
 Settings for this project:
 

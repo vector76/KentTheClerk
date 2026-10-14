@@ -66,6 +66,7 @@ func newParser() *argparse.Parser {
 	addServeParser(ap)
 	addVersionParser(ap)
 	addWhereParser(ap)
+	addRulesParser(ap)
 	return ap
 }
 

@@ -36,13 +36,14 @@ var productRules = map[string]int{
 	"seen-in-full": 34, "agent-revision": 35, "agent-no-attestations": 37, "system-stamp": 44,
 }
 
-// rule is how a message cites a rule, e.g. "Kent Rule 7".
+// rule is how a message cites a rule, saying how to read it (S-0106), e.g. "Kent Rule 7: `kb rules 7` to
+// view it".
 func rule(key string) string {
 	n, ok := productRules[key]
 	if !ok {
 		py.Raise("KeyError", "%s", py.StrRepr(key))
 	}
-	return fmt.Sprintf("Kent Rule %d", n)
+	return fmt.Sprintf("Kent Rule %d: `kb rules %d` to view it", n, n)
 }
 
 var (

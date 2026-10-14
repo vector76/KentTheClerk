@@ -1,7 +1,7 @@
 # Builds the Go kb for Windows, macOS and Linux (amd64 and arm64) on a version tag vX.Y.Z, and attaches one
-# zip per platform, plus SHA256SUMS, to a GitHub release. Each zip holds the executable beside the files the
-# agent reads:
-#   kent-<version>-<os>-<arch>/kb[.exe], README.md, procedure.md, rules/, front-ends/
+# zip per platform, plus SHA256SUMS, to a GitHub release. Each zip holds the executable alone; the rules and
+# the documents the agent reads are built into it (kb rules):
+#   kent-<version>-<os>-<arch>/kb[.exe]
 # The version is the tag without its leading "v"; it is built into the executable as system_version.
 # The Go toolchain is the one go.mod names, the version the parity harness was run with.
 name: release
@@ -67,8 +67,6 @@ jobs:
           exe=kb; [ "$GOOS" = windows ] && exe=kb.exe
           mkdir -p "dist/$name"
           go build -trimpath -ldflags "-s -w -X kenttheclerk.version=${version}" -o "dist/$name/$exe" ./cmd/kb
-          cp README.md procedure.md "dist/$name/"
-          cp -r rules front-ends "dist/$name/"
           (cd dist && zip -qr "$name.zip" "$name")
           echo "ZIP=dist/$name.zip" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4

@@ -110,5 +110,16 @@ func Hash() string {
 	return hash
 }
 
+// ReadFile reads one of the files built into this binary, by its path in the repository (e.g.
+// "rules/record.md"). The documents the agent and the human read are served from here, so an installed
+// version of Kent is the executable alone (S-0106, S-0107). Line endings come back as LF.
+func ReadFile(p string) (string, error) {
+	b, err := systemFS.ReadFile(p)
+	if err != nil {
+		return "", err
+	}
+	return strings.ReplaceAll(string(b), "\r\n", "\n"), nil
+}
+
 // FilesHeading introduces the list printed by "kb version --files".
 const FilesHeading = "files, as built into this binary:"

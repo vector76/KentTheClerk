@@ -144,11 +144,13 @@ The system has two parts with different jobs:
 
 - The **recorder** is the `kb` command. Like a notary, it checks process and signatures and never
   interprets meaning. Every change to the record goes through it. When it refuses something, it
-  says which of Kent's rules the refusal enforces, for example "Kent Rule 25".
+  says which of Kent's rules the refusal enforces and how to read it, for example "Kent Rule 25:
+  `kb rules 25` to view it".
 - The **agent** does the interpreting: the conversation, the drafting, the weighing. It reads the
   record's files directly and writes only through `kb`.
 
-The rules the agent follows are in the `rules/` folder beside this page. They are the same for every
+The rules the agent follows are built into `kb`, along with this page: `kb rules` lists them, and
+`kb rules 25` prints one. They are the same for every
 knowledge base on this version of Kent the Clerk. Nothing you record changes them; they change
 only when a new version is adopted, and every recorded act notes the version it was made under.
 Statements you attest about how your team should work are part of your content, and the agent weighs
@@ -158,8 +160,8 @@ them like any other statement.
 
 - **Install Kent the Clerk once, outside your repositories,** the way you install a tool: download
   the zip for your platform from the project's GitHub releases and unpack it into a folder of your
-  choosing. The folder holds the `kb` executable (`kb.exe` on Windows) beside this page, the rules
-  and the front-end block; keep them together. Nothing of Kent goes into your code repository or
+  choosing. The zip holds the `kb` executable (`kb.exe` on Windows) and nothing else: this page, the
+  rules and the front-end block are built into it. Nothing of Kent goes into your code repository or
   your knowledge base, it doesn't need to be on your PATH, and nothing else needs installing. On
   macOS the executable is not notarized, so clear its quarantine flag once:
   `xattr -d com.apple.quarantine kb`. To build it from a source checkout instead, run
@@ -178,7 +180,7 @@ them like any other statement.
       "KENT_KB": "C:/work/myproject-knowledge"
     },
     "permissions": {
-      "additionalDirectories": ["C:/tools/KentTheClerk", "C:/work/myproject-knowledge"],
+      "additionalDirectories": ["C:/work/myproject-knowledge"],
       "allow": [
         "Bash(\"$KENT_HOME/kb\" *)",
         "PowerShell(& \"$env:KENT_HOME/kb\" *)",
@@ -199,16 +201,16 @@ them like any other statement.
   creates it; if you create it yourself, add `.claude/settings.local.json` to your `.gitignore`.
 
   The deny rules stop the agent from editing the record's files directly, so only `kb` writes
-  there. The other permissions let it read Kent's rules and the knowledge base, run `kb` and write
-  drafts. Permission rules take paths in their own form and don't expand variables, so write your
+  there. The other permissions let it read the knowledge base, run `kb`, which also serves Kent's
+  rules, and write drafts. Permission rules take paths in their own form and don't expand variables, so write your
   folders out in full: `C:\work\myproject-knowledge` becomes
   `//c/work/myproject-knowledge`, and on macOS or Linux `/home/you/knowledge` becomes
   `//home/you/knowledge`.
 - **Work in Claude Code's auto mode.** It is required: without it, the agent asks for your approval
   all the time, and the permissions above don't prevent that. The deny rules stay in place as a
   safety net.
-- Paste the block in `front-ends/claude-code/CLAUDE.md` into your project's CLAUDE.md. It tells the
-  agent how to run `kb`, where the rules are, and which two hold before anything else. It names no
+- Paste the block that `kb rules claude-code` prints into your project's CLAUDE.md. It tells the
+  agent how to run `kb`, how to read the rules, and which two hold before anything else. It names no
   folders of yours, so it can be committed.
 - The settings take effect right away, even in the session that wrote them. The CLAUDE.md block
   takes effect when a conversation starts, so after setting up, start a new conversation, or run
