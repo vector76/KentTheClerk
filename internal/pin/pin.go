@@ -1,4 +1,4 @@
-// Package pin reads and writes a knowledge base's pin (S-0093): a small committed file at the top of the
+// Package pin reads and writes a knowledge base's pin (S-0115): a small committed file at the top of the
 // knowledge base naming the version of Kent everyone writes under and that version's system hash. The
 // recorder refuses to act under any other version; the launcher reads the pin to choose which installed
 // version to run (S-0112).

@@ -1,6 +1,6 @@
 package kb
 
-// kb pin, and the check every act makes against the knowledge base's pin (S-0093).
+// kb pin, and the check every act makes against the knowledge base's pin (S-0115).
 
 import (
 	"fmt"

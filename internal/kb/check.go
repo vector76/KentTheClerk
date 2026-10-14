@@ -42,7 +42,7 @@ func runCheck(ns argparse.Namespace) int {
 	warnf := func(f string, a ...any) { warnings = append(warnings, fmt.Sprintf(f, a...)) }
 	sessions := loadAllSessions(root)
 
-	// the pin (S-0093): unreadable is an error; another version's is a warning, since this kb would
+	// the pin (S-0115): unreadable is an error; another version's is a warning, since this kb would
 	// refuse to write here but the record itself is not at fault
 	if p, ok, err := pin.Read(root); err != nil {
 		errorf("the knowledge base's pin cannot be read: %v (%s)", err, rule("pinned-version"))

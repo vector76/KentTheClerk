@@ -221,7 +221,8 @@ them like any other statement.
 - To keep everyone who writes to the knowledge base on the same version of Kent, pin it: `kb pin
   --set` writes `kent.pin` naming the version you are running, and `kb` then refuses to write under
   any other. Commit the pin; to move to a new version, set it again under that version. A pin is
-  optional while you work alone.
+  optional, whether you work alone or with others; what is required is that, when there is one,
+  everyone who writes here obeys it.
 - `kb` names you in the record by your git `user.email`. To use a different stable id, set it in
   `~/.kenttheclerk.json`: `{"user": "your-id"}`.
 - In your own terminal, run `kb` from inside the knowledge base's folder, where it finds the record
