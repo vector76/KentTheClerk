@@ -207,7 +207,7 @@ func extractOpaque(path, caption, mediaType string) ([]chunk, any) {
 func runIngest(ns argparse.Namespace) int {
 	root := repoRoot()
 	userArg, _ := ns.Str("user")
-	user := currentUser(userArg)
+	user := currentUser(userArg, root)
 	mode, _ := ns.Str("mode")
 	if !in(mode, modes) {
 		die("mode must be one of " + py.Tuple(modes...))
@@ -346,7 +346,7 @@ func runIngest(ns argparse.Namespace) int {
 		"title", hTitle, "mode", mode, "extractor", extractor,
 		"original", py.D("hash", "sha256:"+hexdigest, "path", "originals/"+py.Name(original), "name", srcName,
 			"size", py.IntOf(int(st.Size())), "media_type", mediaType),
-		"ingested_by", user, "ingested_at", isoSeconds(t))
+		"ingested_by", user, "authentication", authentication, "ingested_at", isoSeconds(t))
 	addStamp(header)
 	header.Set("chunk_count", py.IntOf(len(records)))
 	writeJSONL(dest, header, records)

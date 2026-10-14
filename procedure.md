@@ -6,7 +6,8 @@ operates on the knowledge base named by the environment variable `KENT_KB`, or, 
 one found in the current folder or above; `kb where` prints both folders. Paths to the record in
 these files, such as `attested/` or `off-record/drafts/`, are inside the knowledge base, and a
 relative draft path given to `kb` is read from there. The human's id comes from `--user`, `KB_USER`,
-or `~/.kenttheclerk.json` (`{"user": "<id>"}`); use stable ids, never display names.
+or `~/.kenttheclerk.json` (`{"user": "<id>"}`), and otherwise from git's `user.email` as git reports it
+in the knowledge base's folder; use stable ids, never display names.
 
 Run `kb` exactly as the CLAUDE.md block writes it, `"$KENT_HOME/kb" <command>` (or the PowerShell
 form), with nothing before it: the project's permissions allow that form, and a prefix such as

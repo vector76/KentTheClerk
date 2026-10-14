@@ -65,7 +65,7 @@ func deleteDraft(path string) { _ = os.Remove(path) }
 func runAttest(ns argparse.Namespace) int {
 	root := repoRoot()
 	userArg, _ := ns.Str("user")
-	user := currentUser(userArg)
+	user := currentUser(userArg, root)
 	form, _ := ns.Str("form")
 	if !in(form, attestationForms) {
 		die("form must be one of " + py.Tuple(attestationForms...))
@@ -78,7 +78,7 @@ func runAttest(ns argparse.Namespace) int {
 	}
 
 	ts := isoSeconds(now())
-	record := py.D("by", user, "at", ts, "turn", Pointer{sess.ID(), py.Str(item(agree, "uuid"))}.String(), "form", form)
+	record := py.D("by", user, "authentication", authentication, "at", ts, "turn", Pointer{sess.ID(), py.Str(item(agree, "uuid"))}.String(), "form", form)
 	addStamp(record)
 
 	if form == "endorsement" {

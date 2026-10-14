@@ -216,7 +216,8 @@ them like any other statement.
 - Keep the knowledge base in git, with `off-record/`, `index.db` and `render/` left out: the first
   is outside the record by design, and the other two are rebuilt from the record whenever needed.
   `kb` does not commit for you; commit when it suits you, or ask your agent to.
-- Tell `kb` who you are with a stable id, for example in `~/.kenttheclerk.json`: `{"user": "your-id"}`.
+- `kb` names you in the record by your git `user.email`. To use a different stable id, set it in
+  `~/.kenttheclerk.json`: `{"user": "your-id"}`.
 - In your own terminal, run `kb` from inside the knowledge base's folder, where it finds the record
   by itself: `<Kent's folder>/kb <command>`. `serve` renders the knowledge base as pages
   to read, with statements, conversations and their links all browsable; `check` verifies the whole

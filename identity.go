@@ -11,9 +11,18 @@
 // computed the way the former Python recorder computed it (sha256 over "path\0content\0" for each file in
 // path order, CRLF normalised to LF). The version comes from the release tag, set at build time with
 //
-//	go build -ldflags "-X kenttheclerk.version=0.8.0" ./cmd/kb
+//	go build -ldflags "-X kenttheclerk.version=0.9.0" ./cmd/kb
 //
 // and falls back to defaultVersion for a build without a tag.
+//
+// A development build (S-0110) is made with a flag at build time, never a switch at run time, so a release
+// build has no development mode at all:
+//
+//	go build -ldflags "-X kenttheclerk.dev=true -X kenttheclerk.commit=<sha> -X kenttheclerk.dirty=true" ./cmd/kb
+//
+// (build-dev.ps1 and build-dev.sh fill these in from git). Its version is the one it is becoming with a
+// pre-release suffix, "0.9.0-dev" (S-0112), and its acts are stamped with the commit it was built from and
+// whether the working tree was dirty (S-0109).
 package kent
 
 import (
@@ -30,20 +39,42 @@ import (
 var systemFS embed.FS
 
 // defaultVersion is what an untagged build reports: the version of this source. A release tag must
-// name the same version (the release workflow checks), and it changes whenever the rules do.
-const defaultVersion = "0.8.0"
+// name the same version (the release workflow checks). It is bumped when work on the next version
+// starts (S-0112), and it changes whenever the rules do.
+const defaultVersion = "0.9.0"
 
-// version is set from the release tag by the build ("-X kenttheclerk.version=..."); a leading "v" is dropped.
-var version string
+// devSuffix is the pre-release suffix a development build adds to its version.
+const devSuffix = "-dev"
+
+// Set by the build with -X: version from the release tag (a leading "v" is dropped); dev, commit and
+// dirty for a development build only.
+var (
+	version string
+	dev     string
+	commit  string
+	dirty   string
+)
+
+// Dev reports whether this is a development build.
+func Dev() bool { return dev == "true" }
 
 // Version is system_version.
 func Version() string {
 	v := strings.TrimPrefix(version, "v")
 	if v == "" {
-		return defaultVersion
+		v = defaultVersion
+	}
+	if Dev() {
+		v += devSuffix
 	}
 	return v
 }
+
+// Commit is the git commit a development build was built from ("" if unknown or not a development build).
+func Commit() string { return commit }
+
+// Dirty reports whether a development build's working tree had uncommitted changes.
+func Dirty() bool { return dirty == "true" }
 
 // Files are the paths the hash covers, relative to the repository root, in hash order.
 func Files() []string {

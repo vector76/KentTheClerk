@@ -425,7 +425,7 @@ func writeJSONL(dest string, header *py.Dict, records []*py.Dict) {
 func runSnapshot(ns argparse.Namespace) int {
 	root := repoRoot()
 	userArg, _ := ns.Str("user")
-	user := currentUser(userArg)
+	user := currentUser(userArg, root)
 	mode, _ := ns.Str("mode")
 	filter, _ := ns.Str("filter")
 	session, hasSession := ns.Str("session")
@@ -581,7 +581,7 @@ func runSnapshot(ns argparse.Namespace) int {
 		titleV = info.title
 	}
 	header := py.D("type", "kb-snapshot", "version", py.IntOf(snapshotVersion), "session_id", sessionID,
-		"title", titleV, "mode", mode, "filter", filter, "participants", []any{user}, "agents", agents,
+		"title", titleV, "mode", mode, "filter", filter, "participants", []any{user}, "authentication", authentication, "agents", agents,
 		"source", src, "snapshot_at", isoSeconds(now()))
 	addStamp(header)
 	header.Set("branch_point", branchPoint)

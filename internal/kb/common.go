@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -161,22 +162,42 @@ func rel(p, root string) string {
 
 // ---------------------------------------------------------------- system identity
 
-// systemStamp is the fields every recorded act carries (S-0030), in order.
-func systemStamp() [][2]string {
-	return [][2]string{{"system_version", kent.Version()}, {"system_hash", kent.Hash()}}
+// stampField is one field of the system stamp.
+type stampField struct {
+	key   string
+	value any
 }
 
-func addStamp(d *py.Dict) {
-	for _, kv := range systemStamp() {
-		d.Set(kv[0], kv[1])
+// systemStamp is the fields every recorded act carries (S-0030), in order. An act made under a
+// development build also carries the commit the build came from and whether its tree was dirty (S-0109).
+func systemStamp() []stampField {
+	out := []stampField{{"system_version", kent.Version()}, {"system_hash", kent.Hash()}}
+	if kent.Dev() {
+		out = append(out, stampField{"system_build", "dev"}, stampField{"system_commit", kent.Commit()},
+			stampField{"system_dirty", kent.Dirty()})
+	}
+	return out
+}
+
+// addStamp adds the system stamp to d, each key after the given prefix ("" or e.g. "withdrawn_").
+func addStamp(d *py.Dict, prefix ...string) {
+	pre := strings.Join(prefix, "")
+	for _, f := range systemStamp() {
+		d.Set(pre+f.key, f.value)
 	}
 }
 
 // ---------------------------------------------------------------- identity
 
-// currentUser is the user id: --user flag, else KB_USER env, else ~/.kenttheclerk.json {"user": ...};
-// the older ~/.convkb.json is still read if the new file is absent.
-func currentUser(explicit string) string {
+// authentication is how the author of an act is known (S-0055). The user id is asserted, not verified,
+// and every act records it as asserted (S-0113).
+const authentication = "asserted"
+
+// currentUser is the user id: --user flag, else KB_USER env, else ~/.kenttheclerk.json {"user": ...}
+// (the older ~/.convkb.json is still read if the new file is absent), else git's user.email as git
+// reports it in the knowledge base's folder, so a setting in the knowledge base's own repository wins
+// (S-0113).
+func currentUser(explicit, root string) string {
 	if explicit != "" {
 		return explicit
 	}
@@ -196,8 +217,23 @@ func currentUser(explicit string) string {
 			}
 		}
 	}
-	die(`no user id: pass --user, set KB_USER, or write ~/.kenttheclerk.json with {"user": "<id>"}`)
+	if u := gitUserEmail(root); u != "" {
+		return u
+	}
+	die(`no user id: pass --user, set KB_USER, write ~/.kenttheclerk.json with {"user": "<id>"}, or set ` +
+		`git's user.email`)
 	return ""
+}
+
+// gitUserEmail is `git config user.email` run in dir, or "" when git is missing or the setting is unset.
+func gitUserEmail(dir string) string {
+	cmd := exec.Command("git", "config", "user.email")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // ---------------------------------------------------------------- pointers
@@ -817,10 +853,13 @@ func slugify(s string, limit int) string {
 	return strings.TrimRight(py.Head(s, limit), "-")
 }
 
-// versionTuple is "0.3.0" -> (0, 3, 0); junk gives (0,).
+// versionTuple is "0.3.0" -> (0, 3, 0); junk gives (0,). A pre-release or build suffix is dropped, so
+// "0.9.0-dev" is (0, 9, 0): a development build follows the rules of the version it is becoming.
 func versionTuple(v any) []int64 {
 	var out []int64
-	for _, x := range strings.Split(py.Str(v), ".") {
+	core, _, _ := strings.Cut(py.Str(v), "-")
+	core, _, _ = strings.Cut(core, "+")
+	for _, x := range strings.Split(core, ".") {
 		n, ok := py.ParseInt(x)
 		if !ok {
 			return []int64{0}

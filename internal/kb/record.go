@@ -178,9 +178,7 @@ func runWithdraw(ns argparse.Namespace) int {
 	st.Meta.Set("withdrawn_by", item(turn, "author"))
 	st.Meta.Set("withdrawn_at", isoSeconds(now()))
 	st.Meta.Set("withdrawn_reason", py.Strip(reason))
-	stamp := systemStamp()
-	st.Meta.Set("withdrawn_system_version", stamp[0][1])
-	st.Meta.Set("withdrawn_system_hash", stamp[1][1])
+	addStamp(st.Meta, "withdrawn_")
 	writeStatement(p, st)
 	println(fmt.Sprintf("%s: withdrawn by %s", py.Str(st.ID()), py.Str(item(turn, "author"))))
 	return 0

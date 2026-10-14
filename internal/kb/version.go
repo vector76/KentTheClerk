@@ -27,6 +27,11 @@ func productDir() string {
 func runVersion(ns argparse.Namespace) int {
 	println("system_version: " + kent.Version())
 	println("system_hash: " + kent.Hash())
+	if kent.Dev() {
+		println("system_build: dev")
+		println("system_commit: " + kent.Commit())
+		println(fmt.Sprintf("system_dirty: %t", kent.Dirty()))
+	}
 	if ns.Bool("files") {
 		println(kent.FilesHeading)
 		for _, f := range kent.Files() {
