@@ -162,14 +162,14 @@ them like any other statement.
   install a tool. This is strongly recommended. On Windows, in PowerShell:
 
   ```powershell
-  Invoke-WebRequest https://raw.githubusercontent.com/OWNER/KentTheClerk/main/install.ps1 -OutFile install.ps1
+  Invoke-WebRequest https://raw.githubusercontent.com/vector76/KentTheClerk/main/install.ps1 -OutFile install.ps1
   powershell -ExecutionPolicy Bypass -File .\install.ps1
   ```
 
   On macOS or Linux:
 
   ```sh
-  curl -fsSLO https://raw.githubusercontent.com/OWNER/KentTheClerk/main/install.sh
+  curl -fsSLO https://raw.githubusercontent.com/vector76/KentTheClerk/main/install.sh
   sh install.sh
   ```
 

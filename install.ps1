@@ -25,7 +25,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 # The GitHub repository releases are published from.
-$Repo = 'OWNER/KentTheClerk'
+$Repo = 'vector76/KentTheClerk'
 
 function Fail([string]$msg) { Write-Host "install: $msg" -ForegroundColor Red; exit 1 }
 
@@ -57,7 +57,6 @@ try {
         if ((Split-Path $zip -Leaf) -notmatch '^kent-(.+)-windows-(amd64|arm64)\.zip$') { Fail "$zip is not named kent-<version>-windows-<arch>.zip" }
         $Version = $Matches[1]
     } else {
-        if ($Repo -like 'OWNER/*') { Fail "this script does not name the repository it installs from; set `$Repo" }
         if ($Version -eq 'latest') {
             $tag = (Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest").tag_name
             $Version = $tag.TrimStart('v')

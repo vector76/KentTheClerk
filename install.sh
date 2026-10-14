@@ -18,7 +18,7 @@
 set -eu
 
 # The GitHub repository releases are published from.
-REPO="OWNER/KentTheClerk"
+REPO="vector76/KentTheClerk"
 
 version=latest
 root="${XDG_DATA_HOME:-$HOME/.local/share}/kenttheclerk"
@@ -90,7 +90,6 @@ if [ -n "$zip" ]; then
 	version=$(echo "$base" | sed -n "s/^kent-\(.*\)-$os-$arch\.zip\$/\1/p")
 	[ -n "$version" ] || fail "$zip is not named kent-<version>-$os-$arch.zip"
 else
-	case "$REPO" in OWNER/*) fail "this script does not name the repository it installs from; set REPO" ;; esac
 	if [ "$version" = latest ]; then
 		download "https://api.github.com/repos/$REPO/releases/latest" "$work/latest.json"
 		version=$(sed -n 's/.*"tag_name"[^"]*"\([^"]*\)".*/\1/p' "$work/latest.json" | head -n 1)
