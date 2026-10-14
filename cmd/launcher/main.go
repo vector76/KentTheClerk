@@ -29,7 +29,7 @@ import (
 
 // launcherVersion is the launcher's own version, which the install scripts compare to replace the
 // launcher only with a newer one. It is not Kent's version.
-const launcherVersion = "0.1.0"
+var launcherVersion = "0.1.0"
 
 const (
 	versionEnv = "KENT_VERSION"
@@ -157,8 +157,12 @@ func missing(what, version string, versions []string, dir string) error {
 	if want == "" {
 		want = "<version>"
 	}
-	fmt.Fprintf(&b, "\n\nHow the human would install it: download kent-%s-%s-%s.zip from Kent the Clerk's "+
-		"releases on GitHub and unpack it into %s.", want, runtime.GOOS, runtime.GOARCH, dir)
+	script := "sh install.sh --version " + want
+	if runtime.GOOS == "windows" {
+		script = `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version ` + want
+	}
+	fmt.Fprintf(&b, "\n\nHow the human would install it: with Kent the Clerk's install script, from its "+
+		"repository on GitHub, as its README describes:\n\n    %s", script)
 	b.WriteString("\n\nNote for agents: tell the human which version is missing. Do not download or install " +
 		"it yourself without their agreement.")
 	return errors.New(b.String())
@@ -174,6 +178,11 @@ func fail(err error) int {
 }
 
 func launch(args []string) int {
+	// answered before anything else is looked at, so the install scripts can always ask it
+	if len(args) == 2 && args[0] == "--launcher" && args[1] == "version" {
+		fmt.Println(launcherVersion)
+		return 0
+	}
 	dir, err := installDir()
 	if err != nil {
 		return fail(err)
@@ -210,10 +219,6 @@ func launch(args []string) int {
 }
 
 func launcherInfo(args []string, dir string, versions []string, c choice, chooseErr error) int {
-	if len(args) == 1 && args[0] == "version" {
-		fmt.Println(launcherVersion)
-		return 0
-	}
 	if len(args) != 0 {
 		return fail(errors.New("kb --launcher takes nothing, or \"version\""))
 	}

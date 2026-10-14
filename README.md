@@ -158,19 +158,45 @@ them like any other statement.
 
 ## Getting set up and working day to day
 
-- **Install Kent the Clerk once, outside your repositories,** the way you install a tool: download
-  the zip for your platform from the project's GitHub releases, unpack it into a folder of your
-  choosing, such as `%LOCALAPPDATA%\Programs\KentTheClerk` on Windows or
-  `~/.local/share/kenttheclerk` on macOS and Linux, and add that folder to your PATH. The zip holds
-  `kb` (`kb.exe` on Windows), which is a launcher, and the version itself in `versions/<version>/`;
-  this page, the rules and the front-end block are built into the version. To add another version,
-  unpack its zip into the same folder. `kb` runs the version your knowledge base is pinned to, or
-  else the one `KENT_VERSION` names in your project's settings, or else the highest version
-  installed; `kb --launcher` shows which, and why. Nothing of Kent goes into your code repository or
-  your knowledge base, and nothing else needs installing. On macOS the executables are not
-  notarized, so clear their quarantine flag once: `xattr -dr com.apple.quarantine <folder>`. To
-  build from a source checkout instead, run `build-dev.ps1 -Install` (or `build-dev.sh --install`)
-  in the checkout; it installs a development build beside the launcher.
+- **Install Kent the Clerk with its install script,** outside your repositories, the way you
+  install a tool. This is strongly recommended. On Windows, in PowerShell:
+
+  ```powershell
+  Invoke-WebRequest https://raw.githubusercontent.com/OWNER/KentTheClerk/main/install.ps1 -OutFile install.ps1
+  powershell -ExecutionPolicy Bypass -File .\install.ps1
+  ```
+
+  On macOS or Linux:
+
+  ```sh
+  curl -fsSLO https://raw.githubusercontent.com/OWNER/KentTheClerk/main/install.sh
+  sh install.sh
+  ```
+
+  The script is short; read it before you run it. It installs the latest release, or the one you
+  name with `-Version 0.9.0` (`--version 0.9.0`), and checks the download against the release's
+  checksums. It puts that version in `%LOCALAPPDATA%\Programs\KentTheClerk` on Windows, or
+  `~/.local/share/kenttheclerk` on macOS and Linux, beside any versions already there, replaces the
+  launcher `kb` only if the new one is newer, and adds the folder to your PATH the first time. Run
+  it again to add another version. `kb` runs the version your knowledge base is pinned to, or else
+  the one `KENT_VERSION` names in your project's settings, or else the highest version installed;
+  `kb --launcher` shows which, and why. This page, the rules and the front-end block are built into
+  each version, so nothing of Kent goes into your code repository or your knowledge base, and
+  nothing else needs installing.
+
+  Installing by hand is possible but not recommended, because each step the script takes is one you
+  can get wrong. Download your platform's zip and `SHA256SUMS` from the project's GitHub releases,
+  check the zip's SHA-256 against it, and unpack it somewhere temporary. Copy the
+  `versions/<version>/` folder from inside it into `versions/` in your install folder, and copy
+  `kb` (`kb.exe` on Windows) beside that only if there is none there yet, or if
+  `kb --launcher version` reports the one in the zip as newer. Unpacking the zip straight into the
+  install folder does not work: it nests everything in a folder named after the zip, and it
+  overwrites the launcher whether or not the new one is newer. Add the install folder to your PATH.
+  On macOS, executables downloaded through a browser are quarantined, so clear the flag on what you
+  copied: `xattr -dr com.apple.quarantine <install folder>`.
+
+  To build from a source checkout instead, run `build-dev.ps1 -Install` (or
+  `build-dev.sh --install`) in the checkout; it installs a development build beside the launcher.
 - **Give your knowledge its own folder.** Usually it sits beside your code repository as a
   repository of its own; it can also sit inside the code repository. To start, create it with empty
   `attested/` and `evidence/` folders; `kb` looks for them to find the record. The record fills
