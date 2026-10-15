@@ -433,6 +433,16 @@ func buildReport(project, kbArg string) report {
 	if vs := installedVersions(); len(vs) > 0 {
 		r.item("Installed: %s.", strings.Join(vs, ", "))
 	}
+	if kb == "" {
+		// the id that does not depend on the knowledge base, so setup does not ask for one already set
+		if u, source := userSource("", ""); u != "" {
+			r.item("The human would be recorded as %s (%s), unless ~/.kenttheclerk.json names another id "+
+				"for the knowledge base's folder.", u, source)
+		} else {
+			r.item("No user id in KB_USER or ~/.kenttheclerk.json; git's user.email in the knowledge base's " +
+				"folder may give one once it is chosen.")
+		}
+	}
 
 	r.section("Code project: " + project)
 	top, status := git(project, "rev-parse", "--show-toplevel")
@@ -665,7 +675,9 @@ func kbReport(r *report, kb string) {
 		r.item("The human would be recorded as %s (%s).", u, source)
 	} else {
 		r.item("No user id: kb could not record anything the human does.")
-		r.need(4, `Set a user id: git's user.email, or ~/.kenttheclerk.json with {"user": "<id>"}; ask the human which.`)
+		r.need(4, `Set a user id: git's user.email in the knowledge base's folder, or ~/.kenttheclerk.json `+
+			`with {"user": "<id>"} for every knowledge base, or an entry under "folders" for this one; ask the `+
+			`human which.`)
 	}
 }
 

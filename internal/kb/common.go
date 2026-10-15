@@ -7,12 +7,14 @@ package kb
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -195,10 +197,15 @@ func addStamp(d *py.Dict, prefix ...string) {
 // and every act records it as asserted (S-0113).
 const authentication = "asserted"
 
-// currentUser is the user id: --user flag, else KB_USER env, else ~/.kenttheclerk.json {"user": ...}
-// (the older ~/.convkb.json is still read if the new file is absent), else git's user.email as git
-// reports it in the knowledge base's folder, so a setting in the knowledge base's own repository wins
-// (S-0113).
+// currentUser is the user id: --user flag, else KB_USER env, else ~/.kenttheclerk.json (an entry under
+// "folders" for the folder holding the knowledge base, else "user"; the older ~/.convkb.json is still read
+// if the new file is absent), else git's user.email as git reports it in the knowledge base's folder, so a
+// setting in the knowledge base's own repository wins over the global one (S-0113, S-0123).
+//
+//	{"user": "jamie", "folders": {"C:/work/client": "jamie@client.example"}}
+//
+// A folder entry applies to a knowledge base in that folder or anywhere below it; the longest match wins,
+// so one person can be known by different ids to different knowledge bases.
 func currentUser(explicit, root string) string {
 	if u, _ := userSource(explicit, root); u != "" {
 		return u
@@ -209,6 +216,7 @@ func currentUser(explicit, root string) string {
 }
 
 // userSource is the user id currentUser would use and where it comes from, or ("", "") when there is none.
+// With root "" (no knowledge base chosen yet) folder entries and git's user.email are not consulted.
 func userSource(explicit, root string) (string, string) {
 	if explicit != "" {
 		return explicit, "from --user"
@@ -218,21 +226,54 @@ func userSource(explicit, root string) (string, string) {
 	}
 	home, _ := os.UserHomeDir()
 	for _, name := range []string{".kenttheclerk.json", ".convkb.json"} {
-		cfg := filepath.Join(home, name)
-		if py.Exists(cfg) {
-			v, err := py.Loads(py.ReadText(cfg))
-			if err != nil {
-				continue
+		b, err := os.ReadFile(filepath.Join(home, name))
+		if err != nil {
+			continue
+		}
+		var cfg struct {
+			User    string            `json:"user"`
+			Folders map[string]string `json:"folders"`
+		}
+		if json.Unmarshal(b, &cfg) != nil {
+			continue
+		}
+		if root != "" {
+			best, id := "", ""
+			for folder, u := range cfg.Folders {
+				f := folder
+				if strings.HasPrefix(f, "~/") || strings.HasPrefix(f, `~\`) {
+					f = filepath.Join(home, f[2:])
+				}
+				if u != "" && underFolder(root, f) && len(filepath.Clean(f)) > len(best) {
+					best, id = filepath.Clean(f), u
+				}
 			}
-			if u := py.AsDict(v).Get("user"); py.Truthy(u) {
-				return py.Str(u), "from ~/" + name
+			if id != "" {
+				return id, "from ~/" + name + ", for " + best
 			}
 		}
+		if cfg.User != "" {
+			return cfg.User, "from ~/" + name
+		}
 	}
-	if u := gitUserEmail(root); u != "" {
-		return u, "from git's user.email"
+	if root != "" {
+		if u := gitUserEmail(root); u != "" {
+			return u, "from git's user.email"
+		}
 	}
 	return "", ""
+}
+
+// underFolder reports whether path is folder or inside it, comparing as the file system would.
+func underFolder(path, folder string) bool {
+	p, f := filepath.Clean(path), filepath.Clean(folder)
+	if a, err := filepath.Abs(f); err == nil {
+		f = a
+	}
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		p, f = strings.ToLower(p), strings.ToLower(f)
+	}
+	return p == f || strings.HasPrefix(p, strings.TrimSuffix(f, string(filepath.Separator))+string(filepath.Separator))
 }
 
 // gitUserEmail is `git config user.email` run in dir, or "" when git is missing or the setting is unset.

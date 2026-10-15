@@ -7,12 +7,14 @@ highest version installed. It operates on the knowledge base named by the enviro
 Kent and the knowledge base are and which version ran. Paths to the record in
 these files, such as `attested/` or `off-record/drafts/`, are inside the knowledge base, and a
 relative draft path given to `kb` is read from there. The human's id comes from `--user`, `KB_USER`,
-or `~/.kenttheclerk.json` (`{"user": "<id>"}`), and otherwise from git's `user.email` as git reports it
-in the knowledge base's folder; use stable ids, never display names.
+or `~/.kenttheclerk.json` (`{"user": "<id>", "folders": {"<folder>": "<id>"}}`, where an entry for the
+folder holding the knowledge base, or one above it, wins over `user`), and otherwise from git's
+`user.email` as git reports it in the knowledge base's folder; use stable ids, never display names.
 
 Run `kb` exactly as the instructions printed at the start of the conversation write it,
-`kb <command>`, with nothing before it: the project's permissions allow that form, and a prefix such
-as `export ...;` makes each command ask the human again. Write drafts with your file-writing tool, not
+`kb <command>`, as a command of its own with nothing before or after it: the project's permissions
+allow that form, and a prefix such as `export ...;`, a pipe or a second command makes it ask the human
+again. Write drafts with your file-writing tool, not
 through the shell; the permissions
 allow writing in `off-record/drafts/` and forbid editing `attested/`, `evidence/` and `agent/`.
 

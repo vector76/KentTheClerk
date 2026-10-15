@@ -246,7 +246,10 @@ them like any other statement.
   without a pin, add `"KENT_VERSION": "<version>"` to `env` in its settings; a pin takes its place,
   and `kb` refuses if the two disagree.
 - `kb` names you in the record by your git `user.email`. To use a different stable id, set it in
-  `~/.kenttheclerk.json`: `{"user": "your-id"}`. Setup checks this with you.
+  `~/.kenttheclerk.json`: `{"user": "your-id"}`. To be known by a different id to some knowledge
+  bases, add their folders: `{"user": "your-id", "folders": {"C:/work/client": "you@client.example"}}`.
+  An entry applies to a knowledge base in that folder or below it, and the most specific one wins.
+  Setup checks your id with you.
 - In your own terminal, run `kb` from inside the knowledge base's folder, where it finds the record
   by itself: `kb <command>`. `serve` renders the knowledge base as pages
   to read, with statements, conversations and their links all browsable; `check` verifies the whole

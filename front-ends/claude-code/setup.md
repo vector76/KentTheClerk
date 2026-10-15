@@ -29,7 +29,9 @@ Ground rules for this conversation:
   bring up a Claude Code permission prompt, which is the human's approval: tell them up front to expect
   prompts for each `kb` command and for files outside the project until the settings exist, and one for
   the settings file itself, which Claude Code always asks about.
-- **Back up a file before you edit it,** next to itself as `<file>.bak-<yyyyMMdd-HHmmss>`, and say where.
+- **Back up a file before you edit it,** to the system's temporary folder (`$env:TEMP` on Windows, `/tmp`
+  elsewhere) as `<name>.bak-<yyyyMMdd-HHmmss>`, and say where. Never leave a backup in the code
+  repository, where git would see it and a `git add .` would commit it.
 - **Never write inside a `.git/` folder.** Claude Code does not allow it, and it should not.
 - **Never install or download a version of Kent yourself.** If one is missing, tell the human which, and
   they install it.
@@ -54,9 +56,12 @@ so the human can answer them together:
 - **For a new one: pin it?** `kb pin --set` writes `kent.pin`, naming the version of Kent running now,
   and from then on `kb` refuses to write under any other version. It keeps everyone who writes here on
   the same version. It is optional, alone or in a team.
-- **The human's id,** if the report found none or it is not the one they want: git's `user.email` in the
-  knowledge base's folder, or `~/.kenttheclerk.json` holding `{"user": "<id>"}`, which applies to every
-  knowledge base on this machine. It should be stable, not a display name.
+- **The human's id.** If the report already names one, tell them which and where it comes from, and ask
+  only whether this knowledge base should know them by a different id. Otherwise offer the choices:
+  `~/.kenttheclerk.json` holding `{"user": "<id>"}`, for every knowledge base on this machine; an entry
+  under `"folders"` in that file, `{"folders": {"<folder>": "<id>"}}`, for knowledge bases in that folder
+  or below it; or git's `user.email` in the knowledge base's folder. It should be stable, not a display
+  name.
 - **The project's two settings,** kept in the settings file's `env`, per user and never committed:
   - `KENT_ASK_SESSION_MODE`: when the agent asks whether a conversation is on the record.
     `when-needed` (the default) asks when something worth recording comes up; `up-front` asks before

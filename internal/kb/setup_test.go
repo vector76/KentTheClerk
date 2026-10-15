@@ -98,3 +98,36 @@ func TestFTSQuery(t *testing.T) {
 		}
 	}
 }
+
+// TestUserByFolder checks ~/.kenttheclerk.json's per-folder ids: the most specific folder holding the
+// knowledge base wins, "user" applies elsewhere, and with no knowledge base chosen only "user" counts.
+func TestUserByFolder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("KB_USER", "")
+	work := filepath.Join(home, "work")
+	client := filepath.Join(work, "client")
+	cfg, _ := json.Marshal(map[string]any{
+		"user":    "jamie",
+		"folders": map[string]string{work: "jamie-work", client: "jamie@client.example"},
+	})
+	if err := os.WriteFile(filepath.Join(home, ".kenttheclerk.json"), cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		filepath.Join(client, "kb"):         "jamie@client.example",
+		filepath.Join(work, "other-kb"):     "jamie-work",
+		filepath.Join(home, "work-kb"):      "jamie",
+		filepath.Join(home, "elsewhere-kb"): "jamie",
+		"":                                  "jamie",
+	}
+	for root, want := range cases {
+		if got, _ := userSource("", root); got != want {
+			t.Errorf("userSource(%q) = %q, want %q", root, got, want)
+		}
+	}
+	if got, _ := userSource("explicit", filepath.Join(client, "kb")); got != "explicit" {
+		t.Errorf("--user did not win: %q", got)
+	}
+}
