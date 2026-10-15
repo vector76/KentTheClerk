@@ -3,3 +3,5 @@ __pycache__/
 # kb built from source in the top folder, beside the rules
 /kb
 /kb.exe
+# per-user Claude Code settings: KENT_KB and permissions
+/.claude/settings.local.json
