@@ -38,9 +38,10 @@ const (
 	ovScrubSession   = "scrub-session"
 	ovScrubStatement = "scrub-statement"
 	ovRevise         = "revise"
+	ovUser           = "user"
 )
 
-var overrideKinds = []string{ovRename, ovMerge, ovReassign, ovScrubTurn, ovScrubSession, ovScrubStatement, ovRevise}
+var overrideKinds = []string{ovRename, ovMerge, ovReassign, ovScrubTurn, ovScrubSession, ovScrubStatement, ovRevise, ovUser}
 
 // overrideNow is the clock overrides read, so tests can place the double-check before or after a turn.
 var overrideNow = now
@@ -50,7 +51,11 @@ var overrideNow = now
 // loadOverrideLog reads the log: its entries and their lines as written. problem is "" unless a line is
 // not a JSON object.
 func loadOverrideLog(root string) (entries []*py.Dict, lines []string, problem string) {
-	p := overrideLogPath(root)
+	return loadLogFile(overrideLogPath(root))
+}
+
+// loadLogFile reads a log kb only appends to, the override log or the user log.
+func loadLogFile(p string) (entries []*py.Dict, lines []string, problem string) {
 	if !py.IsFile(p) {
 		return nil, nil, ""
 	}
@@ -115,6 +120,11 @@ func appendOverride(root string, seq int, kind string, auth overrideAuth, fields
 	for _, k := range fields.Keys() {
 		e.Set(k, fields.Get(k))
 	}
+	appendLogEntry(overrideLogPath(root), e, lines)
+}
+
+// appendLogEntry stamps an entry, chains it to the line before it and appends it to the log at p.
+func appendLogEntry(p string, e *py.Dict, lines []string) {
 	addStamp(e)
 	var prev any
 	if len(lines) > 0 {
@@ -123,7 +133,7 @@ func appendOverride(root string, seq int, kind string, auth overrideAuth, fields
 	e.Set("prev", prev)
 	line := py.Dumps(e)
 	py.CheckEncodable(line)
-	f, err := os.OpenFile(overrideLogPath(root), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {
 		py.RaiseOS(err)
 	}
@@ -380,8 +390,8 @@ func runOverrideIDs(ns argparse.Namespace, kind string, args []string) int {
 	if from == "" || to == "" || from == to {
 		die("the two ids must be different and not empty")
 	}
-	if strings.HasPrefix(to, "agent:") || in(to, []string{"client", "tool", "document"}) {
-		die(fmt.Sprintf("%s is not a person's id", py.StrRepr(to)))
+	if msg := badKey(to); msg != "" {
+		die(msg)
 	}
 	if moved, seq := retiredID(root, to); moved != "" {
 		die(fmt.Sprintf("%s was moved to %s by override %d and is retired here", py.StrRepr(to), moved, seq))
@@ -431,6 +441,13 @@ func runOverrideIDs(ns argparse.Namespace, kind string, args []string) int {
 			plan = append(plan, fmt.Sprintf("say that %s and %s are one person: %s already has %d turn(s) and %d attestation(s)",
 				from, to, to, toTurns, toAtts))
 		}
+		if users := mustLoadUsers(root); users.has(from) {
+			if users.has(to) {
+				plan = append(plan, fmt.Sprintf("remove the user table's row for %s, since %s has one: %s", users.who(from), to, users.who(to)))
+			} else {
+				plan = append(plan, fmt.Sprintf("make the user table's row for %s the row of %s", users.who(from), to))
+			}
+		}
 		return showCheck(root, check, plan)
 	}
 	turnArg, _ := ns.Str("turn")
@@ -440,8 +457,12 @@ func runOverrideIDs(ns argparse.Namespace, kind string, args []string) int {
 	seq := nextOverrideSeq(root)
 	nTurns, nAtts, nFiles := relabel(root, from, to, nil)
 	appendOverride(root, seq, kind, auth, py.D("from", from, "to", to, "turns", py.IntOf(nTurns), "attestations", py.IntOf(nAtts)))
+	row := moveRow(root, from, to)
 	clearCheck(root, check)
 	println(fmt.Sprintf("override %d: %s %s to %s: %d turn(s) and %d attestation(s) in %d file(s)", seq, verb, from, to, nTurns, nAtts, nFiles))
+	if row != "" {
+		println(row)
+	}
 	if from == user {
 		println(fmt.Sprintf("act as %s from now on: change the id in ~/.kenttheclerk.json (or KB_USER, or git's user.email); "+
 			"kb refuses acts under %s here", to, from))
@@ -477,6 +498,10 @@ func runOverrideReassign(ns argparse.Namespace, args []string) int {
 	}
 	if moved, seq := retiredID(root, to); moved != "" {
 		die(fmt.Sprintf("%s was moved to %s by override %d and is retired here", py.StrRepr(to), moved, seq))
+	}
+	if !mustLoadUsers(root).has(to) {
+		die(fmt.Sprintf("%s is not in the user table; an act is reassigned to someone in it, so add them first with kb "+
+			"user add (%s)", py.StrRepr(to), rule("add-first")))
 	}
 	full := Pointer{s.ID(), py.Str(item(t, "uuid"))}
 	var atts []string
@@ -860,7 +885,7 @@ func runOverrideRevise(ns argparse.Namespace, args []string) int {
 		die(fmt.Sprintf("%s is scrubbed", sid))
 	}
 	if authorOf(st) != user {
-		die(fmt.Sprintf("%s was attested by %s; only the person who attested it revises it (%s)", sid, py.StrRepr(authorOf(st)), rule("override-revise")))
+		die(fmt.Sprintf("%s was attested by %s; only the person who attested it revises it (%s)", sid, usersForDisplay(root).who(authorOf(st)), rule("override-revise")))
 	}
 	if reasons := reliance(root, st); len(reasons) > 0 {
 		die(fmt.Sprintf("%s cannot be revised in place, because something relies on it: %s. Its author changes it by "+
@@ -977,6 +1002,69 @@ func contextKey(meta *py.Dict) string {
 	return strings.Join(parts, "\x01")
 }
 
+// ---------------------------------------------------------------- a row of the user table
+
+// runOverrideUser changes the name or email in a person's row of the user table (S-0141). Their key stays
+// as it is: renaming a key is kb override rename.
+func runOverrideUser(ns argparse.Namespace, args []string) int {
+	root := repoRoot()
+	requirePin(root)
+	if len(args) != 1 {
+		die("kb override user takes one key: kb override user <key> --name <name> --email <email>")
+	}
+	key := py.Strip(args[0])
+	users := mustLoadUsers(root)
+	old, ok := users.get(key)
+	if !ok {
+		die(fmt.Sprintf("%s is not in the user table; a person is added with kb user add (%s)", py.StrRepr(key), rule("add-first")))
+	}
+	name, email := old.name, old.email
+	if v, _ := ns.Str("name"); v != "" {
+		name = normalizeWS(v)
+	}
+	if v, _ := ns.Str("email"); v != "" {
+		email = strings.TrimSpace(v)
+		if !emailRE.MatchString(email) {
+			die(fmt.Sprintf("%s is not an email address", py.StrRepr(email)))
+		}
+	}
+	if name == "" {
+		die("a name cannot be empty")
+	}
+	if name == old.name && email == old.email {
+		die(fmt.Sprintf("--name or --email must change the row: %s is %s <%s> now", key, old.name, old.email))
+	}
+	if p, ok := users.byEmail(email); ok && p.key != key {
+		die(fmt.Sprintf("%s already has the email %s in the user table", users.who(p.key), email))
+	}
+	userArg, _ := ns.Str("user")
+	user := currentUser(userArg, root)
+	check := []string{"override", ovUser, key, name, email}
+	if !ns.Bool("confirm") {
+		plan := []string{fmt.Sprintf("change the user table's row for %s from %s <%s> to %s <%s>, everywhere kb shows "+
+			"them; the record keeps the key %s, and the override log keeps the old row", key, old.name, old.email, name, email, key)}
+		return showCheck(root, check, plan)
+	}
+	turnArg, _ := ns.Str("turn")
+	reason, _ := ns.Str("reason")
+	auth, turn := overrideAuthority(root, user, turnArg, reason)
+	requireCheck(root, check, turn)
+	seq := nextOverrideSeq(root)
+	appendOverride(root, seq, ovUser, auth, py.D("key", key, "name", name, "email", email, "was_name", old.name, "was_email", old.email))
+	var rows []person
+	for _, p := range users.rows {
+		if p.key == key {
+			p.name, p.email = name, email
+		}
+		rows = append(rows, p)
+	}
+	writeUsers(root, rows)
+	clearCheck(root, check)
+	println(fmt.Sprintf("override %d: %s is now %s <%s>, was %s <%s>", seq, key, name, email, old.name, old.email))
+	refreshIndex(root)
+	return 0
+}
+
 // ---------------------------------------------------------------- kb check
 
 // overrideChecks verifies the override log and the marks overrides leave, for kb check. It returns the
@@ -1060,6 +1148,10 @@ func overrideChecks(root string, sessions *Sessions, errorf, warnf func(string, 
 			}
 		case ovRevise:
 			lastRevise[entryStr(e, "statement")] = n
+		case ovUser:
+			if entryStr(e, "key") == "" || entryStr(e, "name") == "" || entryStr(e, "email") == "" {
+				errorf("override log: entry %d changes a row of the user table, but does not say whose, or to what (%s)", n, rule("user-change"))
+			}
 		}
 	}
 	for sid, n := range lastRevise {
@@ -1135,21 +1227,25 @@ func runOverride(ns argparse.Namespace) int {
 		return runOverrideScrub(ns, args)
 	case ovRevise:
 		return runOverrideRevise(ns, args)
+	case ovUser:
+		return runOverrideUser(ns, args)
 	}
-	die(fmt.Sprintf("there is no override %s; the list is closed: rename, merge, reassign, scrub, revise (%s)", py.StrRepr(kind), rule("override-list")))
+	die(fmt.Sprintf("there is no override %s; the list is closed: rename, merge, reassign, scrub, revise, user (%s)", py.StrRepr(kind), rule("override-list")))
 	return 1
 }
 
 func addOverrideParser(sub *argparse.Parser) {
 	p := sub.AddParser("override", "make one of the closed list of overrides, a last resort (kb rules overrides)")
-	p.Positional("kind", argparse.Single, "rename | merge | reassign | scrub | revise")
+	p.Positional("kind", argparse.Single, "rename | merge | reassign | scrub | revise | user")
 	p.Positional("args", argparse.ZeroMore, "rename <old> <new> | merge <from> <into> | reassign <session>#<uuid> <id> | "+
-		"scrub <session>#<uuid>|<session>|S-#### | revise S-#### <draft>")
+		"scrub <session>#<uuid>|<session>|S-#### | revise S-#### <draft> | user <key> --name <name> --email <email>")
 	p.Flag("--confirm", "make the override, after the human confirmed the check in a turn of their own")
 	p.Option("--turn", "<session>#<uuid> of the human's on-record turn confirming it (for revise: agreeing to the new text)", nil, false)
 	p.Option("--reason", "why the override is made, for the log", nil, false)
 	p.Option("--proposed", "revise: <session>#<uuid> of the agent turn containing the new text", nil, false)
 	p.Option("--form", "revise: proposed-and-agreed|agreed-with-modification|self", "proposed-and-agreed", false)
+	p.Option("--name", "user: the person's name as it is to be", nil, false)
+	p.Option("--email", "user: the person's email as it is to be", nil, false)
 	p.Option("--user", "user id", nil, false)
 	p.Flag("--keep-draft", "revise: do not delete the draft")
 	p.Run = runOverride

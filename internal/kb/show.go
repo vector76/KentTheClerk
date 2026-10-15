@@ -61,7 +61,7 @@ func locatorText(loc any) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatTurn(s *Session, t *py.Dict, labels map[string]string) string {
+func formatTurn(s *Session, t *py.Dict, labels map[string]string, users *userTable) string {
 	const width = 100
 	where := py.Str(func() any {
 		if v, ok := t.Lookup("timestamp"); ok {
@@ -76,7 +76,7 @@ func formatTurn(s *Session, t *py.Dict, labels map[string]string) string {
 	if !ok {
 		l = "?"
 	}
-	head := fmt.Sprintf("[%s] %s  %s  %s#%s", l, py.Str(item(t, "author")), where, py.Head(s.ID(), 8), py.Str(item(t, "uuid")))
+	head := fmt.Sprintf("[%s] %s  %s  %s#%s", l, users.who(py.Str(item(t, "author"))), where, py.Head(s.ID(), 8), py.Str(item(t, "uuid")))
 	lines := []string{head, strings.Repeat("-", min(py.Len(head), width))}
 	for _, bv := range py.Iter(item(t, "content")) {
 		b := py.AsDict(bv)
@@ -148,13 +148,14 @@ func runShow(ns argparse.Namespace) int {
 			if !strings.HasPrefix(s.ID(), p.Session) {
 				println(fmt.Sprintf("(resolved through fork ancestry: turn is in %s)", py.Head(s.ID(), 8)))
 			}
-			println(formatTurn(s, t, labelMap(s)))
+			println(formatTurn(s, t, labelMap(s), usersForDisplay(root)))
 		} else {
 			s := findSession(root, ref)
 			if s == nil {
 				die("no evidence session " + ref)
 			}
 			labels := labelMap(s)
+			users := usersForDisplay(root)
 			titleOrID := py.Str(py.Or(s.Header.Get("title"), s.IDValue()))
 			if s.Kind() == "document" {
 				o := py.AsDict(func() any {
@@ -174,7 +175,7 @@ func runShow(ns argparse.Namespace) int {
 					continue
 				}
 				println("")
-				println(formatTurn(s, t, labels))
+				println(formatTurn(s, t, labels, users))
 			}
 		}
 		println("")

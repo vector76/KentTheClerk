@@ -31,6 +31,7 @@ Two rules hold before any of those documents is read:
 | The layers of the record, citing, documents, changing a statement | `kb rules record` |
 | Linking statements, or reading one that carries `extra_context: true` | `kb rules links` |
 | Changing the record against its rules: renaming a person's id, scrubbing content, revising a statement just attested | `kb rules overrides` |
+| Someone not yet in the user table, or a person's name or email changing | `kb rules people` |
 | Setting Kent up in this project, or something below says it is not set up right | `kb setup` |
 
 The hook runs again when a conversation is resumed or its context is compacted. A mode already

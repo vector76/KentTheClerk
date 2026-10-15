@@ -52,9 +52,10 @@ may cite the off-record background without carrying it as history.
 
 `kb snapshot <session>` reads a finished Claude Code session file and records its turns under a
 filter profile; the default keeps what the human could see. Snapshot again as the session grows;
-each re-snapshot adds the new turns. The recorder trusts the front end: the human is whoever
-`--user`, `KB_USER` or `~/.kenttheclerk.json` names, or else git's `user.email`. Nothing verifies it,
-and every act records its author as asserted.
+each re-snapshot adds the new turns. The recorder trusts the front end: the human is the key
+`--user`, `KB_USER` or `~/.kenttheclerk.json` names, or else the person whose email in the user table
+is git's `user.email` (Kent Rule 57). Nothing verifies it, and every act records its author as
+asserted.
 
 **Kent Rule 18.** What counts as evidence is what was shown. A turn of yours may contain hidden
 reasoning and tool output the human never saw; when the human answers "that's right", they are

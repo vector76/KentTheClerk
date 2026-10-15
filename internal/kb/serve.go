@@ -115,17 +115,38 @@ func renderTurn(db *sql.DB, t row) string {
 		citeHTML = `<div class="meta">cited by ` + strings.Join(parts, ", ") + `</div>`
 	}
 	return `<div class="turn ` + cls + `" id="` + esc(t["uuid"]) + `"><div class="hd"><b>` + esc(t["label"]) + `</b>` +
-		`<span>` + esc(t["author"]) + `</span><span>` + esc(when) + `</span>` +
+		`<span>` + who(db, t["author"]) + `</span><span>` + esc(when) + `</span>` +
 		`<a href="#` + esc(t["uuid"]) + `">#</a></div>` + body + tools.String() + citeHTML + `</div>`
 }
 
 func splitComma(v any) []string { return strings.Split(sqlS(v), ",") }
 
+// nameOf is the name the user table gives a key, or "".
+func nameOf(db *sql.DB, key any) string {
+	if rows := query(db, "SELECT name FROM users WHERE key = ?", key); len(rows) > 0 {
+		return sqlS(rows[0]["name"])
+	}
+	return ""
+}
+
+// who is an author as the pages show one: the key, with the name beside it (S-0138).
+func who(db *sql.DB, key any) string {
+	if n := nameOf(db, key); n != "" {
+		return esc(key) + ` <span class="meta">(` + esc(n) + `)</span>`
+	}
+	return esc(key)
+}
+
+// userLink is an author linked to their page.
+func userLink(db *sql.DB, key any) string {
+	return `<a href="/u/` + esc(key) + `">` + who(db, key) + `</a>`
+}
+
 func statementCard(db *sql.DB, s row, full bool) string {
 	atts := query(db, "SELECT * FROM attestations WHERE statement = ? ORDER BY at", s["id"])
 	var whoParts []string
 	for _, a := range atts {
-		whoParts = append(whoParts, `<a href="/u/`+esc(a["by_user"])+`">`+esc(a["by_user"])+`</a>`)
+		whoParts = append(whoParts, userLink(db, a["by_user"]))
 	}
 	who := strings.Join(whoParts, ", ")
 	if who == "" {
@@ -137,7 +158,7 @@ func statementCard(db *sql.DB, s row, full bool) string {
 		if truthy(s["seen_count"]) {
 			seen = "seen " + sqlStr(s["seen_count"]) + "×"
 		}
-		byline = `agent statement by <a href="/u/` + esc(s["originator"]) + `">` + esc(s["originator"]) + `</a> · ` + seen
+		byline = `agent statement by ` + userLink(db, s["originator"]) + ` · ` + seen
 		if truthy(s["withdrawn_in"]) {
 			byline += ` · <span class="pill">withdrawn</span>`
 		}
@@ -254,13 +275,13 @@ func (h *kbServer) overview(db *sql.DB) string {
 			if r["by_user"] == nil {
 				py.Raise("TypeError", "sequence item 0: expected str instance, NoneType found")
 			}
-			whos = append(whos, sqlStr(r["by_user"]))
+			whos = append(whos, who(db, r["by_user"]))
 		}
-		who := strings.Join(whos, ", ")
+		by := strings.Join(whos, ", ")
 		if s["kind"] == "agent" {
-			who = "agent: " + sqlStr(s["originator"])
+			by = "agent: " + esc(s["originator"])
 			if !truthy(s["seen_count"]) {
-				who += " (unseen)"
+				by += " (unseen)"
 			}
 		}
 		var marks []string
@@ -283,7 +304,7 @@ func (h *kbServer) overview(db *sql.DB) string {
 			cls = ` class="old"`
 		}
 		out = append(out, `<tr`+cls+`><td><a href="/s/`+esc(s["id"])+`">`+esc(s["id"])+`</a></td>`+
-			`<td><a href="/s/`+esc(s["id"])+`">`+esc(s["title"])+`</a></td><td>`+strings.Join(marks, " ")+`</td><td>`+esc(who)+`</td></tr>`)
+			`<td><a href="/s/`+esc(s["id"])+`">`+esc(s["title"])+`</a></td><td>`+strings.Join(marks, " ")+`</td><td>`+by+`</td></tr>`)
 	}
 	out = append(out, `</table>`)
 	out = append(out, `<h2><a href="/e/">evidence</a></h2><table class="dense"><tr><th>item</th><th>title</th><th>mode</th><th>turns</th></tr>`)
@@ -323,7 +344,7 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 	if agent {
 		l1, l2 = "author", "made in"
 	}
-	out = append(out, "<tr><th>"+l1+"</th><td><a href='/u/"+esc(s["originator"])+"'>"+esc(s["originator"])+"</a></td></tr>")
+	out = append(out, "<tr><th>"+l1+"</th><td>"+userLink(db, s["originator"])+"</td></tr>")
 	out = append(out, "<tr><th>"+l2+"</th><td>"+linkPointer(db, s["proposed_in"])+"</td></tr>")
 	for _, c := range query(db, "SELECT turn, kind FROM citations WHERE statement = ? AND kind IN ('seen', 'withdrawal')", sid) {
 		out = append(out, "<tr><th>"+esc(c["kind"])+"</th><td>"+linkPointer(db, c["turn"])+"</td></tr>")
@@ -341,7 +362,7 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 		out = append(out, "<tr><th>modified in</th><td>"+linkPointer(db, s["modified_in"])+"</td></tr>")
 	}
 	for _, a := range query(db, "SELECT * FROM attestations WHERE statement = ? ORDER BY at", sid) {
-		out = append(out, "<tr><th>attested ("+esc(a["form"])+")</th><td><a href='/u/"+esc(a["by_user"])+"'>"+esc(a["by_user"])+"</a> "+
+		out = append(out, "<tr><th>attested ("+esc(a["form"])+")</th><td>"+userLink(db, a["by_user"])+" "+
 			"at "+esc(py.Head(sqlS(a["at"]), 19))+" · "+linkPointer(db, a["turn"])+"</td></tr>")
 	}
 	for _, c := range query(db, "SELECT turn FROM citations WHERE statement = ? AND kind = 'background'", sid) {
@@ -449,7 +470,11 @@ func (h *kbServer) evidence(w http.ResponseWriter, db *sql.DB, sid string) {
 }
 
 func (h *kbServer) user(w http.ResponseWriter, db *sql.DB, uid string) {
-	out := []string{"<h1>" + esc(uid) + "</h1><h2>attested</h2>"}
+	head := "<h1>" + esc(uid) + "</h1>"
+	if rows := query(db, "SELECT name, email FROM users WHERE key = ?", uid); len(rows) > 0 {
+		head += `<p class="meta">` + esc(rows[0]["name"]) + ` &lt;` + esc(rows[0]["email"]) + `&gt;, from the user table</p>`
+	}
+	out := []string{head + "<h2>attested</h2>"}
 	for _, s := range query(db, "SELECT s.* FROM statements s JOIN attestations a ON a.statement = s.id WHERE a.by_user = ? ORDER BY s.id", uid) {
 		out = append(out, statementCard(db, s, false))
 	}
@@ -505,7 +530,7 @@ func (h *kbServer) search(w http.ResponseWriter, db *sql.DB, q string) {
 			}
 			for _, r := range rows {
 				out = append(out, `<div class="turn `+sqlStr(r["role"])+`"><div class="hd"><a href="/e/`+esc(r["session"])+`#`+esc(r["uuid"])+`">`+esc(r["label"])+`</a>`+
-					`<span>`+esc(r["author"])+`</span></div>`+sqlStr(r["snip"])+`</div>`)
+					`<span>`+who(db, r["author"])+`</span></div>`+sqlStr(r["snip"])+`</div>`)
 			}
 		}()
 	}

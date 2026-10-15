@@ -118,6 +118,8 @@ func TestOverrideReassign(t *testing.T) {
 	root := newTestKB(t)
 	attestOne(t, root)
 	checkedBefore(t)
+	mustRefuse(t, "Kent Rule 56", "override", "reassign", turnPtr(1), "dave", "--user", "alice")
+	mustRun(t, "user", "add", "Dave Diaz", "--email", "dave@example.com", "--key", "dave", "--user", "alice")
 	override(t, "alice", 5, "reassign", turnPtr(1), "dave")
 	if a := turnAuthor(t, root, testTurns[1].uuid); !py.Equal(a, "dave") {
 		t.Fatalf("turn author %v after the reassignment", a)

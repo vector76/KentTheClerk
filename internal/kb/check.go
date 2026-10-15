@@ -53,6 +53,7 @@ func runCheck(ns argparse.Namespace) int {
 
 	// the override log, and the tombstones overrides leave in evidence (S-0132)
 	overrides := overrideChecks(root, sessions, errorf, warnf)
+	usersChecks(root, sessions, errorf, warnf)
 
 	// resolve is same-session resolution by default; background citations may resolve through the
 	// fork's ancestry chain (S-0034); attestation and proposal turns may not (S-0032).

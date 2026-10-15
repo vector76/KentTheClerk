@@ -6,10 +6,12 @@ highest version installed. It operates on the knowledge base named by the enviro
 `KENT_KB`, or, if that is unset, the one found in the current folder or above; `kb where` prints where
 Kent and the knowledge base are and which version ran. Paths to the record in
 these files, such as `attested/` or `off-record/drafts/`, are inside the knowledge base, and a
-relative draft path given to `kb` is read from there. The human's id comes from `--user`, `KB_USER`,
-or `~/.kenttheclerk.json` (`{"user": "<id>", "folders": {"<folder>": "<id>"}}`, where an entry for the
-folder holding the knowledge base, or one above it, wins over `user`), and otherwise from git's
-`user.email` as git reports it in the knowledge base's folder; use stable ids, never display names.
+relative draft path given to `kb` is read from there. The human's id is their key in the knowledge
+base's user table (`kb rules people`), from `--user`, `KB_USER`, or `~/.kenttheclerk.json`
+(`{"user": "<key>", "folders": {"<folder>": "<key>"}}`, where an entry for the folder holding the
+knowledge base, or one above it, wins over `user`), and otherwise from git's `user.email` as git
+reports it in the knowledge base's folder, looked up in the table. Someone not in the table is added
+before they act.
 
 Run `kb` exactly as the instructions printed at the start of the conversation write it,
 `kb <command>`, as a command of its own with nothing before or after it: the project's permissions

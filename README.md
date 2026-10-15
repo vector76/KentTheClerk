@@ -245,11 +245,14 @@ them like any other statement.
   everyone who writes here obeys it. To run a particular installed version of Kent in one project
   without a pin, add `"KENT_VERSION": "<version>"` to `env` in its settings; a pin takes its place,
   and `kb` refuses if the two disagree.
-- `kb` names you in the record by your git `user.email`. To use a different stable id, set it in
-  `~/.kenttheclerk.json`: `{"user": "your-id"}`. To be known by a different id to some knowledge
-  bases, add their folders: `{"user": "your-id", "folders": {"C:/work/client": "you@client.example"}}`.
-  An entry applies to a knowledge base in that folder or below it, and the most specific one wins.
-  Setup checks your id with you.
+- `kb` names you in the record by a key, a short readable name such as `jamie` that never changes,
+  and the knowledge base's user table says who each key is, by name and email; a change of name or
+  email changes your row, never the record. You add yourself to the table before your first act, as
+  setup does, and `kb` refuses acts by anyone not in it. It finds your key from your git
+  `user.email`, looked up in the table, or from `~/.kenttheclerk.json`: `{"user": "your-key"}`. To be
+  known by a different key to some knowledge bases, add their folders: `{"user": "your-key",
+  "folders": {"C:/work/client": "your-client-key"}}`. An entry applies to a knowledge base in that
+  folder or below it, and the most specific one wins. Setup checks your key with you.
 - In your own terminal, run `kb` from inside the knowledge base's folder, where it finds the record
   by itself: `kb <command>`. `serve` renders the knowledge base as pages
   to read, with statements, conversations and their links all browsable; `check` verifies the whole

@@ -149,7 +149,7 @@ func requireAuthor(root, user string, rels *py.Dict) {
 		if mayChange(user, st) {
 			continue
 		}
-		author := authorOf(st)
+		author := usersForDisplay(root).who(authorOf(st))
 		if author == "" {
 			author = "nobody (it has no attestation)"
 		}

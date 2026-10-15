@@ -20,6 +20,7 @@ breaks its rules and says why. The recorder detects no contradictions and weighs
 | Attested statements | `attested/S-*.md` | claims a named person confirmed at a named time; the only authoritative layer | read, cite; write via `kb attest` |
 | Agent statements | `agent/A-*.md` | working choices recorded by an agent; operational, never testimony | read, cite, rest on; write via `kb record`, `kb seen`, `kb withdraw` |
 | Override log | `overrides.jsonl` | the overrides made to the record against its rules, each with who, when and why | read; append via `kb override` |
+| User table | `users.jsonl`, with its log `users-log.jsonl` | who each key on an act is, by name and email; fact, not testimony | read; add via `kb user add`, change via `kb override user` |
 | Off-record | `off-record/` (gitignored) | off-record sessions and drafts, outside the record; at risk of loss by design | read if present; draft here |
 | Index and view | `index.db`, `render/` | derived, disposable | rebuild with `kb index` |
 
@@ -35,8 +36,8 @@ conversation is recorded under a filter. Citations point into the projection.
 ## Writing
 
 **Kent Rule 1.** Write to the record only through `kb`. Never create, edit, rename or delete a
-file in `evidence/`, `attested/` or `agent/`, or the override log, by hand. Nothing mechanical stops
-you; this rule does. Where the record must change against its rules, `kb override` offers a closed
+file in `evidence/`, `attested/` or `agent/`, the override log, or the user table or its log, by
+hand. Nothing mechanical stops you; this rule does. Where the record must change against its rules, `kb override` offers a closed
 list of ways to do it (Kent Rules 50 to 54).
 
 **Kent Rule 2.** Evidence is append-only. A recorded turn is never dropped or altered, except

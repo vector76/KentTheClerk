@@ -42,6 +42,7 @@ CREATE TABLE context_links (statement TEXT, target TEXT, note TEXT);
 CREATE INDEX context_links_target ON context_links(target);
 CREATE VIRTUAL TABLE turns_fts USING fts5(uuid UNINDEXED, text);
 CREATE VIRTUAL TABLE statements_fts USING fts5(id UNINDEXED, title, body);
+CREATE TABLE users (key TEXT PRIMARY KEY, name TEXT, email TEXT);
 `
 
 func dbPath(root string) string { return filepath.Join(root, "index.db") }
@@ -134,6 +135,9 @@ func buildIndex(root string) string {
 	exec := func(q string, args ...any) {
 		_, err := tx.Exec(q, sqlArgs(args...)...)
 		must(err)
+	}
+	for _, p := range usersForDisplay(root).rows {
+		exec("INSERT OR REPLACE INTO users VALUES (?,?,?)", p.key, p.name, p.email)
 	}
 	for _, s := range loadAllSessions(root).Values() {
 		h := s.Header
@@ -354,6 +358,7 @@ func runSearch(ns argparse.Namespace) int {
 		println(fmt.Sprintf("%s  %s\n    %s", sqlStr(r["id"]), sqlStr(r["title"]), sqlStr(r["snip"])))
 	}
 	println("== evidence turns")
+	users := usersForDisplay(root)
 	for _, r := range query(db, "SELECT t.session, t.uuid, t.label, t.author, t.locator, snippet(turns_fts, 1, '[', ']', '…', 12) AS snip "+
 		"FROM turns_fts JOIN turns t ON t.uuid = turns_fts.uuid "+
 		"WHERE turns_fts MATCH ? ORDER BY rank LIMIT ?", q, limit.Int64()) {
@@ -362,7 +367,7 @@ func runSearch(ns argparse.Namespace) int {
 			where = " (" + sqlStr(r["locator"]) + ")"
 		}
 		println(fmt.Sprintf("%s#%s  [%s] %s%s\n    %s", py.Head(sqlStr(r["session"]), 8), sqlStr(r["uuid"]), sqlStr(r["label"]),
-			sqlStr(r["author"]), where, sqlStr(r["snip"])))
+			users.who(sqlStr(r["author"])), where, sqlStr(r["snip"])))
 	}
 	return 0
 }

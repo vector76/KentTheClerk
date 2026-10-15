@@ -125,10 +125,16 @@ func runSessionStart(ns argparse.Namespace) (code int) {
 	} else {
 		println("- Not pinned: any version of Kent writes here.")
 	}
-	if u, source := userSource("", root); u != "" {
-		println(fmt.Sprintf("- The human is recorded as %s (%s).", u, source))
-	} else {
-		problems = append(problems, "no user id is set, so kb cannot record anything the human does")
+	people, problem := describeUsers(root)
+	for _, l := range people {
+		if strings.HasPrefix(l, "  ") {
+			println(l)
+		} else {
+			println("- " + l)
+		}
+	}
+	if problem != "" {
+		problems = append(problems, problem)
 	}
 	lines, bad := settingLines(os.Getenv)
 	for _, l := range lines {
@@ -671,13 +677,22 @@ func kbReport(r *report, kb string) {
 		r.item("Not pinned.")
 	}
 
-	if u, source := userSource("", kb); u != "" {
-		r.item("The human would be recorded as %s (%s).", u, source)
-	} else {
+	people, problem := describeUsers(kb)
+	for _, l := range people {
+		if strings.HasPrefix(l, "  ") {
+			r.lines = append(r.lines, l)
+		} else {
+			r.item("%s", l)
+		}
+	}
+	switch u, _ := userSource("", kb); {
+	case u == "":
 		r.item("No user id: kb could not record anything the human does.")
 		r.need(4, `Set a user id: git's user.email in the knowledge base's folder, or ~/.kenttheclerk.json `+
-			`with {"user": "<id>"} for every knowledge base, or an entry under "folders" for this one; ask the `+
-			`human which.`)
+			`with {"user": "<key>"} for every knowledge base, or an entry under "folders" for this one; ask the `+
+			`human which. Then add them to the user table, as the runbook says.`)
+	case problem != "":
+		r.need(4, "Add the human to the knowledge base's user table, as the runbook says: %s.", problem)
 	}
 }
 

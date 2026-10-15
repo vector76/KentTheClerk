@@ -13,13 +13,14 @@ the steps below.
   permissions Kent needs, and runs `kb session-start` when a conversation starts. That hook gives the
   agent Kent's instructions in every conversation.
 - git ignores that file, and nothing the code project commits has changed.
-- The knowledge base exists, and the human has a user id.
+- The knowledge base exists, the human has a user id, and they are in its user table.
 - `kb setup --report` finds nothing left to do.
 
 Ground rules for this conversation:
 
 - **This setup conversation is not part of any record.** Do not snapshot it, attest anything, or record
-  anything in it. The knowledge base starts with the human's first real conversation.
+  anything in it. The knowledge base starts with the human's first real conversation; the one act of
+  setup is adding the human to its user table, which needs no conversation on the record.
 - **Leave nothing in what the code project commits.** A team may want the codebase silent about Kent,
   so do not touch CLAUDE.md, README, `.gitignore` or any other tracked file of the code project, except
   to remove a block an earlier version of Kent had pasted into CLAUDE.md, with the human's agreement. If
@@ -56,12 +57,15 @@ so the human can answer them together:
 - **For a new one: pin it?** `kb pin --set` writes `kent.pin`, naming the version of Kent running now,
   and from then on `kb` refuses to write under any other version. It keeps everyone who writes here on
   the same version. It is optional, alone or in a team.
-- **The human's id.** If the report already names one, tell them which and where it comes from, and ask
-  only whether this knowledge base should know them by a different id. Otherwise offer the choices:
-  `~/.kenttheclerk.json` holding `{"user": "<id>"}`, for every knowledge base on this machine; an entry
-  under `"folders"` in that file, `{"folders": {"<folder>": "<id>"}}`, for knowledge bases in that folder
-  or below it; or git's `user.email` in the knowledge base's folder. It should be stable, not a display
-  name.
+- **The human's id.** Each act names its author by a key, a short readable name such as `jamie` that
+  never changes once used, and the knowledge base's user table says who each key is, by name and email
+  (`kb rules people`). If the report says the human is recorded under a key in the table, tell them
+  which, and ask only whether this knowledge base should know them by a different one. Otherwise ask
+  for their name and email for the table, and how kb should know it is them: git's `user.email` in the
+  knowledge base's folder, looked up in the table; `~/.kenttheclerk.json` holding `{"user": "<key>"}`,
+  for every knowledge base on this machine; or an entry under `"folders"` in that file,
+  `{"folders": {"<folder>": "<key>"}}`, for knowledge bases in that folder or below it. In a knowledge
+  base whose acts already carry an id for them, which `kb user add` lists, that id is their key.
 - **The project's two settings,** kept in the settings file's `env`, per user and never committed:
   - `KENT_ASK_SESSION_MODE`: when the agent asks whether a conversation is on the record.
     `when-needed` (the default) asks when something worth recording comes up; `up-front` asks before
@@ -97,7 +101,11 @@ anything turns out different from what you described.
      Then make the first commit if they asked for it, including `kent.pin` if there is one.
    - Existing, from a URL: `git clone <url> <folder>`, beside the code repository.
    - Either way, run `kb setup --report --kb <folder>` and read what it finds.
-2. **The human's id,** if it needs setting.
+2. **The human's id, and their row in the user table.** Set the id if it needs setting. Then, if the
+   report says they are not in the user table, add them, as the first act in a new knowledge base:
+   `kb user add <name> --email <email>` prints the key it generates from the name; tell them, and run
+   it again with `--key <key>`, theirs or the one they chose instead. The key must be the one their id
+   names, and with git's `user.email` the email must be that one.
 3. **The settings file.** `kb setup --report --kb <folder>` prints, under **Settings for this project**,
    the JSON Kent needs, with the paths already in the forms Claude Code wants, and what the current file
    lacks. Merge Kent's part into `.claude/settings.local.json`: add what is missing, keep everything else,
