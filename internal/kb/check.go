@@ -51,6 +51,9 @@ func runCheck(ns argparse.Namespace) int {
 			p, thisBuild(), rule("pinned-version"))
 	}
 
+	// the override log, and the tombstones overrides leave in evidence (S-0132)
+	overrides := overrideChecks(root, sessions, errorf, warnf)
+
 	// resolve is same-session resolution by default; background citations may resolve through the
 	// fork's ancestry chain (S-0034); attestation and proposal turns may not (S-0032).
 	resolve := func(ptrStr any, throughAncestry bool) (*Session, *py.Dict) {
@@ -90,7 +93,7 @@ func runCheck(ns argparse.Namespace) int {
 	// documents (S-0038, S-0039)
 	referenced := map[string]bool{}
 	for _, s := range sessions.Values() {
-		if s.Kind() != "document" {
+		if s.Kind() != "document" || py.Truthy(s.Header.Get("scrubbed")) {
 			continue
 		}
 		o := py.AsDict(py.Or(s.Header.Get("original"), py.NewDict()))
@@ -168,6 +171,8 @@ func runCheck(ns argparse.Namespace) int {
 		ids[sid] = name
 		n, _ := py.ParseInt(sid[2:])
 		nums = append(nums, int(n.Int64()))
+		statementOverrideChecks(st, overrides, errorf)
+		scrubbed := py.Truthy(st.Meta.Get("scrubbed"))
 		if !py.Truthy(st.Meta.Get("title")) {
 			errorf("%s: missing title (%s)", sid, rule("title-and-answers"))
 		}
@@ -218,7 +223,11 @@ func runCheck(ns argparse.Namespace) int {
 							errorf("%s: modified_in %s does not resolve to a human turn", sid, py.Str(st.Meta.Get("modified_in")))
 						}
 					}
-				} else if !textContained(st.Body, turnText(t)) {
+				} else if scrubbedTurn(t) {
+					if !scrubbed {
+						warnf("%s: the turn it was proposed in, %s, was scrubbed; review whether it should stand (%s)", sid, py.Str(prop), rule("override-scrub"))
+					}
+				} else if !scrubbed && !textContained(st.Body, turnText(t)) {
 					errorf("%s: body text is not contained verbatim in proposal turn %s (%s)", sid, py.Str(prop), rule("exact-text"))
 				}
 				if !py.Equal(st.Meta.Get("originator"), item(t, "author")) {
@@ -264,7 +273,7 @@ func runCheck(ns argparse.Namespace) int {
 			if !py.Equal(item(t, "role"), "user") || !py.Equal(item(t, "author"), by) {
 				errorf("%s: attestation turn %s is authored by %s, not %s (%s)", sid, py.Str(turn), py.Repr(item(t, "author")), py.Repr(by), rule("own-turn"))
 			}
-			if py.Equal(form, "self") && !textContained(st.Body, turnText(t)) {
+			if py.Equal(form, "self") && !scrubbed && !scrubbedTurn(t) && !textContained(st.Body, turnText(t)) {
 				errorf("%s: self-attestation but body not contained in %s (%s)", sid, py.Str(turn), rule("exact-text"))
 			}
 			h, v := a.Get("system_hash"), a.Get("system_version")
@@ -308,6 +317,7 @@ func runCheck(ns argparse.Namespace) int {
 			errorf("duplicate id %s: %s and %s", aid, name, prev)
 		}
 		ids[aid] = name
+		statementOverrideChecks(st, overrides, errorf)
 		for _, k := range []string{"title", "answers", "author"} {
 			if py.Strip(py.Str(py.Or(st.Meta.Get(k), ""))) == "" {
 				errorf("%s: missing %s", aid, k)
@@ -337,7 +347,7 @@ func runCheck(ns argparse.Namespace) int {
 			s, t := resolve(py.Or(x.Get("turn"), ""), false)
 			if t == nil || s.Kind() == "document" || !py.Equal(s.ModeValue(), "on-record") {
 				errorf("%s: seen turn %s does not resolve to an on-record turn (%s)", aid, py.Str(x.Get("turn")), rule("on-record-only"))
-			} else if !textContained(st.Body, turnText(t)) {
+			} else if !py.Truthy(st.Meta.Get("scrubbed")) && !scrubbedTurn(t) && !textContained(st.Body, turnText(t)) {
 				errorf("%s: seen turn %s does not show the full text (%s)", aid, py.Str(x.Get("turn")), rule("seen-in-full"))
 			}
 		}
@@ -382,6 +392,8 @@ func runCheck(ns argparse.Namespace) int {
 			dep := lookup(x)
 			if dep == nil {
 				errorf("%s: rests_on %s, which does not exist", py.Str(sid), py.Str(x))
+			} else if inForce && py.Truthy(dep.Meta.Get("scrubbed")) {
+				warnf("%s: rests on %s, which was scrubbed; review whether it should stand (%s)", py.Str(sid), py.Str(x), rule("override-scrub"))
 			} else if inForce && strings.HasPrefix(py.Str(sid), "A-") && (py.Truthy(dep.Meta.Get("superseded_by")) || py.Truthy(dep.Meta.Get("withdrawn_in"))) {
 				gone := "withdrawn"
 				if sb := dep.Meta.Get("superseded_by"); py.Truthy(sb) {

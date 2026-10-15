@@ -520,6 +520,7 @@ func runSnapshot(ns argparse.Namespace) int {
 	// Append-only guard: a re-snapshot must be a superset of what was there.
 	if py.Exists(dest) {
 		var prev []any
+		recorded := map[string]*py.Dict{}
 		for _, line := range py.TextLines(dest) {
 			v, err := py.Loads(line)
 			if err != nil {
@@ -529,7 +530,13 @@ func runSnapshot(ns argparse.Namespace) int {
 			switch t := rec.Get("type"); {
 			case py.Equal(t, "turn"):
 				prev = append(prev, item(rec, "uuid"))
+				if k, ok := hashKey(rec.Get("uuid")); ok {
+					recorded[k] = rec
+				}
 			case py.Equal(t, "kb-snapshot"):
+				if sc := rec.Get("scrubbed"); py.Truthy(sc) {
+					die(fmt.Sprintf("%s was scrubbed by override %s; it is not snapshotted again (%s)", dest, py.Str(py.AsDict(sc).Get("override")), rule("override-scrub")))
+				}
 				if !py.Equal(rec.Get("filter"), filter) && !force {
 					die(fmt.Sprintf("%s was taken with filter %s; pass --force to change profile (%s)", dest, py.Repr(rec.Get("filter")), rule("mode-fixed")))
 				}
@@ -552,6 +559,21 @@ func runSnapshot(ns argparse.Namespace) int {
 		}
 		if len(missing) > 0 && !force {
 			die(fmt.Sprintf("re-snapshot would drop %d previously recorded turn(s) (e.g. %s); refusing (%s)", len(missing), py.Str(missing[0]), rule("append-only")))
+		}
+		// A turn already recorded stays as it was recorded: a re-snapshot only adds turns, and it must not
+		// undo an override, restoring a scrubbed turn or relabelling a renamed or reassigned one. A new
+		// filter profile (--force) re-filters a turn's content, but never a scrubbed turn's, and keeps
+		// its recorded author.
+		for i, t := range turns {
+			k, _ := hashKey(t.Get("uuid"))
+			r := recorded[k]
+			switch {
+			case r == nil:
+			case !force || py.Truthy(r.Get("scrubbed")):
+				turns[i] = r
+			default:
+				t.Set("author", r.Get("author"))
+			}
 		}
 	}
 	// Same session must not exist in the other mode either.

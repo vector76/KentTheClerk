@@ -30,6 +30,7 @@ Two rules hold before any of those documents is read:
 | Session modes, forks, snapshots, off-record material | `kb rules sessions` |
 | The layers of the record, citing, documents, changing a statement | `kb rules record` |
 | Linking statements, or reading one that carries `extra_context: true` | `kb rules links` |
+| Changing the record against its rules: renaming a person's id, scrubbing content, revising a statement just attested | `kb rules overrides` |
 | Setting Kent up in this project, or something below says it is not set up right | `kb setup` |
 
 The hook runs again when a conversation is resumed or its context is compacted. A mode already

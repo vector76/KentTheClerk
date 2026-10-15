@@ -136,40 +136,12 @@ func runAttest(ns argparse.Namespace) int {
 			"(%s)", rule("title-and-answers")))
 	}
 
-	if form == "proposed-and-agreed" || form == "agreed-with-modification" {
-		proposed, ok := ns.Str("proposed")
-		if !ok || proposed == "" {
-			die(form + " requires --proposed <session>#<uuid> (the agent turn containing the proposal)")
-		}
-		propPtr := parsePointer(proposed)
-		psess, prop := resolveOnRecord(root, propPtr, "--proposed")
-		if psess.ID() != sess.ID() {
-			die(fmt.Sprintf("proposal and agreement must be in the same session (%s)", rule("same-session")))
-		}
-		contained := textContained(body, turnText(prop))
-		if form == "proposed-and-agreed" && !contained {
-			die(fmt.Sprintf("statement text is not contained verbatim in the proposal turn (whitespace-insensitive); "+
-				"use --form agreed-with-modification if the human agreed subject to a change "+
-				"(%s)", rule("exact-text")))
-		}
-		if form == "agreed-with-modification" && contained {
-			warn("text is contained verbatim in the proposal; proposed-and-agreed would be the stronger form")
-		}
-		pts, ats := timestampOr(prop), timestampOr(agree)
-		if pts >= ats {
-			die(fmt.Sprintf("agreement turn must come after the proposal turn (%s)", rule("after-proposal")))
-		}
-		meta.Set("originator", item(prop, "author"))
-		meta.Set("proposed_in", Pointer{psess.ID(), py.Str(item(prop, "uuid"))}.String())
-		if form == "agreed-with-modification" {
-			meta.Set("modified_in", Pointer{sess.ID(), py.Str(item(agree, "uuid"))}.String())
-		}
-	} else { // self
-		if !textContained(body, turnText(agree)) {
-			die(fmt.Sprintf("self-attesting statement text must be contained verbatim in the human's turn (%s)", rule("exact-text")))
-		}
-		meta.Set("originator", user)
-		meta.Set("proposed_in", Pointer{sess.ID(), py.Str(item(agree, "uuid"))}.String())
+	proposed, _ := ns.Str("proposed")
+	originator, proposedIn, modifiedIn := agreedProposal(root, form, proposed, sess, agree, body, user)
+	meta.Set("originator", originator)
+	meta.Set("proposed_in", proposedIn)
+	if modifiedIn != "" {
+		meta.Set("modified_in", modifiedIn)
 	}
 
 	// background citations: allowed to point anywhere, incl. through fork ancestry (S-0034)
@@ -227,6 +199,44 @@ func runAttest(ns argparse.Namespace) int {
 	}
 	markContext(root, context, sid)
 	return 0
+}
+
+// agreedProposal checks what the human agreed to, for every form but endorsement: the proposal turn and the
+// text in it, or the human's own turn for a self-attestation. It returns the statement's originator,
+// proposed_in, and modified_in ("" unless agreed with modification).
+func agreedProposal(root, form, proposed string, sess *Session, agree *py.Dict, body, user string) (any, string, string) {
+	if form == "self" {
+		if !textContained(body, turnText(agree)) {
+			die(fmt.Sprintf("self-attesting statement text must be contained verbatim in the human's turn (%s)", rule("exact-text")))
+		}
+		return user, Pointer{sess.ID(), py.Str(item(agree, "uuid"))}.String(), ""
+	}
+	if proposed == "" {
+		die(form + " requires --proposed <session>#<uuid> (the agent turn containing the proposal)")
+	}
+	propPtr := parsePointer(proposed)
+	psess, prop := resolveOnRecord(root, propPtr, "--proposed")
+	if psess.ID() != sess.ID() {
+		die(fmt.Sprintf("proposal and agreement must be in the same session (%s)", rule("same-session")))
+	}
+	contained := textContained(body, turnText(prop))
+	if form == "proposed-and-agreed" && !contained {
+		die(fmt.Sprintf("statement text is not contained verbatim in the proposal turn (whitespace-insensitive); "+
+			"use --form agreed-with-modification if the human agreed subject to a change "+
+			"(%s)", rule("exact-text")))
+	}
+	if form == "agreed-with-modification" && contained {
+		warn("text is contained verbatim in the proposal; proposed-and-agreed would be the stronger form")
+	}
+	pts, ats := timestampOr(prop), timestampOr(agree)
+	if pts >= ats {
+		die(fmt.Sprintf("agreement turn must come after the proposal turn (%s)", rule("after-proposal")))
+	}
+	modified := ""
+	if form == "agreed-with-modification" {
+		modified = Pointer{sess.ID(), py.Str(item(agree, "uuid"))}.String()
+	}
+	return item(prop, "author"), Pointer{psess.ID(), py.Str(item(prop, "uuid"))}.String(), modified
 }
 
 // getOr is d.get(k, default).

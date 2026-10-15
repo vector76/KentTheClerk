@@ -19,6 +19,7 @@ breaks its rules and says why. The recorder detects no contradictions and weighs
 | Originals | `evidence/originals/<sha256><ext>` | the bytes a document projection was taken from | read |
 | Attested statements | `attested/S-*.md` | claims a named person confirmed at a named time; the only authoritative layer | read, cite; write via `kb attest` |
 | Agent statements | `agent/A-*.md` | working choices recorded by an agent; operational, never testimony | read, cite, rest on; write via `kb record`, `kb seen`, `kb withdraw` |
+| Override log | `overrides.jsonl` | the overrides made to the record against its rules, each with who, when and why | read; append via `kb override` |
 | Off-record | `off-record/` (gitignored) | off-record sessions and drafts, outside the record; at risk of loss by design | read if present; draft here |
 | Index and view | `index.db`, `render/` | derived, disposable | rebuild with `kb index` |
 
@@ -34,10 +35,12 @@ conversation is recorded under a filter. Citations point into the projection.
 ## Writing
 
 **Kent Rule 1.** Write to the record only through `kb`. Never create, edit, rename or delete a
-file in `evidence/`, `attested/` or `agent/` by hand. Nothing mechanical stops you; this rule does.
+file in `evidence/`, `attested/` or `agent/`, or the override log, by hand. Nothing mechanical stops
+you; this rule does. Where the record must change against its rules, `kb override` offers a closed
+list of ways to do it (Kent Rules 50 to 54).
 
-**Kent Rule 2.** Evidence is append-only. A recorded turn is never dropped or altered; a
-re-snapshot of a session only adds turns. Do not pass `kb snapshot --force` without the human's
+**Kent Rule 2.** Evidence is append-only. A recorded turn is never dropped or altered, except
+by an override (Kent Rule 50); a re-snapshot of a session only adds turns. Do not pass `kb snapshot --force` without the human's
 say-so.
 
 **Kent Rule 3.** A statement exists only because someone attested it. A pending proposal is a
@@ -56,8 +59,8 @@ change consolidates the original and its additions into one superseding statemen
 
 **Kent Rule 5.** There is no exception for typo fixes. `kb` cannot tell whether a change leaves
 the meaning unchanged, so a typo is fixed like any other change: the author supersedes the statement
-(Kent Rule 4). When you notice one in a human's statement, point it out; whether to supersede is the
-author's decision.
+(Kent Rule 4), or, while nothing relies on it yet, revises it in place (Kent Rule 53). When you
+notice one in a human's statement, point it out; what to do about it is the author's decision.
 
 ## Citing
 

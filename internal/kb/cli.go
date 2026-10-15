@@ -62,6 +62,7 @@ func newParser() *argparse.Parser {
 	addAttestParser(ap)
 	addRecordParsers(ap)
 	addLinksParser(ap)
+	addOverrideParser(ap)
 	addCheckParser(ap)
 	addIndexParsers(ap)
 	addServeParser(ap)

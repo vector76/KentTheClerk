@@ -36,7 +36,8 @@ var productRules = map[string]int{
 	"fork-ancestry": 17, "own-turn": 21, "after-proposal": 22, "same-session": 23, "exact-text": 25,
 	"attest-once": 26, "title-and-answers": 27, "agent-from-conversation": 31, "agent-own-turn": 32,
 	"seen-in-full": 34, "agent-revision": 35, "agent-no-attestations": 37, "system-stamp": 44,
-	"pinned-version": 44, "author-only": 46, "context-for": 47,
+	"pinned-version": 44, "author-only": 46, "context-for": 47, "override-list": 50, "override-on-record": 51,
+	"override-confirm": 52, "override-revise": 53, "override-scrub": 54,
 }
 
 // rule is how a message cites a rule, saying how to read it (S-0106), e.g. "Kent Rule 7: `kb rules 7` to
@@ -208,6 +209,11 @@ const authentication = "asserted"
 // so one person can be known by different ids to different knowledge bases.
 func currentUser(explicit, root string) string {
 	if u, _ := userSource(explicit, root); u != "" {
+		// an id an override renamed or merged away acts here no more
+		if to, seq := retiredID(root, u); to != "" {
+			die(fmt.Sprintf("the user id %s was moved to %s by override %d in this knowledge base; act as %s: change "+
+				"the id in ~/.kenttheclerk.json, KB_USER or git's user.email, or pass --user (%s)", py.StrRepr(u), py.StrRepr(to), seq, to, rule("override-list")))
+		}
 		return u
 	}
 	die(`no user id: pass --user, set KB_USER, write ~/.kenttheclerk.json with {"user": "<id>"}, or set ` +
