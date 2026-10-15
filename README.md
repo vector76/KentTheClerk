@@ -79,9 +79,10 @@ differently says so in a statement of their own, linked to yours with a short no
 the reading, and yours is marked as having extra context. Both stay on the record, and a disagreement
 stays a disagreement instead of being settled by whoever spoke last.
 
-So you can't simply ask the agent to fix a statement's wording, not even a typo. The agent will
-propose a new statement, or raise the typo with you, and you decide. Keeping the history means anyone
-can see what was believed when, and what replaced it.
+So you can't simply ask the agent to fix a statement's wording, not even a typo. The recorder can't
+tell a typo fix from a change of meaning, so a typo is fixed the same way: you supersede your
+statement with a corrected one. Keeping the history means anyone can see what was believed when, and
+what replaced it.
 
 ## Session modes: on the record, off the record, private
 

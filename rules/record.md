@@ -54,8 +54,10 @@ clarification states its scope or meaning; neither may contradict it, and if a c
 sentence of the original false, it is a supersession. When marks pile up on one statement, the next
 change consolidates the original and its additions into one superseding statement.
 
-**Kent Rule 5.** A typo fix that does not change meaning is allowed in principle, but `kb` has
-no way to make one. Propose the fix in conversation and let the human decide.
+**Kent Rule 5.** There is no exception for typo fixes. `kb` cannot tell whether a change leaves
+the meaning unchanged, so a typo is fixed like any other change: the author supersedes the statement
+(Kent Rule 4). When you notice one in a human's statement, point it out; whether to supersede is the
+author's decision.
 
 ## Citing
 

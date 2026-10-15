@@ -37,11 +37,13 @@ testimony like any other: they inform the weight you give, and they are never en
 policy statement is a contradiction to adjudicate, not a breach.
 
 **Kent Rule 44.** These rules are frozen within this knowledge base: nothing recorded in it
-changes them. They change only when the administrator adopts a new version, and every recorded act
-carries the version and a content hash of the system it was made under, so the record stays
-interpretable across upgrades and any change to the rules is detectable. A knowledge base may carry a
-pin, the file `kent.pin`, naming the version it has adopted; `kb` refuses to write under any other.
-Setting or moving the pin is the human's decision, never yours.
+changes them. Every recorded act carries the version and a content hash of the system it was made
+under, so the record stays interpretable across upgrades and any change to the rules is detectable.
+A knowledge base may carry a pin, the file `kent.pin`, naming the version it has adopted; `kb`
+refuses to write under any other. A new version is adopted outside the record, by moving the pin,
+never by an act in it. A knowledge base in git is in cooperative mode, where there is no
+administrator: whoever commits the pin adopts the version. Setting or moving the pin is the human's
+decision, never yours.
 
 ## Generated documents
 
