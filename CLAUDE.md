@@ -38,6 +38,7 @@ can only nod at.
   `install.ps1 -ZipFile <zip>`.
 - **Commits.** Commit straight to `main` here and to `master` in convkb (`git -C <kb>`), with no
   `Co-Authored-By` or other attribution lines; a `commit-msg` hook in both repositories refuses them.
-- **User id.** It comes from `--user`, `KB_USER` or `~/.kenttheclerk.json`, and otherwise from git's
-  `user.email` in the knowledge base's folder (S-0123). Here it is `jamie`, set in
+- **User id.** It comes from `--user`, `KB_USER` or `~/.kenttheclerk.json`, where an entry under
+  `folders` for the folder holding the knowledge base wins over `user` (S-0131), and otherwise from
+  git's `user.email` in the knowledge base's folder (S-0123). Here it is `jamie`, set in
   `~/.kenttheclerk.json`.
