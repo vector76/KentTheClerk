@@ -53,7 +53,8 @@ Agreement has to be explicit, and it applies to exact text:
   you want a change, say what it is; you can agree subject to that change, or ask to see the revised
   text first.
 - **Statements come one at a time by default.** Reviewing several at once tends to mean the first
-  gets all the attention. If you prefer more per turn, change the setting in your CLAUDE.md block.
+  gets all the attention. If you prefer more per turn, say so when setting up, or run `kb setup`
+  again to change it.
 
 This can feel slow at first. It is what makes an attested statement mean something: a specific
 person agreed to specific words at a specific moment.
@@ -99,8 +100,8 @@ things you might not stand behind, without any of it being written into the reco
 approval. Many people find working this way a relief, and much good work happens off the record.
 
 A conversation nobody labelled is treated as off-record. When something worth recording comes up,
-the agent will ask whether to go on the record. (Your CLAUDE.md block can tell it to ask at the start
-of every conversation instead.) If you reach a decision off the record, you bring it onto the record
+the agent will ask whether to go on the record. (A setting you choose during `kb setup` can tell it
+to ask at the start of every conversation instead.) If you reach a decision off the record, you bring it onto the record
 by stating it yourself in an on-record conversation, for example: "As discussed earlier, I have
 decided that ...". The agent may also offer to collect what's worth recording and propose a fresh
 on-record conversation to capture it cleanly.
@@ -187,8 +188,8 @@ them like any other statement.
   Linux, beside any versions already there, replaces the launcher `kb` only if the new one is newer,
   and adds the folder to your PATH the first time. `kb` runs the version your knowledge base is pinned to, or else
   the one `KENT_VERSION` names in your project's settings, or else the highest version installed;
-  `kb --launcher` shows which, and why. This page, the rules and the front-end block are built into
-  each version, so nothing of Kent goes into your code repository or your knowledge base, and
+  `kb --launcher` shows which, and why. This page, the rules, the setup runbook and what the
+  session-start hook prints are built into each version, so nothing of Kent goes into your code repository or your knowledge base, and
   nothing else needs installing.
 
   Installing by hand is possible but not recommended, because each step the script takes is one you
@@ -204,66 +205,48 @@ them like any other statement.
 
   To build from a source checkout instead, run `build-dev.ps1 -Install` (or
   `build-dev.sh --install`) in the checkout; it installs a development build beside the launcher.
-- **Give your knowledge its own folder.** Usually it sits beside your code repository as a
-  repository of its own; it can also sit inside the code repository. To start, create it with empty
-  `attested/` and `evidence/` folders; `kb` looks for them to find the record. The record fills
-  them, and `agent/`, as you go.
-- **Tell your project where the knowledge is, and what the agent may do there,** in the code
-  repository's `.claude/settings.local.json`:
+- **Then tell your agent: "Run kb setup and follow its instructions."** Open Claude Code in your
+  code project, restarting it if it was open while you installed so that it finds `kb` on your PATH.
+  `kb setup` gives the agent a runbook built into Kent, and the agent walks you through the setup,
+  explaining each change and asking before it makes it:
 
-  ```json
-  {
-    "env": {
-      "KENT_KB": "C:/work/myproject-knowledge"
-    },
-    "permissions": {
-      "additionalDirectories": ["C:/work/myproject-knowledge"],
-      "allow": [
-        "Bash(kb *)",
-        "PowerShell(kb *)",
-        "Edit(//c/work/myproject-knowledge/off-record/drafts/**)"
-      ],
-      "deny": [
-        "Edit(//c/work/myproject-knowledge/attested/**)",
-        "Edit(//c/work/myproject-knowledge/evidence/**)",
-        "Edit(//c/work/myproject-knowledge/agent/**)"
-      ]
-    }
-  }
-  ```
+  - **A knowledge base.** Either a new one, usually in its own folder beside the code repository
+    and in a git repository of its own, or an existing one, such as one a colleague shares or one
+    another of your projects uses. Several code projects can share one knowledge base; a code
+    project uses at most one.
+  - **Your project's `.claude/settings.local.json`.** It names the knowledge base for this project,
+    gives the agent the permissions it needs, and holds a session-start hook that runs
+    `kb session-start` whenever a conversation starts, which gives the agent Kent's instructions. The
+    file is per user and never committed, so each person on a team keeps their own paths. Deny
+    rules in it stop the agent from editing the record's files by hand, so only `kb` writes there.
+  - **Two settings of yours:** whether the agent asks about the session mode at the start of every
+    conversation or only when something worth recording comes up, and how many statements it
+    presents per turn.
 
-  Set these there, for this project, not as environment variables for your whole user account:
-  those would point every project at the same knowledge base. The file is yours and not committed,
-  so each person on a team keeps their own paths. Claude Code keeps it out of git when Claude Code
-  creates it; if you create it yourself, add `.claude/settings.local.json` to your `.gitignore`. To
-  run a particular installed version of Kent for this project, add `"KENT_VERSION": "<version>"` to
-  `env`; a pin in the knowledge base takes its place, and `kb` refuses if the two disagree.
-
-  The deny rules stop the agent from editing the record's files directly, so only `kb` writes
-  there. The other permissions let it read the knowledge base, run `kb`, which also serves Kent's
-  rules, and write drafts. Permission rules take paths in their own form and don't expand variables, so write your
-  folders out in full: `C:\work\myproject-knowledge` becomes
-  `//c/work/myproject-knowledge`, and on macOS or Linux `/home/you/knowledge` becomes
-  `//home/you/knowledge`.
+  Setup leaves nothing in what your code repository commits, not even a line in CLAUDE.md, so the
+  codebase can stay silent about Kent. If you want colleagues to know the project has a knowledge
+  base, mention it in a README or another document for people. Run `kb setup` again whenever you
+  like: it checks the setup and fixes what is wrong, with your agreement. Upgrading Kent needs no
+  change in the project, since the hook prints the instructions of whichever version runs.
 - **Work in Claude Code's auto mode.** It is required: without it, the agent asks for your approval
-  all the time, and the permissions above don't prevent that. The deny rules stay in place as a
-  safety net.
-- Paste the block that `kb rules claude-code` prints into your project's CLAUDE.md. It tells the
-  agent how to run `kb`, how to read the rules, and which two hold before anything else. It names no
-  folders of yours, so it can be committed.
-- The settings take effect right away, even in the session that wrote them. The CLAUDE.md block
-  takes effect when a conversation starts, so after setting up, start a new conversation, or run
-  `/clear`, before talking with the agent about anything you want recorded.
-- Keep the knowledge base in git, with `off-record/`, `index.db` and `render/` left out: the first
-  is outside the record by design, and the other two are rebuilt from the record whenever needed.
-  `kb` does not commit for you; commit when it suits you, or ask your agent to.
+  all the time, and the permissions don't prevent that. The deny rules stay in place as a safety
+  net.
+- After setting up, start a new conversation, or run `/clear`, before talking with the agent about
+  anything you want recorded: the hook gives the agent Kent's instructions when a conversation
+  starts.
+- Keep the knowledge base in git, with `off-record/`, `index.db` and `render/` left out, as setup
+  arranges: the first is outside the record by design, and the other two are rebuilt from the
+  record whenever needed. `kb` does not commit for you; commit when it suits you, or ask your agent
+  to.
 - To keep everyone who writes to the knowledge base on the same version of Kent, pin it: `kb pin
   --set` writes `kent.pin` naming the version you are running, and `kb` then refuses to write under
   any other. Commit the pin; to move to a new version, set it again under that version. A pin is
   optional, whether you work alone or with others; what is required is that, when there is one,
-  everyone who writes here obeys it.
+  everyone who writes here obeys it. To run a particular installed version of Kent in one project
+  without a pin, add `"KENT_VERSION": "<version>"` to `env` in its settings; a pin takes its place,
+  and `kb` refuses if the two disagree.
 - `kb` names you in the record by your git `user.email`. To use a different stable id, set it in
-  `~/.kenttheclerk.json`: `{"user": "your-id"}`.
+  `~/.kenttheclerk.json`: `{"user": "your-id"}`. Setup checks this with you.
 - In your own terminal, run `kb` from inside the knowledge base's folder, where it finds the record
   by itself: `kb <command>`. `serve` renders the knowledge base as pages
   to read, with statements, conversations and their links all browsable; `check` verifies the whole

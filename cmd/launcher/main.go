@@ -12,7 +12,8 @@
 //
 // The launcher is infrastructure rather than part of the system it dispatches to: it is outside the system
 // hash and never pinned. Every argument goes to the version it runs, except a first argument of
-// --launcher, which asks the launcher itself (kb --launcher, kb --launcher version).
+// --launcher, which asks the launcher itself (kb --launcher, kb --launcher version). kb session-start, run by
+// the session-start hook, never fails (session_start.go).
 package main
 
 import (
@@ -29,7 +30,7 @@ import (
 
 // launcherVersion is the launcher's own version, which the install scripts compare to replace the
 // launcher only with a newer one. It is not Kent's version.
-var launcherVersion = "0.1.0"
+var launcherVersion = "0.2.0"
 
 const (
 	// repo is the GitHub repository Kent's releases are published from.
@@ -221,11 +222,14 @@ func launch(args []string) int {
 	if len(args) > 0 && args[0] == "--launcher" {
 		return launcherInfo(args[1:], dir, versions, c, chooseErr)
 	}
+	exe := filepath.Join(dir, "versions", c.version, exeName())
+	env := append(os.Environ(), launchedEnv+"="+c.version+" ("+c.reason+")")
+	if len(args) == 1 && args[0] == sessionStartArg {
+		return sessionStart(exe, args, env, chooseErr)
+	}
 	if chooseErr != nil {
 		return fail(chooseErr)
 	}
-	exe := filepath.Join(dir, "versions", c.version, exeName())
-	env := append(os.Environ(), launchedEnv+"="+c.version+" ("+c.reason+")")
 	return run(exe, args, env)
 }
 

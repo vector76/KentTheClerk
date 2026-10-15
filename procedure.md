@@ -10,9 +10,9 @@ relative draft path given to `kb` is read from there. The human's id comes from 
 or `~/.kenttheclerk.json` (`{"user": "<id>"}`), and otherwise from git's `user.email` as git reports it
 in the knowledge base's folder; use stable ids, never display names.
 
-Run `kb` exactly as the CLAUDE.md block writes it, `kb <command>`, with nothing before it: the
-project's permissions allow that form, and a prefix such as
-`export ...;` makes each command ask the human again. Write drafts with your file-writing tool, not
+Run `kb` exactly as the instructions printed at the start of the conversation write it,
+`kb <command>`, with nothing before it: the project's permissions allow that form, and a prefix such
+as `export ...;` makes each command ask the human again. Write drafts with your file-writing tool, not
 through the shell; the permissions
 allow writing in `off-record/drafts/` and forbid editing `attested/`, `evidence/` and `agent/`.
 

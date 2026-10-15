@@ -200,11 +200,21 @@ const authentication = "asserted"
 // reports it in the knowledge base's folder, so a setting in the knowledge base's own repository wins
 // (S-0113).
 func currentUser(explicit, root string) string {
+	if u, _ := userSource(explicit, root); u != "" {
+		return u
+	}
+	die(`no user id: pass --user, set KB_USER, write ~/.kenttheclerk.json with {"user": "<id>"}, or set ` +
+		`git's user.email`)
+	return ""
+}
+
+// userSource is the user id currentUser would use and where it comes from, or ("", "") when there is none.
+func userSource(explicit, root string) (string, string) {
 	if explicit != "" {
-		return explicit
+		return explicit, "from --user"
 	}
 	if u := os.Getenv("KB_USER"); u != "" {
-		return u
+		return u, "from KB_USER"
 	}
 	home, _ := os.UserHomeDir()
 	for _, name := range []string{".kenttheclerk.json", ".convkb.json"} {
@@ -215,16 +225,14 @@ func currentUser(explicit, root string) string {
 				continue
 			}
 			if u := py.AsDict(v).Get("user"); py.Truthy(u) {
-				return py.Str(u)
+				return py.Str(u), "from ~/" + name
 			}
 		}
 	}
 	if u := gitUserEmail(root); u != "" {
-		return u
+		return u, "from git's user.email"
 	}
-	die(`no user id: pass --user, set KB_USER, write ~/.kenttheclerk.json with {"user": "<id>"}, or set ` +
-		`git's user.email`)
-	return ""
+	return "", ""
 }
 
 // gitUserEmail is `git config user.email` run in dir, or "" when git is missing or the setting is unset.

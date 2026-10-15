@@ -39,7 +39,7 @@ func TestHashCoversSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"go.mod", "go.sum", "procedure.md", "README.md", "front-ends/claude-code/CLAUDE.md"} {
+	for _, want := range []string{"go.mod", "go.sum", "procedure.md", "README.md", "front-ends/claude-code/session-start.md", "front-ends/claude-code/setup.md"} {
 		if !embedded[want] {
 			t.Errorf("%s is not covered by system_hash", want)
 		}

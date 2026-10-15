@@ -69,6 +69,7 @@ func newParser() *argparse.Parser {
 	addWhereParser(ap)
 	addRulesParser(ap)
 	addPinParser(ap)
+	addSetupParsers(ap)
 	return ap
 }
 

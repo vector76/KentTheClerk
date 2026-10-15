@@ -187,3 +187,10 @@ fi
 
 echo
 "$launcher" --launcher || true
+
+# what to do next (S-0126)
+echo
+echo "Next: open Claude Code in your project (restart it if it is already open, so it finds kb on your"
+echo "PATH) and tell your agent:"
+echo
+echo "    Run kb setup and follow its instructions."

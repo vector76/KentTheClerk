@@ -155,6 +155,13 @@ try {
 
     Write-Host ""
     & $launcher --launcher
+
+    # what to do next (S-0126)
+    Write-Host ""
+    Write-Host "Next: open Claude Code in your project (restart it if it is already open, so it finds kb on your"
+    Write-Host "PATH) and tell your agent:"
+    Write-Host ""
+    Write-Host "    Run kb setup and follow its instructions."
 } finally {
     Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 }

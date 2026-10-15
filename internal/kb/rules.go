@@ -19,16 +19,15 @@ type document struct {
 	name, path, about string
 }
 
-// documents are listed in this order. The rule files sit between the introduction and procedure and the
-// front-end block, in the order of the rules they hold.
+// documents are listed in this order: the introduction and procedure, then the rule files in the order of
+// the rules they hold. What the session-start hook prints and the setup runbook are served by kb
+// session-start and kb setup instead (S-0129).
 var (
 	leadingDocs = []document{
 		{"introduction", "README.md", "what the knowledge base is for and how it works, for the human and for you"},
 		{"procedure", "procedure.md", "the steps and commands for attesting a statement and recording an agent statement"},
 	}
-	trailingDocs = []document{
-		{"claude-code", "front-ends/claude-code/CLAUDE.md", "the block to paste into a project's CLAUDE.md"},
-	}
+	trailingDocs = []document{}
 )
 
 var (
