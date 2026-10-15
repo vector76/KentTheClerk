@@ -83,3 +83,18 @@ func TestSessionStartFits(t *testing.T) {
 		t.Errorf("%s is not built in", setupDoc)
 	}
 }
+
+func TestFTSQuery(t *testing.T) {
+	cases := map[string]string{
+		"session-start hook":  `"session-start" hook`,
+		"kb OR setup":         "kb OR setup",
+		`"exact phrase" x`:    `"exact phrase" x`,
+		"onboard*":            "onboard*",
+		"settings.local.json": `"settings.local.json"`,
+	}
+	for in, want := range cases {
+		if got := ftsQuery([]string{in}); got != want {
+			t.Errorf("ftsQuery(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

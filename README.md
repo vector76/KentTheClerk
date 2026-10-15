@@ -211,9 +211,9 @@ them like any other statement.
   explaining each change and asking before it makes it:
 
   - **A knowledge base.** Either a new one, usually in its own folder beside the code repository
-    and in a git repository of its own, or an existing one, such as one a colleague shares or one
-    another of your projects uses. Several code projects can share one knowledge base; a code
-    project uses at most one.
+    and, if you choose, in a git repository of its own, or an existing one, such as one a colleague
+    shares or one another of your projects uses. Several code projects can share one knowledge
+    base; a code project uses at most one.
   - **Your project's `.claude/settings.local.json`.** It names the knowledge base for this project,
     gives the agent the permissions it needs, and holds a session-start hook that runs
     `kb session-start` whenever a conversation starts, which gives the agent Kent's instructions. The

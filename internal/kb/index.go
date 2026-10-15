@@ -303,12 +303,45 @@ func sqlStr(v any) string {
 	return fmt.Sprint(v)
 }
 
+// ftsQuery joins the search terms into an FTS5 query. A term with characters FTS5 would read as syntax,
+// such as the hyphen in session-start or a colon, is quoted as a phrase; quoted phrases, the operators
+// AND, OR, NOT and NEAR, parentheses and a trailing * for a prefix are passed through as written.
+func ftsQuery(terms []string) string {
+	var out []string
+	for _, arg := range terms {
+		for _, t := range strings.Fields(arg) {
+			switch {
+			case t == "AND" || t == "OR" || t == "NOT" || strings.HasPrefix(t, "NEAR"),
+				strings.ContainsAny(t, `"()`),
+				plainTerm(strings.TrimSuffix(t, "*")):
+				out = append(out, t)
+			default:
+				out = append(out, `"`+t+`"`)
+			}
+		}
+	}
+	return strings.Join(out, " ")
+}
+
+// plainTerm reports whether FTS5 reads t as a bare term: letters, digits and underscores only.
+func plainTerm(t string) bool {
+	if t == "" {
+		return false
+	}
+	for _, r := range t {
+		if !(r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r > 127) {
+			return false
+		}
+	}
+	return true
+}
+
 func runSearch(ns argparse.Namespace) int {
 	root := repoRoot()
 	buildIndex(root)
 	db := connectIndex(root)
 	defer db.Close()
-	q := strings.Join(ns.List("query"), " ")
+	q := ftsQuery(ns.List("query"))
 	limit := ns["limit"].(*big.Int)
 	if !limit.IsInt64() {
 		py.Raise("OverflowError", "Python int too large to convert to SQLite INTEGER")
