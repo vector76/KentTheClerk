@@ -607,8 +607,8 @@ func kbReport(r *report, kb string) {
 	case status == -1:
 		r.item("git could not be run, so its repository was not checked.")
 	case status != 0:
-		r.item("Not in a git repository.")
-		r.need(3, "Ask the human whether to keep the knowledge base in git; if so, kb setup --git --kb %s.", kb)
+		r.item("Not in a git repository. Git is recommended, not required; if the human wants it, " +
+			"the runbook says how.")
 	default:
 		if samePath(top, kb) {
 			r.item("Its own git repository.")
@@ -629,15 +629,15 @@ func kbReport(r *report, kb string) {
 		if len(unignored) > 0 {
 			r.item("git does not ignore %s.", strings.Join(unignored, ", "))
 			r.need(3, "git must ignore %s in the knowledge base: off-record material is outside the record, and "+
-				"index.db and render/ are rebuilt from it. kb setup --git --kb %s adds them to its .gitignore.",
-				strings.Join(unignored, ", "), kb)
+				"index.db and render/ are rebuilt from it. Add them to its .gitignore, as the runbook says.",
+				strings.Join(unignored, ", "))
 		} else {
 			r.item("git ignores off-record/, index.db and render/.")
 		}
 		for _, d := range []string{"attested", "evidence"} {
 			if isEmptyDir(filepath.Join(kb, d)) {
 				r.need(3, "%s/ is empty, and git keeps no empty folder, so a clone would not be a knowledge base: "+
-					"kb setup --git --kb %s adds %s/.gitkeep.", d, kb, d)
+					"add an empty %s/.gitkeep.", d, d)
 			}
 		}
 	}
@@ -672,7 +672,8 @@ func kbReport(r *report, kb string) {
 // ---------------------------------------------------------------- kb setup
 
 // createKB makes a new knowledge base in dir: the folder and its attested/ and evidence/ folders, which is
-// how kb finds a knowledge base. Whether it goes in git is a separate question (kb setup --git).
+// how kb finds a knowledge base. Whether it goes in git is a separate question (S-0130), and the agent runs
+// git itself rather than through kb.
 func createKB(dir string) {
 	if st, err := os.Stat(dir); err == nil {
 		switch {
@@ -690,60 +691,6 @@ func createKB(dir string) {
 		}
 	}
 	println("created the knowledge base " + dir + ", with attested/ and evidence/")
-}
-
-// kbIgnores are what git must ignore in a knowledge base, each with a path that shows whether it does.
-var kbIgnores = [][2]string{{"off-record/", "off-record/x"}, {"index.db", "index.db"},
-	{"index.db-journal", "index.db-journal"}, {"render/", "render/x"}}
-
-// gitKB keeps a knowledge base in git: a repository if none holds the folder, the .gitignore lines it needs,
-// and a .gitkeep in an empty attested/ or evidence/ so that a clone is a knowledge base too. It never commits.
-func gitKB(kb string) {
-	if !isKBFolder(kb) {
-		die(kb + " is not a knowledge base (no attested/ and evidence/ folders)")
-	}
-	top, st := git(kb, "rev-parse", "--show-toplevel")
-	switch {
-	case st == -1:
-		die("git could not be run; is it installed and on the PATH?")
-	case st != 0:
-		if out, st := git(kb, "init", "-q"); st != 0 {
-			die("git init failed: " + out)
-		}
-		println("made " + kb + " a git repository")
-	default:
-		println("already in the git repository at " + top)
-	}
-	var add []string
-	for _, ig := range kbIgnores {
-		if _, st := git(kb, "check-ignore", "-q", ig[1]); st != 0 {
-			add = append(add, ig[0])
-		}
-	}
-	if len(add) > 0 {
-		path := filepath.Join(kb, ".gitignore")
-		old, _ := os.ReadFile(path)
-		text := string(old)
-		if text != "" && !strings.HasSuffix(text, "\n") {
-			text += "\n"
-		}
-		text += "# Kent: off-record material is outside the record; index.db and render/ are rebuilt from it\n" +
-			strings.Join(add, "\n") + "\n"
-		if err := os.WriteFile(path, []byte(text), 0o666); err != nil {
-			die(fmt.Sprintf("cannot write %s: %v", path, err))
-		}
-		println("added " + strings.Join(add, ", ") + " to " + path)
-	}
-	for _, d := range []string{"attested", "evidence"} {
-		if isEmptyDir(filepath.Join(kb, d)) {
-			keep := filepath.Join(kb, d, ".gitkeep")
-			if err := os.WriteFile(keep, nil, 0o666); err != nil {
-				die(fmt.Sprintf("cannot write %s: %v", keep, err))
-			}
-			println("added " + keep)
-		}
-	}
-	println("nothing was committed; kb never commits")
 }
 
 func runSetup(ns argparse.Namespace) int {
@@ -764,14 +711,6 @@ func runSetup(ns argparse.Namespace) int {
 		}
 		kbArg = absPath(create)
 		createKB(kbArg)
-		acted = true
-	}
-	if ns.Bool("git") {
-		kb, _ := chooseKB(kbArg, readSettings(project))
-		if kb == "" {
-			die("which knowledge base? give --kb <folder>")
-		}
-		gitKB(kb)
 		acted = true
 	}
 	if acted {
@@ -805,7 +744,6 @@ func addSetupParsers(sub *argparse.Parser) {
 	p.Option("--project", "the code project's folder (default: CLAUDE_PROJECT_DIR, else the current folder)", nil, false)
 	p.Flag("--report", "print only what setup finds, without the runbook")
 	p.Option("--create", "create a new knowledge base in this folder (new or empty), then report", nil, false)
-	p.Flag("--git", "keep the knowledge base in git: git init if needed, its .gitignore and .gitkeep files; never commits")
 	p.Run = runSetup
 
 	s := sub.AddParser("session-start", "print what the agent reads first, for the project's session-start hook")

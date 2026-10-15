@@ -49,9 +49,8 @@ so the human can answer them together:
     silent about it; say so if they choose that.
   - *Existing:* where it is on this machine, for example one another project uses, or the URL of a git
     repository a colleague or the human has, to clone beside the code repository.
-- **For a new one: keep it in git?** Recommend yes: git is how a knowledge base is kept, shared and
-  backed up. `kb setup --git` makes it a repository, with the `.gitignore` and `.gitkeep` files it needs.
-  Then: a first commit now? `kb` never commits by itself.
+- **For a new one: keep it in git?** Git is optional but recommended: it is how a knowledge base is
+  kept, shared and backed up. If yes: a first commit now? `kb` never commits by itself.
 - **For a new one: pin it?** `kb pin --set` writes `kent.pin`, naming the version of Kent running now,
   and from then on `kb` refuses to write under any other version. It keeps everyone who writes here on
   the same version. It is optional, alone or in a team.
@@ -76,9 +75,21 @@ anything turns out different from what you described.
 
 1. **The knowledge base.**
    - New: `kb setup --create <folder>` makes the folder with its `attested/` and `evidence/` folders,
-     which is how `kb` finds a knowledge base. If they chose git, `kb setup --git --kb <folder>` makes it
-     a repository and adds the `.gitignore` lines and `.gitkeep` files. Make the first commit if they
-     asked for it, and `kb pin --set` if they asked for a pin (then commit `kent.pin` too).
+     which is how `kb` finds a knowledge base. Run `kb pin --set` there if they asked for a pin.
+   - If they chose git, run git yourself in the knowledge base's folder: `git init`, unless the report
+     says a repository already holds it; an empty `.gitkeep` file in `attested/` and in `evidence/`, since
+     git keeps no empty folder and a clone must still be a knowledge base; and a `.gitignore` holding:
+
+     ```
+     # off-record material: outside the record by design, never committed
+     off-record/
+     # rebuilt from the record whenever needed
+     index.db
+     index.db-journal
+     render/
+     ```
+
+     Then make the first commit if they asked for it, including `kent.pin` if there is one.
    - Existing, from a URL: `git clone <url> <folder>`, beside the code repository.
    - Either way, run `kb setup --report --kb <folder>` and read what it finds.
 2. **The human's id,** if it needs setting.
