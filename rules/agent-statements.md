@@ -2,8 +2,8 @@
 
 An agent statement records a working choice you made: an extrapolation of human intent, tentative
 but operational until the humans decide otherwise. Its author is you and your model, and it has no
-attestations; it is not testimony. Agent statements are numbered separately, `A-####`, and live in
-`agent/`. Recording them keeps agents' behavior coherent from session to session, lets smaller
+attestations; it is not testimony. Agent statements have ids of their own, beginning `A-`, and live
+in `agent/`. Recording them keeps agents' behavior coherent from session to session, lets smaller
 choices be settled once, and spares the humans decisions they do not need to make. Agent statements
 may cite each other, which is how a rich set of implications gets built on a thin statement of human
 intent.

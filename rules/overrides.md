@@ -12,8 +12,8 @@ to and `kb check` verifies, so the record is as it was written except where the 
 |---|---|---|
 | Merge two keys | `kb override merge <from> <into>` | every act by `<from>` is recorded as by `<into>`, which has a row in the user table; it also puts right a key wrong from the start |
 | Reassign an act | `kb override reassign <session>#<uuid> <key>` | one human turn, and the attestations made through it |
-| Scrub | `kb override scrub <session>#<uuid>`, `<session>` or `S-####` | the content of a turn, a whole session or document, or a statement, leaving a tombstone |
-| Revise | `kb override revise S-#### <draft> ...` | a statement nothing relies on yet, attested anew |
+| Scrub | `kb override scrub <session>#<uuid>`, `<session>` or `S-xxxx` | the content of a turn, a whole session or document, or a statement, leaving a tombstone |
+| Revise | `kb override revise S-xxxx <draft> ...` | a statement nothing relies on yet, attested anew |
 | Change a person's row | `kb override user <key> --name <name> --email <email>` | their name or email in the user table, never their key (Kent Rule 58) |
 
 ## Making an override

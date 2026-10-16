@@ -1,7 +1,7 @@
 package kb
 
 // Tiny Markdown-to-HTML for the renderer (kb/md.py): paragraphs, headings, lists, fenced code,
-// blockquotes, tables, inline code/bold/italic/links, and S-#### references as links. The regexes that
+// blockquotes, tables, inline code/bold/italic/links, and statement ids as links. The regexes that
 // need look-around in Python are matched by hand here with the same results.
 
 import (
@@ -87,33 +87,33 @@ func italic(s string) string {
 	return b.String()
 }
 
-// stmtRefs is STMT_REF.sub(r'<a href="/s/\1">\1</a>', s) with STMT_REF = r"\b(S-\d{4,})\b".
+// stmtRefs links statement ids, human and agent: STMT_REF.sub(r'<a href="/s/\1">\1</a>', s) with
+// STMT_REF = r"\b([SA]-(?:[0-9A-HJKMNP-TV-Z]{4}|\d{4,}))\b", the ids of S-0149 and the numbers before them.
 func stmtRefs(s string) string {
 	var b strings.Builder
 	last := 0
 	for i := 0; i+1 < len(s); i++ {
-		if s[i] != 'S' || s[i+1] != '-' {
+		if (s[i] != 'S' && s[i] != 'A') || s[i+1] != '-' {
 			continue
 		}
 		if r, ok := runeBefore(s, i); ok && py.IsWord(r) {
 			continue
 		}
+		// both branches match word chars only and must end at a boundary, so the id is the whole run of
+		// word chars after the dash
 		j := i + 2
-		n := 0
+		n, digits, alphabet := 0, true, true
 		for {
 			r, ok := runeAt(s, j)
-			if !ok || !py.IsDecimal(r) {
+			if !ok || !py.IsWord(r) {
 				break
 			}
+			digits = digits && py.IsDecimal(r)
+			alphabet = alphabet && r < utf8.RuneSelf && strings.IndexByte(idAlphabet, byte(r)) >= 0
 			j += utf8.RuneLen(r)
 			n++
 		}
-		if n < 4 {
-			continue
-		}
-		// greedy \d{4,} then \b: back off digits until a boundary follows (a digit is a word char, so
-		// only the full run can be followed by a non-word char)
-		if r, ok := runeAt(s, j); ok && py.IsWord(r) {
+		if !(digits && n >= 4 || alphabet && n == 4) {
 			continue
 		}
 		b.WriteString(s[last:i])

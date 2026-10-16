@@ -24,7 +24,7 @@ allow writing in `off-record/drafts/` and forbid editing `attested/`, `evidence/
 
 1. Draft it in `off-record/drafts/<slug>.md` with frontmatter `title`, `answers` (the question it
    answers and the role it plays), and `cites` (background pointers). A draft that changes an
-   existing statement also carries `supersedes: S-####`, `amends: S-####` or `clarifies: S-####`,
+   existing statement also carries `supersedes: S-xxxx`, `amends: S-xxxx` or `clarifies: S-xxxx`,
    each naming a single statement; only that statement's author may attest such a draft. It may
    carry `rests_on` (statement ids it depends on) and `context_for`, a list of the statements whose
    reading it changes, each with a note of one line:
@@ -44,7 +44,7 @@ allow writing in `off-record/drafts/` and forbid editing `attested/`, `evidence/
    `kb attest <draft> --proposed <session>#<your-turn-uuid> --turn <session>#<their-turn-uuid>`.
    Add `--form agreed-with-modification` when they agreed subject to a change (apply it to the draft
    first; the agreeing turn is the one that states the change); `--form self` when their own turn
-   contains the text (omit `--proposed`); `--form endorsement --statement S-####` to add a further
+   contains the text (omit `--proposed`); `--form endorsement --statement S-xxxx` to add a further
    attestation to an existing statement.
 5. `kb check`, then `kb index`.
 
@@ -59,10 +59,10 @@ from the human's latest message, and pass its id.
 1. State the choice in a turn of your own, in an on-record session, in the last message of that
    turn, for the same reason as above.
 2. Draft it in `off-record/drafts/` with `title`, `answers`, optional `rests_on`, `context_for` and
-   `cites`. A revision of an agent statement carries `supersedes: A-####`.
+   `cites`. A revision of an agent statement carries `supersedes: A-xxxx`.
 3. `kb snapshot`, then `kb record <draft> --turn <session>#<your-turn-uuid>`.
-4. When a human is later shown one in full: `kb seen A-#### --turn <ptr>`. To retire one with nothing
-   in its place: `kb withdraw A-#### --turn <ptr> --reason <text>`.
+4. When a human is later shown one in full: `kb seen A-xxxx --turn <ptr>`. To retire one with nothing
+   in its place: `kb withdraw A-xxxx --turn <ptr> --reason <text>`.
 
 ## Commands
 
@@ -70,13 +70,13 @@ from the human's latest message, and pass its id.
 kb snapshot [<session-id|path>] [--mode on-record|off-record] [--filter human-visible-v1|full-v1]
 kb ingest <file> [--mode on-record|off-record] [--extractor text-v1|html-v1|pdf-v1|docx-v1|opaque-v1] [--title T] [--caption C]
 kb show [<session>[#<uuid>] ...] [--human-only]
-kb attest <draft> --turn <ptr> [--proposed <ptr>] [--form proposed-and-agreed|agreed-with-modification|self|endorsement] [--statement S-####]
+kb attest <draft> --turn <ptr> [--proposed <ptr>] [--form proposed-and-agreed|agreed-with-modification|self|endorsement] [--statement S-xxxx]
 kb record <draft> --turn <ptr>
-kb seen A-#### --turn <ptr>
-kb withdraw A-#### --turn <ptr> --reason <text>
+kb seen A-xxxx --turn <ptr>
+kb withdraw A-xxxx --turn <ptr> --reason <text>
 kb override merge|reassign|scrub|user <args> [--confirm --turn <ptr> --reason <text>]
-kb override revise S-#### <draft> --proposed <ptr> --turn <ptr> --reason <text> [--form ...]
-kb links <S-####|A-####> ... [--depth N]
+kb override revise S-xxxx <draft> --proposed <ptr> --turn <ptr> --reason <text> [--form ...]
+kb links <S-xxxx|A-xxxx> ... [--depth N]
 kb check
 kb index
 kb search <terms>

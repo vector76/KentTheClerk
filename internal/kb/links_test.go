@@ -55,6 +55,7 @@ func newTestKB(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Setenv(kbEnv, root)
+	sequentialIDs(t)
 	// the people who act in testSession add themselves first, as everyone does (S-0140, S-0142)
 	mustRun(t, "user", "add", "Alice Adams", "--email", "alice@example.com", "--key", "alice", "--user", "alice")
 	mustRun(t, "user", "add", "Bob Brown", "--email", "bob@example.com", "--key", "bob", "--user", "bob")

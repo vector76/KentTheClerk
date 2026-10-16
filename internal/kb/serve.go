@@ -269,7 +269,7 @@ func (h *kbServer) original(w http.ResponseWriter, name string) {
 
 func (h *kbServer) overview(db *sql.DB) string {
 	out := []string{`<h1>Kent the Clerk</h1><table class="dense"><tr><th>id</th><th>statement</th><th>relations</th><th>attested by</th></tr>`}
-	for _, s := range query(db, "SELECT * FROM statements ORDER BY id") {
+	for _, s := range query(db, "SELECT * FROM statements ORDER BY made_at, id") {
 		var whos []string
 		for _, r := range query(db, "SELECT by_user FROM attestations WHERE statement = ? ORDER BY at", s["id"]) {
 			if r["by_user"] == nil {
@@ -293,10 +293,10 @@ func (h *kbServer) overview(db *sql.DB) string {
 				}
 			}
 		}
-		for _, r := range query(db, "SELECT target FROM context_links WHERE statement = ? ORDER BY target", s["id"]) {
+		for _, r := range query(db, "SELECT c.target FROM context_links c LEFT JOIN statements s ON s.id = c.target WHERE c.statement = ? ORDER BY s.made_at, c.target", s["id"]) {
 			marks = append(marks, `context for <a href="/s/`+esc(r["target"])+`">`+esc(r["target"])+`</a>`)
 		}
-		for _, r := range query(db, "SELECT statement FROM context_links WHERE target = ? ORDER BY statement", s["id"]) {
+		for _, r := range query(db, "SELECT c.statement FROM context_links c LEFT JOIN statements s ON s.id = c.statement WHERE c.target = ? ORDER BY s.made_at, c.statement", s["id"]) {
 			marks = append(marks, `context from <a href="/s/`+esc(r["statement"])+`">`+esc(r["statement"])+`</a>`)
 		}
 		cls := ""
@@ -324,7 +324,7 @@ func (h *kbServer) overview(db *sql.DB) string {
 
 func (h *kbServer) cards(db *sql.DB) string {
 	out := []string{"<h1>Kent the Clerk</h1>"}
-	for _, s := range query(db, "SELECT * FROM statements ORDER BY id") {
+	for _, s := range query(db, "SELECT * FROM statements ORDER BY made_at, id") {
 		out = append(out, statementCard(db, s, false))
 	}
 	return strings.Join(out, "")
@@ -379,7 +379,7 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 			out = append(out, "<tr><th>"+esc(strings.ReplaceAll(key, "_", " "))+"</th><td>"+strings.Join(links, ", ")+"</td></tr>")
 		}
 	}
-	for _, c := range query(db, "SELECT target, note FROM context_links WHERE statement = ? ORDER BY target", sid) {
+	for _, c := range query(db, "SELECT c.target, c.note FROM context_links c LEFT JOIN statements s ON s.id = c.target WHERE c.statement = ? ORDER BY s.made_at, c.target", sid) {
 		out = append(out, "<tr><th>context for</th><td><a href='/s/"+esc(c["target"])+"'>"+esc(c["target"])+"</a>: "+esc(c["note"])+"</td></tr>")
 	}
 	if truthy(s["topics"]) {
@@ -402,7 +402,7 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 	// statements that change how this one is read, with their notes; those in force first
 	context := query(db, "SELECT c.statement, c.note, s.title, s.superseded_by, s.withdrawn_in FROM context_links c "+
 		"LEFT JOIN statements s ON s.id = c.statement WHERE c.target = ? "+
-		"ORDER BY (s.superseded_by IS NOT NULL AND s.superseded_by != '') OR (s.withdrawn_in IS NOT NULL AND s.withdrawn_in != ''), c.statement", sid)
+		"ORDER BY (s.superseded_by IS NOT NULL AND s.superseded_by != '') OR (s.withdrawn_in IS NOT NULL AND s.withdrawn_in != ''), s.made_at, c.statement", sid)
 	if len(context) > 0 {
 		var b strings.Builder
 		b.WriteString(`<h2 id="context">extra context: statements that change how this one is read</h2><table class="dense">`)
@@ -417,7 +417,7 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 		b.WriteString("</table>")
 		out = append(out, b.String())
 	}
-	inbound := query(db, "SELECT id, title FROM statements WHERE body LIKE ? AND id != ? ORDER BY id", "%"+sid+"%", sid)
+	inbound := query(db, "SELECT id, title FROM statements WHERE body LIKE ? AND id != ? ORDER BY made_at, id", "%"+sid+"%", sid)
 	if len(inbound) > 0 {
 		var b strings.Builder
 		b.WriteString("<h2>inbound links</h2><ul>")
@@ -475,11 +475,11 @@ func (h *kbServer) user(w http.ResponseWriter, db *sql.DB, uid string) {
 		head += `<p class="meta">` + esc(rows[0]["name"]) + ` &lt;` + esc(rows[0]["email"]) + `&gt;, from the user table</p>`
 	}
 	out := []string{head + "<h2>attested</h2>"}
-	for _, s := range query(db, "SELECT s.* FROM statements s JOIN attestations a ON a.statement = s.id WHERE a.by_user = ? ORDER BY s.id", uid) {
+	for _, s := range query(db, "SELECT s.* FROM statements s JOIN attestations a ON a.statement = s.id WHERE a.by_user = ? ORDER BY s.made_at, s.id", uid) {
 		out = append(out, statementCard(db, s, false))
 	}
 	out = append(out, "<h2>originated</h2>")
-	for _, s := range query(db, "SELECT * FROM statements WHERE originator = ? ORDER BY id", uid) {
+	for _, s := range query(db, "SELECT * FROM statements WHERE originator = ? ORDER BY made_at, id", uid) {
 		out = append(out, statementCard(db, s, false))
 	}
 	out = append(out, "<h2>sessions</h2><ul>")

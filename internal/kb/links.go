@@ -45,7 +45,7 @@ func contextProblem(root, self string, l contextLink) string {
 	switch {
 	case !statementIDRE.MatchString(l.target):
 		return fmt.Sprintf("%s is not a statement id; each entry names a statement and carries a note "+
-			"(statement: S-####, note: how this changes its reading)", py.StrRepr(l.target))
+			"(statement: S-xxxx, note: how this changes its reading)", py.StrRepr(l.target))
 	case l.target == self:
 		return fmt.Sprintf("%s cannot be context for itself", l.target)
 	case statementPath(root, l.target) == "":
@@ -165,6 +165,7 @@ func requireAuthor(root, user string, rels *py.Dict) {
 // linkNode is one statement as kb links sees it.
 type linkNode struct {
 	id, path, title string
+	madeAt          string // when it was made, the order statements are listed in (S-0149)
 	inForce         bool
 	status          string
 	supersededBy    string
@@ -192,7 +193,7 @@ func loadLinkGraph(root string) map[string]*linkNode {
 		if id == "" {
 			continue
 		}
-		n := &linkNode{id: id, path: filepath.ToSlash(rel(st.Path, root)), title: py.Str(py.Or(st.Meta.Get("title"), "")), inForce: true, status: "in force"}
+		n := &linkNode{id: id, path: filepath.ToSlash(rel(st.Path, root)), title: py.Str(py.Or(st.Meta.Get("title"), "")), madeAt: madeAt(st.Meta), inForce: true, status: "in force"}
 		if sb := st.Meta.Get("superseded_by"); py.Truthy(sb) {
 			n.inForce, n.status, n.supersededBy = false, "superseded by "+py.Str(sb), py.Str(sb)
 		} else if py.Truthy(st.Meta.Get("withdrawn_in")) {
@@ -294,8 +295,21 @@ func sortInForceFirst(nodes map[string]*linkNode, ids []string) {
 		if a.inForce != b.inForce {
 			return a.inForce
 		}
-		return a.id < b.id
+		return madeBefore(nodes, a.id, b.id)
 	})
+}
+
+// madeBefore orders two statements by when they were made, since ids carry no order (S-0149); a statement
+// not found comes last, and the id breaks a tie.
+func madeBefore(nodes map[string]*linkNode, a, b string) bool {
+	na, nb := nodes[a], nodes[b]
+	if (na == nil) != (nb == nil) {
+		return nb == nil
+	}
+	if na != nil && na.madeAt != nb.madeAt {
+		return na.madeAt < nb.madeAt
+	}
+	return a < b
 }
 
 // oneLine is a statement as one line: id, standing, file and title.
@@ -340,7 +354,7 @@ func (m linkMap) render() string {
 					}
 					shown = append(shown, e)
 				}
-				sort.SliceStable(shown, func(i, j int) bool { return shown[i].other < shown[j].other })
+				sort.SliceStable(shown, func(i, j int) bool { return madeBefore(m.nodes, shown[i].other, shown[j].other) })
 				if kind == "context_for" {
 					for _, e := range shown {
 						b.WriteString(fmt.Sprintf("  %s %s %s: %s\n", dir, kind, e.other, e.note))
@@ -386,7 +400,7 @@ func runLinks(ns argparse.Namespace) int {
 	for _, id := range ns.List("statements") {
 		id = strings.ToUpper(strings.TrimSpace(id))
 		if !statementIDRE.MatchString(id) {
-			die(fmt.Sprintf("%s is not a statement id (S-#### or A-####)", py.StrRepr(id)))
+			die(fmt.Sprintf("%s is not a statement id (S-xxxx or A-xxxx)", py.StrRepr(id)))
 		}
 		if nodes[id] == nil {
 			die(fmt.Sprintf("statement %s not found", id))
@@ -399,7 +413,7 @@ func runLinks(ns argparse.Namespace) int {
 
 func addLinksParser(sub *argparse.Parser) {
 	p := sub.AddParser("links", "map the links around statements in one call: ids, files, titles, notes, standing")
-	p.Positional("statements", argparse.OneMore, "S-#### or A-####")
+	p.Positional("statements", argparse.OneMore, "S-xxxx or A-xxxx")
 	p.IntOption("--depth", "how many links out to go (default 1); statements in force nearer than that are shown with their links", 1)
 	p.Run = runLinks
 }

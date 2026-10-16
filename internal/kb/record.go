@@ -34,8 +34,9 @@ func onRecordTurn(root, ptrStr, what string) (*Session, *py.Dict) {
 }
 
 func loadAgent(root, aid string) (string, *Statement) {
+	aid = strings.ToUpper(strings.TrimSpace(aid))
 	if !strings.HasPrefix(aid, "A-") {
-		die(aid + " is not an agent statement id (A-####)")
+		die(aid + " is not an agent statement id (A-xxxx)")
 	}
 	p := statementPath(root, aid)
 	if p == "" {
@@ -99,7 +100,7 @@ func runRecord(ns argparse.Namespace) int {
 
 	ts := isoSeconds(now())
 	madeIn := Pointer{sess.ID(), py.Str(item(turn, "uuid"))}.String()
-	aid := nextStatementID(root, "A")
+	aid := makeStatementID(root, "A")
 	ordered := py.D("id", aid, "title", meta.Get("title"), "answers", py.Strip(py.Str(meta.Get("answers"))),
 		"author", item(turn, "author"), "made_in", madeIn, "recorded_at", ts)
 	addStamp(ordered)
@@ -199,11 +200,11 @@ func addRecordParsers(sub *argparse.Parser) {
 	p.Flag("--keep-draft", "do not delete the draft after recording")
 	p.Run = runRecord
 	s := sub.AddParser("seen", "record that an agent statement was shown in full in an on-record turn")
-	s.Positional("statement", argparse.Single, "A-####")
+	s.Positional("statement", argparse.Single, "A-xxxx")
 	s.Option("--turn", "<session>#<uuid> of the turn that showed it", nil, true)
 	s.Run = runSeen
 	w := sub.AddParser("withdraw", "retire an agent statement with nothing in its place")
-	w.Positional("statement", argparse.Single, "A-####")
+	w.Positional("statement", argparse.Single, "A-xxxx")
 	w.Option("--turn", "<session>#<uuid> of the on-record turn that withdraws it", nil, true)
 	w.Option("--reason", "", nil, true)
 	w.Run = runWithdraw

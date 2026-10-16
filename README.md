@@ -113,8 +113,8 @@ left out, because when you say "that's right", you are answering what was in fro
 
 Agents make many small choices while working for you, often ones that could reasonably go either
 way. When such a choice is likely to come up again, the agent records it as an **agent statement**:
-a working choice, in force until someone decides otherwise. Agent statements are numbered separately
-(`A-0001` rather than `S-0001`), carry no attestations, and are never presented as something you
+a working choice, in force until someone decides otherwise. Agent statements have ids of their own
+(`A-7K2M` rather than `S-7K2M`), carry no attestations, and are never presented as something you
 said.
 
 - Before relying on an agent statement you haven't seen, the agent shows it to you in full.

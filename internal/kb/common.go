@@ -5,6 +5,7 @@
 package kb
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -55,7 +57,15 @@ var (
 	systemHashRE   = regexp.MustCompile(`^sha256:[0-9a-f]{64}\n?$`)
 	originalHashRE = systemHashRE
 	originalNameRE = regexp.MustCompile(`^([0-9a-f]{64})(\.[A-Za-z0-9]{1,12})?\n?$`)
-	statementIDRE  = regexp.MustCompile(`^([SA])-\p{Nd}{4,}\n?$`)
+	statementIDRE  = regexp.MustCompile(`^([SA])-` + idBody + `\n?$`)
+)
+
+// An id's body (S-0149) is four characters from Crockford's base32 alphabet. The ids given before it were
+// sequential numbers, which the alphabet's digits already cover; the second branch keeps the digits-only
+// form the earlier pattern allowed.
+const (
+	idAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+	idBody     = `(?:[0-9A-HJKMNP-TV-Z]{4}|\p{Nd}{4,})`
 )
 
 var (
@@ -102,7 +112,7 @@ func die(msg string) {
 func warn(msg string) { io.WriteString(Stderr, "warning: "+msg+"\n") }
 
 // now is datetime.now(timezone.utc).
-func now() time.Time { return time.Now().UTC() }
+var now = func() time.Time { return time.Now().UTC() }
 
 // isoSeconds is datetime.isoformat(timespec="seconds") for a UTC time.
 func isoSeconds(t time.Time) string { return t.Format("2006-01-02T15:04:05") + "+00:00" }
@@ -810,60 +820,97 @@ func writeStatement(path string, st *Statement) {
 	py.WriteText(path, dumpFrontmatter(st.Meta)+"\n"+st.Body+"\n")
 }
 
+// loadAllStatements reads attested/ in the order the statements were made (byMade).
 func loadAllStatements(root string) []*Statement {
 	var out []*Statement
 	for _, p := range sortedGlob(filepath.Join(root, "attested"), "S-*.md") {
 		out = append(out, loadStatement(p))
 	}
-	return out
+	return byMade(out)
 }
 
+// loadAllAgentStatements reads agent/ in the order the statements were made (byMade).
 func loadAllAgentStatements(root string) []*Statement {
 	var out []*Statement
 	for _, p := range sortedGlob(filepath.Join(root, "agent"), "A-*.md") {
 		out = append(out, loadStatement(p))
 	}
-	return out
+	return byMade(out)
 }
 
-// leadingDigits is re.match(rf"{kind}-(\d+)", name) -> int(group 1).
-func leadingNumber(name, kind string) (int, bool) {
-	if !strings.HasPrefix(name, kind+"-") {
-		return 0, false
+// madeAt is when a statement was made: its first attestation for a human statement, recorded_at for an
+// agent statement, or "" when it carries neither. Ids carry no order (S-0149), so this is the order.
+func madeAt(meta *py.Dict) string {
+	if v := meta.Get("recorded_at"); py.Truthy(v) {
+		return py.Str(v)
 	}
-	var digits strings.Builder
-	for _, r := range name[len(kind)+1:] {
-		if !py.IsDecimal(r) {
-			break
-		}
-		digits.WriteRune(r)
-	}
-	if digits.Len() == 0 {
-		return 0, false
-	}
-	n, ok := py.ParseInt(digits.String())
-	if !ok {
-		return 0, false
-	}
-	return int(n.Int64()), true
-}
-
-func nextStatementID(root, kind string) string {
-	d := filepath.Join(root, statementDirs[kind])
-	maxN, any := 0, false
-	for _, p := range py.Glob(d, kind+"-*.md") {
-		if n, ok := leadingNumber(filepath.Base(p), kind); ok {
-			if !any || n > maxN {
-				maxN = n
+	if atts := listOf(meta.Get("attestations")); len(atts) > 0 {
+		if d, ok := atts[0].(*py.Dict); ok {
+			if v := d.Get("at"); py.Truthy(v) {
+				return py.Str(v)
 			}
-			any = true
 		}
 	}
-	next := 1
-	if any {
-		next = maxN + 1
+	return ""
+}
+
+// byMade sorts statements by when they were made, then by file name; the times are ISO timestamps in UTC,
+// so they compare as strings.
+func byMade(sts []*Statement) []*Statement {
+	sort.SliceStable(sts, func(i, j int) bool {
+		a, b := madeAt(sts[i].Meta), madeAt(sts[j].Meta)
+		if a != b {
+			return a < b
+		}
+		return filepath.Base(sts[i].Path) < filepath.Base(sts[j].Path)
+	})
+	return sts
+}
+
+// makeStatementID gives a new statement its id. Tests replace it to get ids they can predict.
+var makeStatementID = newStatementID
+
+// idSource is where new ids get their randomness.
+var idSource io.Reader = rand.Reader
+
+// newStatementID is a new id for a statement of the kind, S or A (S-0149): random rather than the next
+// number, so that people attesting at the same time in separate copies of the knowledge base do not give
+// out the same id. It is drawn again until it holds a letter, which sets it apart from the sequential
+// ids, and is not taken in this copy, by a file name or by an id inside a file.
+func newStatementID(root, kind string) string {
+	taken := map[string]bool{}
+	d := filepath.Join(root, statementDirs[kind])
+	for _, p := range py.Glob(d, kind+"-*.md") {
+		name := filepath.Base(p)
+		id, _, _ := strings.Cut(name[len(kind)+1:], "-")
+		taken[kind+"-"+strings.ToUpper(strings.TrimSuffix(id, ".md"))] = true
+		if v := loadStatement(p).Meta.Get("id"); py.Truthy(v) {
+			taken[strings.ToUpper(py.Str(v))] = true
+		}
 	}
-	return fmt.Sprintf("%s-%04d", kind, next)
+	return drawStatementID(kind, func(id string) bool { return taken[id] }, idSource)
+}
+
+// drawStatementID draws ids from src until one holds a letter and is not taken. Each character comes from
+// one byte's low five bits; 256 is a multiple of 32, so every character is equally likely.
+func drawStatementID(kind string, taken func(string) bool, src io.Reader) string {
+	buf := make([]byte, 4)
+	for range 10000 {
+		if _, err := io.ReadFull(src, buf); err != nil {
+			py.RaiseOS(err)
+		}
+		body := make([]byte, 4)
+		letter := false
+		for i, b := range buf {
+			body[i] = idAlphabet[b&31]
+			letter = letter || body[i] > '9'
+		}
+		if id := kind + "-" + string(body); letter && !taken(id) {
+			return id
+		}
+	}
+	die(fmt.Sprintf("could not find a free %s- id in %s", kind, statementDirs[kind]))
+	return ""
 }
 
 // statementPath is the file of a human (S-) or agent (A-) statement by id, or "".

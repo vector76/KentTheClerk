@@ -15,8 +15,10 @@ import (
 )
 
 var (
-	humanIDRE = regexp.MustCompile(`^S-\p{Nd}{4,}\n?$`)
-	agentIDRE = regexp.MustCompile(`^A-\p{Nd}{4,}\n?$`)
+	humanIDRE = regexp.MustCompile(`^S-` + idBody + `\n?$`)
+	agentIDRE = regexp.MustCompile(`^A-` + idBody + `\n?$`)
+	// digitsRE is an id given before S-0149, when ids were sequential numbers
+	digitsRE = regexp.MustCompile(`^[SA]-\p{Nd}{4,}\n?$`)
 )
 
 // pathKey identifies a resolved path for comparison, as Path equality does (case-insensitive on Windows).
@@ -170,8 +172,11 @@ func runCheck(ns argparse.Namespace) int {
 			errorf("duplicate id %s: %s and %s", sid, name, prev)
 		}
 		ids[sid] = name
-		n, _ := py.ParseInt(sid[2:])
-		nums = append(nums, int(n.Int64()))
+		// only the sequential ids given before S-0149 can leave a gap; a random id has a letter
+		if digitsRE.MatchString(sid) {
+			n, _ := py.ParseInt(sid[2:])
+			nums = append(nums, int(n.Int64()))
+		}
 		statementOverrideChecks(st, overrides, errorf)
 		scrubbed := py.Truthy(st.Meta.Get("scrubbed"))
 		if !py.Truthy(st.Meta.Get("title")) {

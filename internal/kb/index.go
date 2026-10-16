@@ -1,7 +1,8 @@
 package kb
 
 // kb index / kb search — rebuildable SQLite index over evidence/, attested/ and agent/ (gitignored).
-// The schema and queries are those of kb/index.py, so an index built by either version serves both.
+// The schema and queries began as those of kb/index.py; made_at, when a statement was made, was added
+// for S-0149, since ids no longer give the order. kb serve and kb search rebuild the index before use.
 
 import (
 	"database/sql"
@@ -32,7 +33,7 @@ CREATE TABLE statements (
   id TEXT PRIMARY KEY, title TEXT, answers TEXT, originator TEXT, proposed_in TEXT, modified_in TEXT,
   supersedes TEXT, superseded_by TEXT, amends TEXT, amended_by TEXT, clarifies TEXT, clarified_by TEXT,
   topics TEXT, body TEXT, path TEXT,
-  kind TEXT, rests_on TEXT, seen_count INTEGER, withdrawn_in TEXT
+  kind TEXT, rests_on TEXT, seen_count INTEGER, withdrawn_in TEXT, made_at TEXT
 );
 CREATE TABLE attestations (
   statement TEXT, by_user TEXT, at TEXT, turn TEXT, form TEXT
@@ -198,12 +199,12 @@ func buildIndex(root string) string {
 			originator, proposed = m.Get("author"), m.Get("made_in")
 		}
 		id := m.Get("id")
-		exec("INSERT INTO statements VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		exec("INSERT INTO statements VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 			id, m.Get("title"), m.Get("answers"), originator, proposed,
 			m.Get("modified_in"), m.Get("supersedes"), m.Get("superseded_by"), m.Get("amends"),
 			joinStrs(py.Or(m.Get("amended_by"), []any{})), m.Get("clarifies"), joinStrs(py.Or(m.Get("clarified_by"), []any{})),
 			joinStrs(py.Or(m.Get("topics"), []any{})), ks.st.Body, rel(ks.st.Path, root),
-			ks.kind, joinStrs(py.Or(m.Get("rests_on"), []any{})), py.IntOf(len(listOf(m.Get("seen")))), m.Get("withdrawn_in"))
+			ks.kind, joinStrs(py.Or(m.Get("rests_on"), []any{})), py.IntOf(len(listOf(m.Get("seen")))), m.Get("withdrawn_in"), madeAt(m))
 		for _, xv := range listOf(m.Get("seen")) {
 			exec("INSERT INTO citations VALUES (?,?,?)", id, py.AsDict(xv).Get("turn"), "seen")
 		}

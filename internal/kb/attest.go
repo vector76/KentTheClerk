@@ -84,14 +84,18 @@ func runAttest(ns argparse.Namespace) int {
 
 	if form == "endorsement" {
 		statement, ok := ns.Str("statement")
+		statement = strings.ToUpper(strings.TrimSpace(statement))
 		if !ok || statement == "" {
-			die("endorsement requires --statement S-####")
+			die("endorsement requires --statement S-xxxx")
 		}
 		if strings.HasPrefix(statement, "A-") {
 			die(fmt.Sprintf("%s is an agent statement, which carries no attestations; to adopt it, attest a "+
 				"human statement that supersedes it (%s)", statement, rule("agent-no-attestations")))
 		}
-		hits := py.Glob(filepath.Join(root, "attested"), statement+"-*.md")
+		var hits []string
+		if humanIDRE.MatchString(statement) {
+			hits = py.Glob(filepath.Join(root, "attested"), statement+"-*.md")
+		}
 		if len(hits) != 1 {
 			die(fmt.Sprintf("statement %s not found (or ambiguous)", statement))
 		}
@@ -170,7 +174,7 @@ func runAttest(ns argparse.Namespace) int {
 	context := contextFor(root, "S", meta, rels)
 	rests := restsOn(root, meta)
 
-	sid := nextStatementID(root, "S")
+	sid := makeStatementID(root, "S")
 	ordered := py.D("id", sid, "title", meta.Get("title"), "answers", py.Strip(py.Str(meta.Get("answers"))),
 		"originator", meta.Get("originator"), "proposed_in", meta.Get("proposed_in"))
 	if v := meta.Get("modified_in"); py.Truthy(v) {
@@ -266,7 +270,7 @@ func addAttestParser(sub *argparse.Parser) {
 	p.Option("--form", strings.Join(attestationForms, "|"), "proposed-and-agreed", false)
 	p.Option("--turn", "<session>#<uuid> of the human's agreeing turn", nil, true)
 	p.Option("--proposed", "<session>#<uuid> of the agent turn containing the exact text", nil, false)
-	p.Option("--statement", "S-#### to endorse (endorsement form)", nil, false)
+	p.Option("--statement", "S-xxxx to endorse (endorsement form)", nil, false)
 	p.Option("--user", "attesting user id", nil, false)
 	p.Flag("--keep-draft", "do not delete the draft after attesting")
 	p.Run = runAttest

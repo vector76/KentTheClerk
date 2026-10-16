@@ -594,7 +594,7 @@ func runOverrideScrub(ns argparse.Namespace, args []string) int {
 	requirePin(root)
 	if len(args) != 1 {
 		die("kb override scrub takes one target: <session>#<uuid> for a turn, <session> for a whole session or " +
-			"document, or S-#### / A-#### for a statement")
+			"document, or S-xxxx / A-xxxx for a statement")
 	}
 	target := py.Strip(args[0])
 	userArg, _ := ns.Str("user")
@@ -870,12 +870,12 @@ func runOverrideRevise(ns argparse.Namespace, args []string) int {
 	root := repoRoot()
 	requirePin(root)
 	if len(args) != 2 {
-		die("kb override revise takes the statement and the draft of its new text: kb override revise S-#### <draft> " +
+		die("kb override revise takes the statement and the draft of its new text: kb override revise S-xxxx <draft> " +
 			"--proposed <ptr> --turn <ptr> --reason <why>")
 	}
 	sid := strings.ToUpper(py.Strip(args[0]))
 	if !humanIDRE.MatchString(sid) {
-		die(fmt.Sprintf("%s is not a human statement id (S-####); an agent revises its own choices with kb record (%s)", py.StrRepr(sid), rule("agent-revision")))
+		die(fmt.Sprintf("%s is not a human statement id (S-xxxx); an agent revises its own choices with kb record (%s)", py.StrRepr(sid), rule("agent-revision")))
 	}
 	p := statementPath(root, sid)
 	if p == "" {
@@ -1245,7 +1245,7 @@ func addOverrideParser(sub *argparse.Parser) {
 	p := sub.AddParser("override", "make one of the closed list of overrides, a last resort (kb rules overrides)")
 	p.Positional("kind", argparse.Single, "merge | reassign | scrub | revise | user")
 	p.Positional("args", argparse.ZeroMore, "merge <from> <into> | reassign <session>#<uuid> <id> | "+
-		"scrub <session>#<uuid>|<session>|S-#### | revise S-#### <draft> | user <key> --name <name> --email <email>")
+		"scrub <session>#<uuid>|<session>|S-xxxx | revise S-xxxx <draft> | user <key> --name <name> --email <email>")
 	p.Flag("--confirm", "make the override, after the human confirmed the check in a turn of their own")
 	p.Option("--turn", "<session>#<uuid> of the human's on-record turn confirming it (for revise: agreeing to the new text)", nil, false)
 	p.Option("--reason", "why the override is made, for the log", nil, false)
