@@ -10,15 +10,15 @@
 // The extraction keeps its quirks (e.g. text dropped when a line switches
 // to right-to-left script, dictionaries kept in insertion order, which
 // errors are swallowed and which abort the extraction), because the goal
-// is stable output, not better output. Errors are *classError values carrying
-// an exception class name, raised with panic/recover where a failure has
-// to unwind to an enclosing handler.
+// is stable output, not better output. Errors are *pdfError values carrying
+// an errKind, raised with panic/recover where a failure has to unwind to an
+// enclosing handler, which decides by kind what it catches.
 //
 // Resource limits: 75 MB per decoded filter output, 4 MB predictor rows,
 // 250,000 predictor columns, 10,000 /Contents entries and 75 MB of joined
 // content, 75 MB declared stream lengths, 100,000 /ToUnicode entries, the
 // 10,000-object /Root recovery limit, token length limits; past one,
-// Extract returns a LimitReachedError.
+// Extract returns an errLimit error.
 //
 // Hostile input cannot hang the extraction or exhaust memory:
 //   - An xref table whose entry realignment stops making progress near the
@@ -76,7 +76,7 @@ func ExtractBytes(data []byte) (pages []string, title string, hasTitle bool, err
 			if rr, ok := r.(raised); ok {
 				err = rr.err
 			} else if be, ok := r.(budgetError); ok {
-				err = classErr("LimitReachedError", "pdftext work limit: %s", be.msg)
+				err = pdfErr(errLimit, "pdftext work limit: %s", be.msg)
 			} else {
 				err = fmt.Errorf("pdftext: internal error: %v", r)
 			}
@@ -88,7 +88,7 @@ func ExtractBytes(data []byte) (pages []string, title string, hasTitle bool, err
 		return nil, "", false, err
 	}
 	if d.trailer.Has("/Encrypt") {
-		return nil, "", false, classErr("NotImplemented", "encrypted PDF files are not supported")
+		return nil, "", false, pdfErr(errUnsupported, "encrypted PDF files are not supported")
 	}
 	// The title object; an error reading it means no title.
 	var titleObj Object
@@ -128,7 +128,7 @@ func (d *Document) titleObject() Object {
 	}
 	idict, ok := asDict(d.resolve(info))
 	if !ok {
-		raise(classErr("PdfReadError", "Trailer not found or does not point to a document information dictionary"))
+		raise(pdfErr(errMalformed, "Trailer not found or does not point to a document information dictionary"))
 	}
 	if idict.Len() == 0 {
 		return nil

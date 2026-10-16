@@ -148,34 +148,76 @@ func truthy(o Object) bool {
 
 // errors -------------------------------------------------------------------
 
-// classError is an extraction error tagged with an exception class, so callers
-// can decide which handlers catch it.
-type classError struct {
-	Class string // "PdfReadError", "TypeError", "AttributeError", "KeyError", ...
-	Msg   string
+// errKind is the kind of an extraction error. Handlers decide by kind which
+// errors they catch, so each kind stands for one way a file can be wrong.
+type errKind int
+
+const (
+	errNone        errKind = iota // not a pdfError
+	errMalformed                  // the file structure cannot be read
+	errStream                     // a stream or the file ends too early, or is unreadable
+	errLimit                      // a resource limit was reached
+	errDepth                      // nesting deeper than the call stack model allows
+	errType                       // an object of the wrong type
+	errValue                      // an object of the right type with a bad value
+	errStructure                  // an object lacks what is needed (not a dictionary, null, ...)
+	errMissingKey                 // a required key or resource is missing
+	errRange                      // an index or code out of range
+	errAssertion                  // a consistency check failed
+	errDecode                     // bytes that cannot be decoded as text
+	errUnsupported                // a feature that is not supported
+	errEmpty                      // an empty file
+)
+
+var errKindLabels = [...]string{
+	errNone:        "error",
+	errMalformed:   "malformed PDF",
+	errStream:      "bad stream data",
+	errLimit:       "limit reached",
+	errDepth:       "nesting too deep",
+	errType:        "wrong type",
+	errValue:       "bad value",
+	errStructure:   "wrong structure",
+	errMissingKey:  "missing key",
+	errRange:       "out of range",
+	errAssertion:   "failed check",
+	errDecode:      "cannot decode",
+	errUnsupported: "unsupported",
+	errEmpty:       "empty file",
 }
 
-func (e *classError) Error() string { return e.Class + ": " + e.Msg }
+func (k errKind) String() string { return errKindLabels[k] }
 
-func classErr(class, format string, a ...interface{}) error {
-	return &classError{Class: class, Msg: fmt.Sprintf(format, a...)}
+// pdfError is an extraction error tagged with its kind.
+type pdfError struct {
+	Kind errKind
+	Msg  string
 }
 
-// isReadError reports whether err is a PdfReadError (or subclass).
+func (e *pdfError) Error() string { return e.Kind.String() + ": " + e.Msg }
+
+func pdfErr(kind errKind, format string, a ...interface{}) error {
+	return &pdfError{Kind: kind, Msg: fmt.Sprintf(format, a...)}
+}
+
+// isReadError reports whether err is one of the kinds that a malformed file
+// structure produces.
 func isReadError(err error) bool {
-	switch errClass(err) {
-	case "PdfReadError", "PdfStreamError", "FileNotDecryptedError", "EmptyFileError":
+	switch errKindOf(err) {
+	case errMalformed, errStream, errEmpty:
 		return true
 	}
 	return false
 }
 
-func errClass(err error) string {
-	var pe *classError
+// errKindOf returns the kind of err, errNone for errors that are not
+// pdfErrors.
+func errKindOf(err error) errKind {
+	var pe *pdfError
 	if errors.As(err, &pe) {
-		return pe.Class
+		return pe.Kind
 	}
-	return ""
+	return errNone
 }
 
 // lexer --------------------------------------------------------------------
@@ -312,7 +354,7 @@ func (p *parser) skipOverComment() error {
 				return nil
 			}
 			if c < 0 {
-				return classErr("PdfStreamError", "File ended unexpectedly.")
+				return pdfErr(errStream, "File ended unexpectedly.")
 			}
 		}
 	}
@@ -346,11 +388,11 @@ func (p *parser) readObject() (Object, error) {
 
 // recursionLimit is the depth of the modelled call stack. Parsers track
 // their frame depth (see frames.go) so that deeply nested input fails with
-// RecursionError at fixed depths; this also bounds the Go recursion.
+// errDepth at fixed depths; this also bounds the Go recursion.
 const recursionLimit = 1000
 
 func recursionError() error {
-	return classErr("RecursionError", "maximum recursion depth exceeded")
+	return pdfErr(errDepth, "maximum nesting depth exceeded")
 }
 
 // readObjectDepth is readObject running at frame depth; the terminal
@@ -388,7 +430,7 @@ func (p *parser) readObjectDepth(depth int) (Object, error) {
 			p.read(1)
 			return Bool(false), nil
 		}
-		return nil, classErr("PdfReadError", "Could not read Boolean object")
+		return nil, pdfErr(errMalformed, "Could not read Boolean object")
 	case tok == '(':
 		return p.readLiteralString()
 	case tok == 'e' && string(p.slice(p.pos, p.pos+6)) == "endobj":
@@ -396,7 +438,7 @@ func (p *parser) readObjectDepth(depth int) (Object, error) {
 		return Null{}, nil
 	case tok == 'n':
 		if string(p.read(4)) != "null" {
-			return nil, classErr("PdfReadError", "Could not read Null object")
+			return nil, pdfErr(errMalformed, "Could not read Null object")
 		}
 		return Null{}, nil
 	case tok == '%':
@@ -414,7 +456,7 @@ func (p *parser) readObjectDepth(depth int) (Object, error) {
 	case tok < 0 || (tok >= '0' && tok <= '9') || tok == '+' || tok == '-' || tok == '.':
 		if p.matchIndirect() {
 			if p.doc == nil {
-				return nil, classErr("AssertionError", "mypy")
+				return nil, pdfErr(errAssertion, "reference inside a content stream")
 			}
 			return p.readIndirect()
 		}
@@ -424,7 +466,7 @@ func (p *parser) readObjectDepth(depth int) (Object, error) {
 		p.read(6)
 	}
 	p.readUntilWhitespace()
-	return nil, classErr("PdfReadError", "Invalid Elementary Object starting with %q", rune(tok))
+	return nil, pdfErr(errMalformed, "Invalid Elementary Object starting with %q", rune(tok))
 }
 
 func minInt(a, b int) int {
@@ -480,7 +522,7 @@ func (p *parser) readIndirect() (Object, error) {
 	for {
 		c := p.read1()
 		if c < 0 {
-			return nil, classErr("PdfStreamError", "Stream has ended unexpectedly")
+			return nil, pdfErr(errStream, "Stream has ended unexpectedly")
 		}
 		if isASCIISpace(byte(c)) {
 			break
@@ -491,7 +533,7 @@ func (p *parser) readIndirect() (Object, error) {
 	for {
 		c := p.read1()
 		if c < 0 {
-			return nil, classErr("PdfStreamError", "Stream has ended unexpectedly")
+			return nil, pdfErr(errStream, "Stream has ended unexpectedly")
 		}
 		if isASCIISpace(byte(c)) {
 			if len(gen) == 0 {
@@ -502,12 +544,12 @@ func (p *parser) readIndirect() (Object, error) {
 		gen = append(gen, byte(c))
 	}
 	if r := p.readNonWhitespace(); r != 'R' {
-		return nil, classErr("PdfReadError", "Error reading indirect object reference")
+		return nil, pdfErr(errMalformed, "Error reading indirect object reference")
 	}
 	n, err1 := parseDecimal(idnum)
 	g, err2 := parseDecimal(gen)
 	if err1 != nil || err2 != nil {
-		return nil, classErr("ValueError", "invalid literal for int()")
+		return nil, pdfErr(errValue, "reference numbers are not integers")
 	}
 	return Ref{Num: int(n), Gen: int(g)}, nil
 }
@@ -523,7 +565,7 @@ func parseDecimal(b []byte) (int64, error) {
 }
 
 // tokenLimit enforces a token length limit: the token starting at
-// p.pos is read in chunks of 16, 32, 64... bytes, and LimitReachedError is
+// p.pos is read in chunks of 16, 32, 64... bytes, and errLimit is
 // raised once the bytes read reach the limit before the delimiter is seen.
 func (p *parser) tokenLimit(isDelim func(byte) bool, limit int) error {
 	start := p.pos
@@ -549,7 +591,7 @@ func (p *parser) tokenLimit(isDelim func(byte) bool, limit int) error {
 		}
 		cur := total + tok
 		if cur >= limit {
-			return classErr("LimitReachedError", "Read stream length of %d exceeds maximum allowed length of %d.", cur, limit)
+			return pdfErr(errLimit, "Read stream length of %d exceeds maximum allowed length of %d.", cur, limit)
 		}
 		if m >= 0 && m < cur {
 			return nil
@@ -689,7 +731,7 @@ func (p *parser) readLiteralString() (Object, error) {
 	for {
 		c := p.read1()
 		if c < 0 {
-			return nil, classErr("PdfStreamError", "Stream has ended unexpectedly")
+			return nil, pdfErr(errStream, "Stream has ended unexpectedly")
 		}
 		tok := byte(c)
 		if tok == '(' {
@@ -769,13 +811,13 @@ func (p *parser) readHexString() (Object, error) {
 	for {
 		c := p.readNonWhitespace()
 		if c < 0 {
-			return nil, classErr("PdfStreamError", "Stream has ended unexpectedly")
+			return nil, pdfErr(errStream, "Stream has ended unexpectedly")
 		}
 		if c == '>' {
 			break
 		}
 		if hexVal(byte(c)) < 0 {
-			return nil, classErr("PdfStreamError", "Invalid hexadecimal character in hex string")
+			return nil, pdfErr(errStream, "Invalid hexadecimal character in hex string")
 		}
 		x = append(x, byte(c))
 		if len(x) == 2 {
@@ -845,7 +887,7 @@ func (p *parser) readDict(depth int) (Object, error) {
 			continue
 		}
 		if c < 0 {
-			return nil, classErr("PdfStreamError", "Stream has ended unexpectedly")
+			return nil, pdfErr(errStream, "Stream has ended unexpectedly")
 		}
 		if c == '>' {
 			p.read1()
@@ -884,7 +926,7 @@ func (p *parser) readDict(depth int) (Object, error) {
 			eol = p.read1()
 		}
 		if eol != '\n' && eol != '\r' {
-			return nil, classErr("PdfStreamError", "Stream data must be followed by a newline")
+			return nil, pdfErr(errStream, "Stream data must be followed by a newline")
 		}
 		if eol == '\r' {
 			if p.read1() != '\n' {
@@ -897,7 +939,7 @@ func (p *parser) readDict(depth int) (Object, error) {
 		}
 		if r, isRef := lengthObj.(Ref); isRef {
 			if p.doc == nil {
-				return nil, classErr("AssertionError", "mypy")
+				return nil, pdfErr(errAssertion, "indirect /Length inside a content stream")
 			}
 			t := p.pos
 			// an indirect /Length is resolved one frame up
@@ -916,17 +958,17 @@ func (p *parser) readDict(depth int) (Object, error) {
 		case Int:
 			length = int64(l)
 		case Real:
-			// a real /Length is a TypeError
-			return nil, classErr("TypeError", "length must be int")
+			// a real /Length is an errType
+			return nil, pdfErr(errType, "/Length is not an integer")
 		case nil:
 			length = -1
 		default:
-			return nil, classErr("TypeError", "length must be int")
+			return nil, pdfErr(errType, "/Length is not an integer")
 		}
 		pstart := p.pos
 		var sdata []byte
 		if length > maxDeclaredStreamLength {
-			return nil, classErr("LimitReachedError", "Declared stream length of %d exceeds maximum allowed length.", length)
+			return nil, pdfErr(errLimit, "Declared stream length of %d exceeds maximum allowed length.", length)
 		}
 		if length >= 0 {
 			sdata = p.read(int(minInt64(length, int64(len(p.data)))))
@@ -934,7 +976,7 @@ func (p *parser) readDict(depth int) (Object, error) {
 			idx := indexOf(p.data[p.pos:], []byte("endstream"))
 			if idx >= maxDeclaredStreamLength-16 || (idx < 0 && len(p.data)-p.pos >= maxDeclaredStreamLength-16) {
 				// no endstream within maxDeclaredStreamLength bytes
-				return nil, classErr("LimitReachedError", "Read stream length exceeds maximum allowed length.")
+				return nil, pdfErr(errLimit, "Read stream length exceeds maximum allowed length.")
 			}
 			if idx < 0 {
 				sdata = p.data[p.pos:]
@@ -968,13 +1010,13 @@ func (p *parser) readDict(depth int) (Object, error) {
 					}
 				}
 				if end-pstart >= maxDeclaredStreamLength {
-					return nil, classErr("LimitReachedError", "Requested length of %d exceeds maximum allowed length.", end-pstart)
+					return nil, pdfErr(errLimit, "Requested length of %d exceeds maximum allowed length.", end-pstart)
 				}
 				rest := p.data[pstart:end]
 				idx := indexOf(rest, []byte("endstream"))
 				if idx < 0 {
 					p.pos = end // the bytes up to the next object were read
-					return nil, classErr("PdfReadError", "Unable to find 'endstream' marker")
+					return nil, pdfErr(errMalformed, "Unable to find 'endstream' marker")
 				}
 				if idx >= 1 {
 					sdata = rest[:idx-1]
@@ -983,7 +1025,7 @@ func (p *parser) readDict(depth int) (Object, error) {
 				}
 				p.pos = pstart + idx + 9
 			} else {
-				return nil, classErr("PdfReadError", "Unable to find 'endstream' marker after stream")
+				return nil, pdfErr(errMalformed, "Unable to find 'endstream' marker after stream")
 			}
 		}
 		data.Delete("/Length")
@@ -993,13 +1035,13 @@ func (p *parser) readDict(depth int) (Object, error) {
 	return data, nil
 }
 
-// dictError handles an error reading a key or value: RecursionError and
-// LimitReachedError become a PdfReadError that propagates; anything else
+// dictError handles an error reading a key or value: errDepth and
+// errLimit become an errMalformed that propagates; anything else
 // returns the partial dictionary.
 func (p *parser) dictError(data *Dict, err error) (Object, error) {
-	switch errClass(err) {
-	case "RecursionError", "LimitReachedError":
-		return nil, classErr("PdfReadError", "%s('%s')", errClass(err), err.(*classError).Msg)
+	switch errKindOf(err) {
+	case errDepth, errLimit:
+		return nil, pdfErr(errMalformed, "%s: %s", errKindOf(err), err.(*pdfError).Msg)
 	}
 	return data, nil
 }

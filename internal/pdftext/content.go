@@ -30,7 +30,7 @@ func parseContent(data []byte, frame int) ([]operation, error) {
 			op := string(p.readUntilDelim())
 			if op == "BI" {
 				if len(operands) != 0 {
-					return nil, classErr("AssertionError", "operands before BI")
+					return nil, pdfErr(errAssertion, "operands before BI")
 				}
 				if err := p.readInlineImage(); err != nil {
 					return nil, err

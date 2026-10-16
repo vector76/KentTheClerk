@@ -77,13 +77,13 @@ func (d *Document) decodeStream(s *Stream) ([]byte, error) {
 			data, err = runLengthDecode(data)
 		case "/Crypt":
 			if pd, ok := asDict(params); ok && (pd.Has("/Name") || pd.Has("/Type")) {
-				err = classErr("NotImplementedError", "/Crypt filter with /Name or /Type not supported yet")
+				err = pdfErr(errUnsupported, "/Crypt filter with /Name or /Type not supported yet")
 			}
 		case "/CCITTFaxDecode", "/CCF", "/DCTDecode", "/DCT", "/JPXDecode", "/JBIG2Decode":
 			// Image codecs: text extraction never needs the result.
-			err = classErr("NotImplementedError", "image filter %s not supported here", name)
+			err = pdfErr(errUnsupported, "image filter %s not supported here", name)
 		default:
-			err = classErr("NotImplementedError", "Unsupported filter %v", f)
+			err = pdfErr(errUnsupported, "Unsupported filter %v", f)
 		}
 		if err != nil {
 			return nil, err
@@ -103,13 +103,13 @@ const (
 	maxDeclaredStreamLength = 75_000_000 // a stream's length, declared or found
 )
 
-// readLimited reads r, failing with LimitReachedError once more than
+// readLimited reads r, failing with errLimit once more than
 // maxDecodedOutput bytes come out. corrupt reports a decoding error that is
 // not a plain truncation or a checksum mismatch.
 func readLimited(r io.Reader) (out []byte, corrupt bool, err error) {
 	out, rerr := io.ReadAll(io.LimitReader(r, maxDecodedOutput+1))
 	if len(out) > maxDecodedOutput {
-		return nil, false, classErr("LimitReachedError", "Limit reached while decompressing.")
+		return nil, false, pdfErr(errLimit, "Limit reached while decompressing.")
 	}
 	if rerr != nil && rerr != io.ErrUnexpectedEOF && rerr != zlib.ErrChecksum && rerr != gzip.ErrChecksum {
 		corrupt = true
@@ -129,7 +129,7 @@ func zlibDecompress(data []byte) ([]byte, error) {
 		// Recovery from corrupt data gives up on input longer than
 		// maxZlibRecoveryInput+1 bytes.
 		if corrupt && len(data) > maxZlibRecoveryInput+1 {
-			return nil, classErr("LimitReachedError", "Recovery limit reached while decompressing.")
+			return nil, pdfErr(errLimit, "Recovery limit reached while decompressing.")
 		}
 		return out, nil
 	}
@@ -142,13 +142,13 @@ func zlibDecompress(data []byte) ([]byte, error) {
 				return nil, err
 			}
 			if corrupt && len(data) > maxZlibRecoveryInput+1 {
-				return nil, classErr("LimitReachedError", "Recovery limit reached while decompressing.")
+				return nil, pdfErr(errLimit, "Recovery limit reached while decompressing.")
 			}
 			return out, nil
 		}
 	}
 	if len(data) > maxZlibRecoveryInput+1 {
-		return nil, classErr("LimitReachedError", "Recovery limit reached while decompressing.")
+		return nil, pdfErr(errLimit, "Recovery limit reached while decompressing.")
 	}
 	return []byte{}, nil
 }
@@ -179,7 +179,7 @@ func (d *Document) flateDecode(data []byte, params Object) ([]byte, error) {
 		}
 		iv, ok := v.(Int)
 		if !ok || iv < 1 {
-			return 0, classErr("PdfReadError", "Expected positive number for %s", key)
+			return 0, pdfErr(errMalformed, "Expected positive number for %s", key)
 		}
 		return int64(iv), nil
 	}
@@ -188,25 +188,25 @@ func (d *Document) flateDecode(data []byte, params Object) ([]byte, error) {
 		return nil, err
 	}
 	if columns > maxFlateColumns {
-		return nil, classErr("LimitReachedError", "Number of columns %d exceeds defined limit of %d.", columns, maxFlateColumns)
+		return nil, pdfErr(errLimit, "Number of columns %d exceeds defined limit of %d.", columns, maxFlateColumns)
 	}
 	colors, err := get("/Colors", 1)
 	if err != nil {
 		return nil, err
 	}
 	if colors > 16 {
-		return nil, classErr("LimitReachedError", "Color value %d exceeds limit of 16.", colors)
+		return nil, pdfErr(errLimit, "Color value %d exceeds limit of 16.", colors)
 	}
 	bpc, err := get("/BitsPerComponent", 8)
 	if err != nil {
 		return nil, err
 	}
 	if bpc > 16 {
-		return nil, classErr("PdfReadError", "More than 16 bits per component are not allowed: %d", bpc)
+		return nil, pdfErr(errMalformed, "More than 16 bits per component are not allowed: %d", bpc)
 	}
 	rowLength := int((columns*colors*bpc+7)/8) + 1
 	if rowLength > maxFlateRowLength {
-		return nil, classErr("LimitReachedError", "Row length of %d exceeds defined limit of %d.", rowLength, maxFlateRowLength)
+		return nil, pdfErr(errLimit, "Row length of %d exceeds defined limit of %d.", rowLength, maxFlateRowLength)
 	}
 	predictor, _ := pred.(Int)
 	switch {
@@ -223,7 +223,7 @@ func (d *Document) flateDecode(data []byte, params Object) ([]byte, error) {
 	case predictor >= 10 && predictor <= 15:
 		return pngPredict(out, int(columns), rowLength)
 	}
-	return nil, classErr("PdfReadError", "Unsupported flatedecode predictor %v", pred)
+	return nil, pdfErr(errMalformed, "Unsupported flatedecode predictor %v", pred)
 }
 
 func pngPredict(data []byte, columns, rowLength int) ([]byte, error) {
@@ -271,7 +271,7 @@ func pngPredict(data []byte, columns, rowLength int) ([]byte, error) {
 				r[i] += byte(pa)
 			}
 		default:
-			return nil, classErr("PdfReadError", "Unsupported PNG filter %d", r[0])
+			return nil, pdfErr(errMalformed, "Unsupported PNG filter %d", r[0])
 		}
 		prev = r
 		out = append(out, r[1:]...)
@@ -301,7 +301,7 @@ func asciiHexDecode(data []byte) ([]byte, error) {
 	}
 	out, err := unhexlify(h)
 	if err != nil {
-		return nil, classErr("PdfStreamError", "Invalid hexadecimal character in ASCIIHexDecode stream")
+		return nil, pdfErr(errStream, "Invalid hexadecimal character in ASCIIHexDecode stream")
 	}
 	return out, nil
 }
@@ -333,7 +333,7 @@ func ascii85Decode(data []byte) ([]byte, error) {
 			continue
 		}
 		if c < '!' || c > 'u' {
-			return nil, classErr("ValueError", "Non-Ascii85 digit found: %c", c)
+			return nil, pdfErr(errValue, "Non-Ascii85 digit found: %c", c)
 		}
 		group[n] = c - '!'
 		n++
@@ -343,7 +343,7 @@ func ascii85Decode(data []byte) ([]byte, error) {
 				v = v*85 + uint64(g)
 			}
 			if v > 0xFFFFFFFF {
-				return nil, classErr("ValueError", "Ascii85 overflow")
+				return nil, pdfErr(errValue, "Ascii85 overflow")
 			}
 			out = append(out, byte(v>>24), byte(v>>16), byte(v>>8), byte(v))
 			n = 0
@@ -392,7 +392,7 @@ func runLengthDecode(data []byte) ([]byte, error) {
 			total += 257 - l
 		}
 		if total > maxDecodedOutput {
-			return nil, classErr("LimitReachedError", "Limit reached while decompressing.")
+			return nil, pdfErr(errLimit, "Limit reached while decompressing.")
 		}
 	}
 	return out, nil
@@ -462,7 +462,7 @@ func lzwDecode(data []byte) ([]byte, error) {
 			out = append(out, table[code]...)
 			old = code
 			if len(out) > maxDecodedOutput {
-				return nil, classErr("LimitReachedError", "Limit reached while decompressing.")
+				return nil, pdfErr(errLimit, "Limit reached while decompressing.")
 			}
 			continue
 		} else if code < tableIndex {
@@ -471,13 +471,13 @@ func lzwDecode(data []byte) ([]byte, error) {
 			if old != clear && len(dec) > 0 {
 				add(table[old], dec[0])
 			} else if old != clear {
-				return nil, classErr("IndexError", "index out of range")
+				return nil, pdfErr(errRange, "index out of range")
 			}
 			old = code
 		} else {
 			base := table[old]
 			if len(base) == 0 {
-				return nil, classErr("PdfStreamError", "LZW code out of range")
+				return nil, pdfErr(errStream, "LZW code out of range")
 			}
 			dec := append(append([]byte(nil), base...), base[0])
 			out = append(out, dec...)
@@ -485,7 +485,7 @@ func lzwDecode(data []byte) ([]byte, error) {
 			old = code
 		}
 		if len(out) > maxDecodedOutput {
-			return nil, classErr("LimitReachedError", "Limit reached while decompressing.")
+			return nil, pdfErr(errLimit, "Limit reached while decompressing.")
 		}
 	}
 	return out, nil

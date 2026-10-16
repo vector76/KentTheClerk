@@ -6,10 +6,10 @@ import "fmt"
 //
 // The extraction is recursive in a few places (object parsing, the page
 // tree walk, form XObjects inside form XObjects) and fails with
-// RecursionError once a modelled call stack passes recursionLimit = 1000
+// errDepth once a modelled call stack passes recursionLimit = 1000
 // frames. Where that error is caught decides the output: inside a form
 // XObject the Do handler swallows it (the nested text becomes ""), a
-// dictionary turns it into a PdfReadError (so its parent dictionary returns
+// dictionary turns it into an errMalformed (so its parent dictionary returns
 // the entries read so far), elsewhere the extraction aborts.
 //
 // Each step is assigned the frame depth it runs at, so nesting fails at

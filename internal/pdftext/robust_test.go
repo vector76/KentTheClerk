@@ -89,9 +89,9 @@ func extractTimed(t *testing.T, data []byte, limit time.Duration) ([]string, err
 	return pages, err
 }
 
-func wantErrClass(t *testing.T, err error, class string) {
+func wantErrClass(t *testing.T, err error, class errKind) {
 	t.Helper()
-	if errClass(err) != class {
+	if errKindOf(err) != class {
 		t.Fatalf("got error %v, want a %s", err, class)
 	}
 }
@@ -102,7 +102,7 @@ func TestToUnicodeRangeOverflow(t *testing.T) {
 		{5, []byte("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 6 0 R >>")},
 		{6, streamObj(cmap, "")}}
 	_, err := extractTimed(t, buildPDF(objs, 1, ""), 2*time.Second)
-	wantErrClass(t, err, "LimitReachedError")
+	wantErrClass(t, err, errLimit)
 }
 
 func TestDecompressionLimits(t *testing.T) {
@@ -120,7 +120,7 @@ func TestDecompressionLimits(t *testing.T) {
 	for name, data := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, err := extractTimed(t, data, 10*time.Second)
-			wantErrClass(t, err, "LimitReachedError")
+			wantErrClass(t, err, errLimit)
 		})
 	}
 }
@@ -136,7 +136,7 @@ func TestContentsArrayLimit(t *testing.T) {
 			}
 			continue
 		}
-		wantErrClass(t, err, "LimitReachedError")
+		wantErrClass(t, err, errLimit)
 	}
 }
 
@@ -144,7 +144,7 @@ func TestContentsArrayLimit(t *testing.T) {
 func TestXrefRealignmentNoProgress(t *testing.T) {
 	data := []byte("%PDF-1.4\nxref\n0 999999\n0000000000 65535 f \nstartxref\n9\n%%EOF" + strings.Repeat("\n", 40))
 	_, err := extractTimed(t, data, 2*time.Second)
-	wantErrClass(t, err, "PdfReadError")
+	wantErrClass(t, err, errMalformed)
 }
 
 func formChain(depth int, fanout bool) []byte {
@@ -177,7 +177,7 @@ func TestFormXObjectDepth(t *testing.T) {
 // A form fan-out of 2^30 runs never finishes; the work budget stops it.
 func TestFormXObjectFanoutBudget(t *testing.T) {
 	_, err := extractTimed(t, formChain(30, true), 30*time.Second)
-	wantErrClass(t, err, "LimitReachedError")
+	wantErrClass(t, err, errLimit)
 }
 
 func TestPageTreeDepth(t *testing.T) {
@@ -198,17 +198,17 @@ func TestPageTreeDepth(t *testing.T) {
 		t.Errorf("983 levels: %q %v", pages, err) // /Resources fails to parse
 	}
 	_, err = extractTimed(t, build(300000), 20*time.Second)
-	wantErrClass(t, err, "PdfReadError")
+	wantErrClass(t, err, errMalformed)
 }
 
 func TestNestedArrays(t *testing.T) {
 	content := func(n int) []byte {
 		return []byte("BT /F1 12 Tf " + strings.Repeat("[", n) + strings.Repeat("]", n) + " (A) Tj ET")
 	}
-	for n, class := range map[int]string{496: "AttributeError", 497: "RecursionError", 1000000: "RecursionError"} {
+	for n, class := range map[int]errKind{496: errStructure, 497: errDepth, 1000000: errDepth} {
 		data := buildPDF([]pdfObj{objCatalog, objPages, pageObj("", ""), {4, streamObj(content(n), "")}, objFont}, 1, "")
 		_, err := extractTimed(t, data, 5*time.Second)
-		if errClass(err) != class {
+		if errKindOf(err) != class {
 			t.Errorf("%d nested arrays: %v, want %s", n, err, class)
 		}
 	}
@@ -223,7 +223,7 @@ func TestNestedArrays(t *testing.T) {
 
 func TestReferenceBodies(t *testing.T) {
 	// An object whose body is "N 0 R": the first lookup of it raises
-	// AttributeError (caught around /Contents and fonts).
+	// errStructure (caught around /Contents and fonts).
 	contentsHop := buildPDF([]pdfObj{objCatalog, objPages, pageObj("7 0 R", ""), {7, []byte("4 0 R")},
 		{4, streamObj(textA, "")}, objFont}, 1, "")
 	fontHop := buildPDF([]pdfObj{objCatalog, objPages, pageObj("", "<< /Font << /F1 7 0 R >> >>"),
@@ -264,7 +264,7 @@ func TestRootRecoveryLimit(t *testing.T) {
 	data := buildPDF(objs, 1, "")
 	data = bytes.Replace(data, []byte("/Size 3"), []byte("/Size 20000"), 1)
 	_, err := extractTimed(t, data, 10*time.Second)
-	wantErrClass(t, err, "LimitReachedError")
+	wantErrClass(t, err, errLimit)
 }
 
 func TestDeterministicAverageWidth(t *testing.T) {

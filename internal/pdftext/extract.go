@@ -102,13 +102,13 @@ func toFloat(o Object) (float64, error) {
 		s := strings.TrimSpace(string(v.Raw))
 		f, err := strconv.ParseFloat(strings.ReplaceAll(s, "_", ""), 64)
 		if err != nil {
-			return 0, classErr("ValueError", "could not convert string to float")
+			return 0, pdfErr(errValue, "string is not a number")
 		}
 		return f, nil
 	case Name:
-		return 0, classErr("ValueError", "could not convert string to float")
+		return 0, pdfErr(errValue, "string is not a number")
 	}
-	return 0, classErr("TypeError", "float() argument must be a string or a real number")
+	return 0, pdfErr(errType, "not a number")
 }
 
 func lastRune(a, b ustr) (rune, bool) {
@@ -260,7 +260,7 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 		if len(operands) > 0 {
 			k, ok := hashKey(operands[0])
 			if !ok {
-				raise(classErr("TypeError", "unhashable type"))
+				raise(pdfErr(errType, "Tf font name is an array or dictionary"))
 			}
 			fr, ok1 := e.fontResources[k]
 			fnt, ok2 := e.fonts[k]
@@ -305,7 +305,7 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 			for i := 0; i < 6; i++ {
 				f, err := toFloat(operands[i])
 				if err != nil {
-					if errClass(err) == "TypeError" || errClass(err) == "ValueError" {
+					if errKindOf(err) == errType || errKindOf(err) == errValue {
 						ok = false
 						break
 					}
@@ -387,11 +387,11 @@ func (e *extractor) handleTj(ops []tjOperand) {
 			for _, x := range o.raw {
 				v, ok := f.enc.m[int(x)]
 				if ok && len(v) == 1 && v[0] == -1 {
-					raise(classErr("TypeError", "sequence item: expected str instance"))
+					raise(pdfErr(errType, "encoding maps the code to an object that is not text"))
 				}
 				if !ok {
 					if x >= 0x80 {
-						raise(classErr("UnicodeDecodeError", "utf-8 codec can't decode byte"))
+						raise(pdfErr(errDecode, "character code above 0x7F has no encoding entry"))
 					}
 					v = ustr{rune(x)}
 				}
@@ -505,11 +505,11 @@ func tjOperands(operands []Object) []tjOperand {
 }
 
 // codesFromObject decodes an operand that is neither text nor bytes: a
-// codec-name encoding fails with AttributeError; a table encoding iterates
+// codec-name encoding fails with errStructure; a table encoding iterates
 // it and looks each item up as a character code.
 func codesFromObject(o Object, enc *encoding) ustr {
 	if enc.isStr {
-		raise(classErr("AttributeError", "object has no attribute 'decode'"))
+		raise(pdfErr(errStructure, "text operand is not a string"))
 	}
 	var items []Object
 	switch v := o.(type) {
@@ -520,7 +520,7 @@ func codesFromObject(o Object, enc *encoding) ustr {
 			items = append(items, k)
 		}
 	default:
-		raise(classErr("TypeError", "object is not iterable"))
+		raise(pdfErr(errType, "text operand is neither an array nor a dictionary"))
 	}
 	var out ustr
 	for _, x := range items {
@@ -534,18 +534,18 @@ func codesFromObject(o Object, enc *encoding) ustr {
 			}
 		}
 		if !ok {
-			raise(classErr("TypeError", "'%T' object cannot be interpreted as an integer", x))
+			raise(pdfErr(errType, "character code is not an integer"))
 		}
 		v, found := enc.m[code]
 		if found && len(v) == 1 && v[0] == -1 {
-			raise(classErr("TypeError", "sequence item: expected str instance"))
+			raise(pdfErr(errType, "encoding maps the code to an object that is not text"))
 		}
 		if !found {
 			switch {
 			case code < 0 || code > 255:
-				raise(classErr("ValueError", "bytes must be in range(0, 256)"))
+				raise(pdfErr(errValue, "character code out of range"))
 			case code >= 0x80:
-				raise(classErr("UnicodeDecodeError", "utf-8 codec can't decode byte"))
+				raise(pdfErr(errDecode, "character code above 0x7F has no encoding entry"))
 			}
 			v = ustr{rune(code)}
 		}
@@ -590,14 +590,14 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 		case *String:
 			t, isText := textString(r.Raw)
 			if !isText {
-				raise(classErr("TypeError", "a bytes-like object is required"))
+				raise(pdfErr(errType, "/Resources is a string that is not text"))
 			}
 			hasFont = strings.Contains(t.goString(), "/Font")
 		default:
-			raise(classErr("TypeError", "argument is not iterable"))
+			raise(pdfErr(errType, "/Resources is not a dictionary"))
 		}
 		if hasFont {
-			raise(classErr("TypeError", "indices must be integers"))
+			raise(pdfErr(errType, "/Resources is not a dictionary"))
 		}
 		resources = newDict() // no /Font; /XObject lookups fail (and are caught)
 		resources.Set("/__not_a_dict__", Null{})
@@ -607,7 +607,7 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 		if truthy(fontsObj) {
 			// each entry of /Font (keys of a dictionary, items of an array
 			// used as indices, characters or bytes of a string) is loaded
-			// as a font; AttributeError and TypeError skip the entry
+			// as a font; errStructure and errType skip the entry
 			type entry struct {
 				key   Object
 				value Object // nil: the lookup raises lookupErr
@@ -624,7 +624,7 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 				for _, x := range fv {
 					idx, isInt := x.(Int)
 					if !isInt {
-						entries = append(entries, entry{key: x, err: classErr("TypeError", "list indices must be integers")})
+						entries = append(entries, entry{key: x, err: pdfErr(errType, "/Font array entry is not an index")})
 						continue
 					}
 					i := int(idx)
@@ -632,24 +632,24 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 						i += len(fv)
 					}
 					if i < 0 || i >= len(fv) {
-						raise(classErr("IndexError", "list index out of range"))
+						raise(pdfErr(errRange, "/Font array index out of range"))
 					}
 					entries = append(entries, entry{key: x, value: fv[i]})
 				}
 			case Name:
-				// indexing by a character: TypeError for every character
+				// indexing by a character: errType for every character
 			case *String:
 				if _, isText := textString(fv.Raw); !isText {
 					for _, b := range fv.Raw {
 						if int(b) >= len(fv.Raw) {
-							raise(classErr("IndexError", "index out of range"))
+							raise(pdfErr(errRange, "/Font string index out of range"))
 						}
 						// each byte is an integer, not a font
-						entries = append(entries, entry{key: Int(b), err: classErr("AttributeError", "'int' object has no attribute 'get_object'")})
+						entries = append(entries, entry{key: Int(b), err: pdfErr(errStructure, "/Font entry is a number, not a font")})
 					}
 				}
 			default:
-				raise(classErr("TypeError", "object is not iterable"))
+				raise(pdfErr(errType, "/Font is not a dictionary or array"))
 			}
 			for _, en := range entries {
 				en := en
@@ -659,12 +659,12 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 					}
 					k, ok := hashKey(en.key)
 					if !ok {
-						return classErr("TypeError", "unhashable type")
+						return pdfErr(errType, "font resource name is an array or dictionary")
 					}
 					fo := d.resolve(en.value)
 					fdict, ok := asDict(fo)
 					if !ok {
-						return classErr("AttributeError", "font is not a dictionary")
+						return pdfErr(errStructure, "font is not a dictionary")
 					}
 					e.fontResources[k] = fdict
 					fnt, err := d.fontFromResource(fdict)
@@ -678,8 +678,8 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 					return nil
 				})
 				if err != nil {
-					c := errClass(err)
-					if c != "AttributeError" && c != "TypeError" {
+					c := errKindOf(err)
+					if c != errStructure && c != errType {
 						raise(err)
 					}
 				}
@@ -694,14 +694,14 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 		if !ok {
 			return ustr{}
 		}
-		// AttributeError or KeyError while building the content: no text
+		// errStructure or errMissingKey while building the content: no text
 		noContent := false
 		err := catch(func() error {
 			data, noContent = d.pageContent(co)
 			return nil
 		})
 		if err != nil {
-			if c := errClass(err); c == "AttributeError" || c == "KeyError" {
+			if c := errKindOf(err); c == errStructure || c == errMissingKey {
 				return ustr{}
 			}
 			raise(err)
@@ -761,43 +761,43 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 			err := catch(func() error {
 				xo, ok := resources.Get("/XObject")
 				if !ok || resources.Has("/__not_a_dict__") {
-					return classErr("KeyError", "/XObject")
+					return pdfErr(errMissingKey, "no /XObject resources")
 				}
 				xobj, ok := asDict(d.resolve(xo))
 				if !ok {
-					return classErr("TypeError", "/XObject")
+					return pdfErr(errType, "/XObject resources are not a dictionary")
 				}
 				if len(operands) == 0 {
-					return classErr("IndexError", "Do without operand")
+					return pdfErr(errRange, "Do without operand")
 				}
 				n, ok := operands[0].(Name)
 				if !ok {
-					return classErr("KeyError", "Do operand")
+					return pdfErr(errMissingKey, "Do operand is not a name")
 				}
 				xr, ok := xobj.Get(n)
 				if !ok {
-					return classErr("KeyError", "%s", string(n))
+					return pdfErr(errMissingKey, "%s", string(n))
 				}
 				xform := d.resolve(xr)
 				xd, ok := asDict(xform)
 				if !ok {
-					return classErr("TypeError", "XObject is not a dictionary")
+					return pdfErr(errType, "XObject is not a dictionary")
 				}
 				st, ok := xd.Get("/Subtype")
 				if !ok {
-					return classErr("KeyError", "/Subtype")
+					return pdfErr(errMissingKey, "/Subtype")
 				}
 				if d.resolve(st) == Name("/Image") {
 					return nil
 				}
 				xs, ok := xform.(*Stream)
 				if !ok {
-					return classErr("AttributeError", "form is not a stream")
+					return pdfErr(errStructure, "form is not a stream")
 				}
 				if known[xs] {
 					text = ustr{}
 				} else {
-					// a RecursionError deep down a chain of forms is caught
+					// an errDepth deep down a chain of forms is caught
 					// by this handler (see frames.go)
 					if extractFrame(level+1)+frameFormWork > recursionLimit {
 						return recursionError()
@@ -815,8 +815,8 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 				return nil
 			})
 			if err != nil && len(operands) == 0 {
-				// a failed Do without operands raises IndexError
-				raise(classErr("IndexError", "list index out of range"))
+				// a failed Do without operands raises errRange
+				raise(pdfErr(errRange, "Do without operand"))
 			}
 			e.text = nil
 			e.memoCm = e.cm
@@ -842,7 +842,7 @@ type tjElement struct {
 
 // tjElements iterates a TJ operand: arrays give their strings and numbers,
 // byte strings their byte values, names their characters, dictionaries
-// their keys; anything else is a TypeError.
+// their keys; anything else is an errType.
 func tjElements(o Object) []tjElement {
 	var out []tjElement
 	switch v := o.(type) {
@@ -872,7 +872,7 @@ func tjElements(o Object) []tjElement {
 			out = append(out, tjElement{isStr: true, op: tjOperand{isText: true, text: ustr([]rune(string(k)))}})
 		}
 	default:
-		raise(classErr("TypeError", "object is not iterable"))
+		raise(pdfErr(errType, "TJ operand is not an array, string or name"))
 	}
 	return out
 }
@@ -884,7 +884,7 @@ func negate(o Object) (Object, error) {
 	case Real:
 		return -v, nil
 	}
-	return nil, classErr("TypeError", "bad operand type for unary -")
+	return nil, pdfErr(errType, "operand is not a number")
 }
 
 // getInherited looks key up in obj and then up its /Parent chain: the
@@ -894,7 +894,7 @@ func getInherited(d *Document, obj *Dict, key Name) Object {
 	seen := map[*Dict]bool{}
 	for {
 		if seen[cur] {
-			raise(classErr("LimitReachedError", "Detected cycle in /Parent hierarchy"))
+			raise(pdfErr(errLimit, "Detected cycle in /Parent hierarchy"))
 		}
 		seen[cur] = true
 		if cur.Has(key) {
@@ -908,14 +908,14 @@ func getInherited(d *Document, obj *Dict, key Name) Object {
 		if !ok {
 			// a /Parent that is an array or string can be tested for the
 			// key and /Parent (containsKey); where it has one, reading it
-			// raises TypeError.
+			// raises errType.
 			for _, k := range []Name{key, "/Parent"} {
 				in, err := containsKey(p, k)
 				if err != nil {
 					raise(err)
 				}
 				if in {
-					raise(classErr("TypeError", "indices must be integers"))
+					raise(pdfErr(errType, "/Parent is not a dictionary"))
 				}
 			}
 			return newDict()
@@ -932,7 +932,7 @@ func (d *Document) pageContent(co Object) (data []byte, noContent bool) {
 	switch c := content.(type) {
 	case Array:
 		if len(c) > maxContentArrayLength {
-			raise(classErr("LimitReachedError", "Array-based stream has %d > %d elements.", len(c), maxContentArrayLength))
+			raise(pdfErr(errLimit, "Array-based stream has %d > %d elements.", len(c), maxContentArrayLength))
 		}
 		var buf []byte
 		length := 0
@@ -948,7 +948,7 @@ func (d *Document) pageContent(co Object) (data []byte, noContent bool) {
 				}
 				length += len(b)
 				if length > maxArrayStreamOutput {
-					raise(classErr("LimitReachedError", "Array-based stream has at least %d > %d output bytes.", length, maxArrayStreamOutput))
+					raise(pdfErr(errLimit, "Array-based stream has at least %d > %d output bytes.", length, maxArrayStreamOutput))
 				}
 				buf = append(buf, b...)
 			}
@@ -965,5 +965,5 @@ func (d *Document) pageContent(co Object) (data []byte, noContent bool) {
 		}
 		return b, false
 	}
-	return nil, true // AttributeError: no content can be extracted
+	return nil, true // errStructure: no content can be extracted
 }

@@ -14,10 +14,10 @@ const inlineBufferSize = 8192
 
 func isWhiteByte(c int) bool { return c >= 0 && isPdfWhite(byte(c)) }
 
-// seekRel moves the position by n; a negative position is a ValueError.
+// seekRel moves the position by n; a negative position is an errValue.
 func (p *parser) seekRel(n int) error {
 	if p.pos+n < 0 {
-		return classErr("ValueError", "negative seek value")
+		return pdfErr(errValue, "negative offset")
 	}
 	p.pos += n
 	return nil
@@ -29,7 +29,7 @@ func (p *parser) readInlineImage() error {
 	for {
 		c := p.readNonWhitespace()
 		if c < 0 {
-			return classErr("PdfReadError", "Unexpected end of stream.")
+			return pdfErr(errMalformed, "Unexpected end of stream.")
 		}
 		p.back(1)
 		if c == 'I' {
@@ -50,7 +50,7 @@ func (p *parser) readInlineImage() error {
 		}
 	}
 	if tmp := p.read(3); len(tmp) < 2 || string(tmp[:2]) != "ID" {
-		return classErr("AssertionError", "")
+		return pdfErr(errAssertion, "inline image settings not followed by ID")
 	}
 	get := func(k Name, def Object) Object {
 		if v, ok := settings.Get(k); ok {
@@ -155,7 +155,7 @@ func (p *parser) readInlineImage() error {
 	if p.endImageAt() {
 		return nil
 	}
-	return classErr("PdfStreamError", "Could not extract inline image, even using fallback.")
+	return pdfErr(errStream, "Could not extract inline image, even using fallback.")
 }
 
 // endImageAt reads "EI" plus one byte (stepping back over that byte) and
@@ -227,7 +227,7 @@ func (p *parser) inlineASCIIHex() error {
 	for {
 		buf, start, nread := p.nonWhiteAndBuffer()
 		if len(buf) == 0 || nread == 0 {
-			return classErr("PdfReadError", "Unexpected end of stream.")
+			return pdfErr(errMalformed, "Unexpected end of stream.")
 		}
 		if i := bytes.IndexByte(buf, '>'); i >= 0 {
 			p.pos = start + i + 1
@@ -247,12 +247,12 @@ func (p *parser) inlineASCIIHex() error {
 			break
 		}
 		if len(buf) == 2 {
-			return classErr("PdfReadError", "Unexpected end of stream.")
+			return pdfErr(errMalformed, "Unexpected end of stream.")
 		}
 		p.back(2)
 	}
 	if !p.checkEndImageMarker() {
-		return classErr("PdfReadError", "EI stream not found.")
+		return pdfErr(errMalformed, "EI stream not found.")
 	}
 	return nil
 }
@@ -261,19 +261,19 @@ func (p *parser) inlineASCII85() error {
 	for {
 		buf, start, nread := p.nonWhiteAndBuffer()
 		if len(buf) == 0 || nread == 0 {
-			return classErr("PdfReadError", "Unexpected end of stream.")
+			return pdfErr(errMalformed, "Unexpected end of stream.")
 		}
 		if i := bytes.Index(buf, []byte("~>")); i >= 0 {
 			p.pos = start + i + 2
 			break
 		}
 		if len(buf) == 2 {
-			return classErr("PdfReadError", "Unexpected end of stream.")
+			return pdfErr(errMalformed, "Unexpected end of stream.")
 		}
 		p.back(2)
 	}
 	if !p.checkEndImageMarker() {
-		return classErr("PdfReadError", "EI stream not found.")
+		return pdfErr(errMalformed, "EI stream not found.")
 	}
 	return nil
 }
@@ -283,7 +283,7 @@ func (p *parser) inlineRunLength() error {
 		start := p.pos
 		buf := p.read(inlineBufferSize)
 		if len(buf) == 0 {
-			return classErr("PdfReadError", "Unexpected end of stream.")
+			return pdfErr(errMalformed, "Unexpected end of stream.")
 		}
 		i := bytes.IndexByte(buf, 0x80)
 		if i < 0 {
@@ -302,7 +302,7 @@ func (p *parser) inlineRunLength() error {
 		break
 	}
 	if !p.checkEndImageMarker() {
-		return classErr("PdfReadError", "EI stream not found.")
+		return pdfErr(errMalformed, "EI stream not found.")
 	}
 	return nil
 }
@@ -311,7 +311,7 @@ func (p *parser) inlineDCT() error {
 	read := func(n int) ([]byte, error) {
 		b := p.read(n)
 		if len(b) != n {
-			return nil, classErr("PdfReadError", "Unexpected end of stream.")
+			return nil, pdfErr(errMalformed, "Unexpected end of stream.")
 		}
 		return b, nil
 	}
@@ -333,7 +333,7 @@ func (p *parser) inlineDCT() error {
 		case m == 0x00:
 		case m == 0xD9:
 			if !p.checkEndImageMarker() {
-				return classErr("PdfReadError", "EI stream not found.")
+				return pdfErr(errMalformed, "EI stream not found.")
 			}
 			return nil
 		case (m >= 0xC0 && m <= 0xC7) || (m >= 0xC9 && m <= 0xCF) || (m >= 0xDA && m <= 0xDF) ||
@@ -345,7 +345,7 @@ func (p *parser) inlineDCT() error {
 			n := int(sz[0])*256 + int(sz[1]) - 2
 			if n < 0 {
 				// a negative size would read everything left, never n bytes
-				return classErr("PdfReadError", "Unexpected end of stream.")
+				return pdfErr(errMalformed, "Unexpected end of stream.")
 			}
 			if _, err := read(n); err != nil {
 				return err
@@ -361,7 +361,7 @@ func (p *parser) inlineDefault() error {
 	i := p.pos
 	for {
 		if bufStart >= len(p.data) {
-			return classErr("PdfReadError", "Unexpected end of stream.")
+			return pdfErr(errMalformed, "Unexpected end of stream.")
 		}
 		bufEnd := bufStart + inlineBufferSize
 		if bufEnd > len(p.data) {

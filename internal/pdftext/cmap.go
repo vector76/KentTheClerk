@@ -92,7 +92,7 @@ func (d *Document) getEncoding(ft *Dict) (*encoding, *ordMap, error) {
 		for _, x := range intEntry {
 			if x <= 255 {
 				if x < 0 {
-					return nil, nil, classErr("ValueError", "chr() arg not in range")
+					return nil, nil, pdfErr(errValue, "character code out of range")
 				}
 				enc.set(x, ustr{rune(x)})
 			}
@@ -185,7 +185,7 @@ func (d *Document) parseEncoding(ft *Dict) (*encoding, error) {
 						}
 					}
 					if idx < 0 {
-						return nil, classErr("IndexError", "list assignment index out of range")
+						return nil, pdfErr(errRange, "Differences index out of range")
 					}
 					list[idx] = val
 				}
@@ -294,12 +294,12 @@ func (s *cmState) processLine(line []byte) error {
 		s.processChar = false
 	case s.processRg:
 		err := s.parseBfrange(line)
-		if err != nil && errClass(err) != "ValueError" && errClass(err) != "IndexError" {
+		if err != nil && errKindOf(err) != errValue && errKindOf(err) != errRange {
 			return err
 		}
 	case s.processChar:
 		err := s.parseBfchar(line)
-		if err != nil && errClass(err) != "ValueError" && errClass(err) != "IndexError" {
+		if err != nil && errKindOf(err) != errValue && errKindOf(err) != errRange {
 			return err
 		}
 	}
@@ -330,7 +330,7 @@ func parseBigHex(b []byte) (*big.Int, error) {
 	s = strings.ReplaceAll(s, "_", "")
 	v, ok := new(big.Int).SetString(s, 16)
 	if s == "" || !ok {
-		return nil, classErr("ValueError", "invalid literal for int() with base 16")
+		return nil, pdfErr(errValue, "not a hexadecimal number")
 	}
 	if neg {
 		v.Neg(v)
@@ -352,11 +352,11 @@ func parseIntHex(b []byte) (int64, error) {
 	}
 	s = strings.ReplaceAll(s, "_", "")
 	if s == "" {
-		return 0, classErr("ValueError", "invalid literal for int() with base 16")
+		return 0, pdfErr(errValue, "not a hexadecimal number")
 	}
 	v, ok := new(big.Int).SetString(s, 16)
 	if !ok || !v.IsInt64() {
-		return 0, classErr("ValueError", "invalid literal for int() with base 16")
+		return 0, pdfErr(errValue, "not a hexadecimal number")
 	}
 	r := v.Int64()
 	if neg {
@@ -368,13 +368,13 @@ func parseIntHex(b []byte) (int64, error) {
 // unhexlify decodes pairs of hex digits into bytes.
 func unhexlify(b []byte) ([]byte, error) {
 	if len(b)%2 != 0 {
-		return nil, classErr("ValueError", "Odd-length string")
+		return nil, pdfErr(errValue, "odd number of hex digits")
 	}
 	out := make([]byte, len(b)/2)
 	for i := 0; i < len(out); i++ {
 		h, l := hexVal(b[2*i]), hexVal(b[2*i+1])
 		if h < 0 || l < 0 {
-			return nil, classErr("ValueError", "Non-hexadecimal digit found")
+			return nil, pdfErr(errValue, "not a hexadecimal digit")
 		}
 		out[i] = byte(h<<4 | l)
 	}
@@ -408,7 +408,7 @@ func (s *cmState) decodeKey(b []byte) (ustr, error) {
 	}
 	k, ok := decodeUTF16BEPass(b)
 	if !ok {
-		return nil, classErr("ValueError", "truncated data")
+		return nil, pdfErr(errValue, "UTF-16 text with an odd number of bytes")
 	}
 	return k, nil
 }
@@ -420,7 +420,7 @@ func decodeValue(hex []byte) (ustr, error) {
 	}
 	v, ok := decodeUTF16BEPass(raw)
 	if !ok {
-		return nil, classErr("ValueError", "truncated data")
+		return nil, pdfErr(errValue, "UTF-16 text with an odd number of bytes")
 	}
 	return v, nil
 }
@@ -444,11 +444,11 @@ func (s *cmState) parseBfrange(line []byte) error {
 	closure := false
 	entryCount := len(s.intEntry)
 	if entryCount > mappingLimit {
-		return classErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
+		return pdfErr(errLimit, "Maximum /ToUnicode size limit reached")
 	}
 	if s.multiline {
 		if !s.hasWidth {
-			return classErr("KeyError", "-1")
+			return pdfErr(errMissingKey, "bfrange continues before its code width is known")
 		}
 		a := s.mlA
 		for _, sq := range lst {
@@ -458,7 +458,7 @@ func (s *cmState) parseBfrange(line []byte) error {
 			}
 			entryCount++
 			if entryCount > mappingLimit {
-				return classErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
+				return pdfErr(errLimit, "Maximum /ToUnicode size limit reached")
 			}
 			if _, err := decodeValueAfterKey(s, a, sq); err != nil {
 				return err // the multi-line range state stays as it was
@@ -473,7 +473,7 @@ func (s *cmState) parseBfrange(line []byte) error {
 		return nil
 	}
 	if len(lst) < 2 {
-		return classErr("IndexError", "list index out of range")
+		return pdfErr(errRange, "bfrange entry has too few fields")
 	}
 	bigA, err := parseBigHex(lst[0])
 	if err != nil {
@@ -494,11 +494,11 @@ func (s *cmState) parseBfrange(line []byte) error {
 	s.width = (nbi + 1) / 2
 	s.hasWidth = true
 	if len(lst) < 3 {
-		return classErr("IndexError", "list index out of range")
+		return pdfErr(errRange, "bfrange entry has too few fields")
 	}
 	if string(lst[2]) == "[" {
 		if !fits {
-			return classErr("ValueError", "code out of the supported range")
+			return pdfErr(errValue, "code out of the supported range")
 		}
 		for _, sq := range lst[3:] {
 			if string(sq) == "]" {
@@ -507,7 +507,7 @@ func (s *cmState) parseBfrange(line []byte) error {
 			}
 			entryCount++
 			if entryCount > mappingLimit {
-				return classErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
+				return pdfErr(errLimit, "Maximum /ToUnicode size limit reached")
 			}
 			if _, err := decodeValueAfterKey(s, a, sq); err != nil {
 				return err
@@ -532,10 +532,10 @@ func (s *cmState) parseBfrange(line []byte) error {
 		}
 		rangeSize.Add(rangeSize, big.NewInt(int64(entryCount)))
 		if rangeSize.Cmp(big.NewInt(mappingLimit)) > 0 {
-			return classErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
+			return pdfErr(errLimit, "Maximum /ToUnicode size limit reached")
 		}
 		if !fits {
-			return classErr("ValueError", "code out of the supported range")
+			return pdfErr(errValue, "code out of the supported range")
 		}
 		for a <= b {
 			v, err := decodeValue(fmtHex(c, w2))
@@ -573,10 +573,10 @@ func decodeValueAfterKey(s *cmState, a int64, sq []byte) (ustr, error) {
 func (s *cmState) parseBfchar(line []byte) error {
 	lst := fields(line)
 	if len(s.intEntry)+len(lst)/2 > mappingLimit {
-		return classErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
+		return pdfErr(errLimit, "Maximum /ToUnicode size limit reached")
 	}
 	if len(lst) == 0 {
-		return classErr("IndexError", "list index out of range")
+		return pdfErr(errRange, "empty bfchar entry")
 	}
 	s.width = len(lst[0]) / 2
 	s.hasWidth = true
@@ -590,7 +590,7 @@ func (s *cmState) parseBfchar(line []byte) error {
 				} else {
 					v, ok := decodeUTF16BEPass(raw)
 					if !ok {
-						return classErr("ValueError", "truncated data")
+						return pdfErr(errValue, "UTF-16 text with an odd number of bytes")
 					}
 					mapTo = v
 				}
@@ -623,7 +623,7 @@ func (d *Document) type1Alternative(ft *Dict, m *ordMap, intEntry []int) (*ordMa
 	}
 	fd, ok := asDict(d.resolve(ft.m["/FontDescriptor"]))
 	if !ok {
-		return nil, nil, classErr("AttributeError", "no get")
+		return nil, nil, pdfErr(errStructure, "/FontDescriptor is not a dictionary")
 	}
 	ff, ok := fd.Get("/FontFile")
 	if !ok || isNullOrNone(d, ff) {
@@ -631,7 +631,7 @@ func (d *Document) type1Alternative(ft *Dict, m *ordMap, intEntry []int) (*ordMa
 	}
 	st, ok := d.resolve(ff).(*Stream)
 	if !ok {
-		return nil, nil, classErr("AttributeError", "no get_data")
+		return nil, nil, pdfErr(errStructure, "embedded font file is not a stream")
 	}
 	txt, err := d.streamData(st)
 	if err != nil {
@@ -665,7 +665,7 @@ func (d *Document) type1Alternative(ft *Dict, m *ordMap, intEntry []int) (*ordMa
 		}
 		var v ustr
 		if !utf8Valid(words[2]) {
-			return nil, nil, classErr("UnicodeDecodeError", "utf-8")
+			return nil, nil, pdfErr(errDecode, "glyph name in the embedded font is not UTF-8")
 		}
 		if g, ok := adobeGlyphs[string(words[2])]; ok {
 			v = g
@@ -679,7 +679,7 @@ func (d *Document) type1Alternative(ft *Dict, m *ordMap, intEntry []int) (*ordMa
 			continue
 		}
 		if iv < 0 || iv > 0x10FFFF {
-			return nil, nil, classErr("ValueError", "chr() arg not in range")
+			return nil, nil, pdfErr(errValue, "character code out of range")
 		}
 		m.set(ustr{rune(iv)}, v)
 		intEntry = append(intEntry, int(iv))

@@ -25,16 +25,16 @@ func (f *font) width(c ustr) float64 {
 		w = f.widths.get("default")
 	}
 	if isBad(w) {
-		raise(classErr("TypeError", "unsupported operand type(s) for +"))
+		raise(pdfErr(errType, "character width is not a number"))
 	}
 	return w
 }
 
 // spaceW is the font's space width for arithmetic; a width that is not a
-// number raises TypeError.
+// number raises errType.
 func (f *font) spaceW() float64 {
 	if isBad(f.spaceWidth) {
-		raise(classErr("TypeError", "unsupported operand type(s)"))
+		raise(pdfErr(errType, "space width is not a number"))
 	}
 	return f.spaceWidth
 }
@@ -163,11 +163,11 @@ func (d *Document) fontFromResource(fd *Dict) (*font, error) {
 						return nil, err
 					}
 					if !firstOK {
-						return nil, classErr("TypeError", "FirstChar")
+						return nil, pdfErr(errType, "/FirstChar is not an integer")
 					}
 					c := idx + first
 					if c < 0 || c > 0x10FFFF {
-						return nil, classErr("ValueError", "chr() arg not in range")
+						return nil, pdfErr(errValue, "character code out of range")
 					}
 					widths.set(ustr{rune(c)}.key(), v, false)
 				}
@@ -221,28 +221,28 @@ func (d *Document) fontFromResource(fd *Dict) (*font, error) {
 	} else {
 		dfs, ok := fd.Get("/DescendantFonts")
 		if !ok {
-			return nil, classErr("KeyError", "/DescendantFonts")
+			return nil, pdfErr(errMissingKey, "/DescendantFonts")
 		}
 		var arr Array
 		switch v := d.resolve(dfs).(type) {
 		case Array:
 			arr = v
 		case *Dict, *Stream:
-			// a non-empty dictionary in place of the array is a ValueError
+			// a non-empty dictionary in place of the array is an errValue
 			if dd, _ := asDict(v); dd.Len() > 0 {
-				return nil, classErr("ValueError", "Key must be a PdfObject")
+				return nil, pdfErr(errValue, "/DescendantFonts is a dictionary, not an array")
 			}
 		case Name, *String:
 			if items, _ := iterObject(v); len(items) > 0 {
-				return nil, classErr("AttributeError", "'str' object has no attribute 'get_object'")
+				return nil, pdfErr(errStructure, "/DescendantFonts is a string, not an array")
 			}
 		default:
-			return nil, classErr("TypeError", "object is not iterable")
+			return nil, pdfErr(errType, "/DescendantFonts is not an array")
 		}
 		for _, dfo := range arr {
 			df, ok := asDict(d.resolve(dfo))
 			if !ok {
-				return nil, classErr("AttributeError", "descendant font")
+				return nil, pdfErr(errStructure, "descendant font is not a dictionary")
 			}
 			if err := d.collectCIDWidths(df, widths); err != nil {
 				return nil, err
@@ -278,14 +278,14 @@ func (d *Document) fontFromResource(fd *Dict) (*font, error) {
 	if widths.get("default") == 0 {
 		if flagsIsFloat && widths.n() > 0 {
 			if w, ok := widths.has(spaceChar.key()); ok && w != 0 {
-				return nil, classErr("TypeError", "flags & int")
+				return nil, pdfErr(errType, "/Flags is not an integer")
 			}
 		}
 		addDefaultWidth(widths, flags, spaceChar)
 	}
 	if flagsIsFloat {
 		if widths.get(spaceChar.key()) == 0 {
-			return nil, classErr("TypeError", "flags & int")
+			return nil, pdfErr(errType, "/Flags is not an integer")
 		}
 	}
 	spaceWidth := addSpaceWidth(widths, flags, spaceChar)
@@ -313,7 +313,7 @@ func (d *Document) parseFontDescriptor(desc *Dict) (int64, bool, error) {
 			flags = int64(v)
 			isFloat = true
 		default:
-			isFloat = true // a bit test on a non-integer raises TypeError later
+			isFloat = true // a bit test on a non-integer raises errType later
 		}
 	}
 	if desc.Has("/FontBBox") {
@@ -327,10 +327,10 @@ func (d *Document) parseFontDescriptor(desc *Dict) (int64, bool, error) {
 			continue
 		}
 		if n > 0 {
-			return 0, false, classErr("PdfReadError", "More than one /FontFile found")
+			return 0, false, pdfErr(errMalformed, "More than one /FontFile found")
 		}
-		// a reference to a missing object raises AttributeError;
-		// PdfReadError while resolving skips the key.
+		// a reference to a missing object raises errStructure;
+		// errMalformed while resolving skips the key.
 		var ff Object
 		err := catch(func() error { ff = d.resolve(desc.m[k]); return nil })
 		if err != nil {
@@ -340,7 +340,7 @@ func (d *Document) parseFontDescriptor(desc *Dict) (int64, bool, error) {
 			return 0, false, err
 		}
 		if ff == nil {
-			return 0, false, classErr("AttributeError", "'NoneType' object has no attribute 'get_object'")
+			return 0, false, pdfErr(errStructure, "a required object is missing")
 		}
 		n++
 	}
@@ -348,7 +348,7 @@ func (d *Document) parseFontDescriptor(desc *Dict) (int64, bool, error) {
 }
 
 // badWidth marks a width that is not a number (it is stored as it is and
-// fails with TypeError only when arithmetic or a comparison uses it).
+// fails with errType only when arithmetic or a comparison uses it).
 var badWidth = math.NaN()
 
 func isBad(v float64) bool { return math.IsNaN(v) }
@@ -414,9 +414,9 @@ func (d *Document) collectCIDWidths(df *Dict, widths *wtab) error {
 		case *Stream:
 			return nil
 		case Name, *String:
-			return classErr("AttributeError", "str has no get_object")
+			return pdfErr(errStructure, "/W is a string, not an array")
 		default:
-			return classErr("TypeError", "W has no len()")
+			return pdfErr(errType, "/W is not an array")
 		}
 	}
 	skip := 0
@@ -436,12 +436,12 @@ func (d *Document) collectCIDWidths(df *Dict, widths *wtab) error {
 		}
 		if list, isSeq := sequenceWidths(next); isSeq {
 			if !startIsInt {
-				return classErr("TypeError", "range() float")
+				return pdfErr(errType, "/W character code is not an integer")
 			}
 			for i, v := range list {
 				c := int64(start) + int64(i)
 				if c < 0 || c > 0x10FFFF {
-					return classErr("ValueError", "chr() arg not in range")
+					return pdfErr(errValue, "character code out of range")
 				}
 				widths.set(ustr{rune(c)}.key(), v.v, v.isFloat)
 			}
@@ -452,11 +452,11 @@ func (d *Document) collectCIDWidths(df *Dict, widths *wtab) error {
 			if cw, cwInt, ok := d.num(d.resolve(w[idx+2])); ok {
 				stop, stopIsInt, _ := d.num(next)
 				if !startIsInt || !stopIsInt {
-					return classErr("TypeError", "range() float")
+					return pdfErr(errType, "/W character code is not an integer")
 				}
 				for c := int64(start); c < int64(stop)+1; c++ {
 					if c < 0 || c > 0x10FFFF {
-						return classErr("ValueError", "chr() arg not in range")
+						return pdfErr(errValue, "character code out of range")
 					}
 					widths.set(ustr{rune(c)}.key(), cw, !cwInt)
 				}
@@ -497,7 +497,7 @@ func addDefaultWidth(widths *wtab, flags int64, spaceChar ustr) {
 			return
 		}
 		if isBad(w) {
-			raise(classErr("TypeError", "int() of a non-number width"))
+			raise(pdfErr(errType, "space width is not a number"))
 		}
 		widths.set("default", math.Trunc(2*w), false)
 		return
@@ -510,7 +510,7 @@ func addDefaultWidth(widths *wtab, flags int64, spaceChar ustr) {
 	for _, k := range widths.order {
 		w := widths.m[k]
 		if isBad(w) {
-			raise(classErr("TypeError", "comparison with a non-number width"))
+			raise(pdfErr(errType, "character width is not a number"))
 		}
 		if w > 0 {
 			sum += w
@@ -557,7 +557,7 @@ func addSpaceWidth(widths *wtab, flags int64, spaceChar ustr) float64 {
 		return widths.get("default")
 	}
 	if isBad(widths.get("default")) {
-		raise(classErr("TypeError", "floor division of a non-number width"))
+		raise(pdfErr(errType, "default width is not a number"))
 	}
 	return math.Floor(widths.get("default") / 2)
 }
@@ -604,7 +604,7 @@ func (w *wtab) n() int { return len(w.m) }
 func (d *Document) anyWidth(o Object) (float64, bool, error) {
 	r := d.resolve(o)
 	if r == nil {
-		return 0, false, classErr("AttributeError", "'NoneType' object has no attribute 'get_object'")
+		return 0, false, pdfErr(errStructure, "a required object is missing")
 	}
 	switch v := r.(type) {
 	case Int:
@@ -616,7 +616,7 @@ func (d *Document) anyWidth(o Object) (float64, bool, error) {
 }
 
 // removePrefixable returns the text of a name or text string; a byte string
-// raises TypeError, anything else AttributeError.
+// raises errType, anything else errStructure.
 func removePrefixable(o Object) (string, error) {
 	switch v := o.(type) {
 	case Name:
@@ -625,9 +625,9 @@ func removePrefixable(o Object) (string, error) {
 		if t, ok := textString(v.Raw); ok {
 			return t.goString(), nil
 		}
-		return "", classErr("TypeError", "a bytes-like object is required")
+		return "", pdfErr(errType, "name is a string that is not text")
 	}
-	return "", classErr("AttributeError", "object has no attribute 'removeprefix'")
+	return "", pdfErr(errStructure, "not a name")
 }
 
 // intValue converts an object to an integer (resolving references): reals
@@ -639,7 +639,7 @@ func (d *Document) intValue(o Object) (float64, error) {
 	case Real:
 		return math.Trunc(float64(v)), nil
 	case Name:
-		return 0, classErr("ValueError", "invalid literal for int() with base 10: %q", string(v))
+		return 0, pdfErr(errValue, "name %q is not an integer", string(v))
 	case *String:
 		raw := v.Raw
 		if t, ok := textString(raw); ok {
@@ -651,7 +651,7 @@ func (d *Document) intValue(o Object) (float64, error) {
 		}
 		return float64(n), nil
 	}
-	return 0, classErr("TypeError", "int() argument must be a string or a real number")
+	return 0, pdfErr(errType, "not a number")
 }
 
 // iterObject iterates a resolved object: arrays give their items,
@@ -689,9 +689,9 @@ func iterObject(o Object) ([]Object, error) {
 		}
 		return out, nil
 	case nil:
-		return nil, classErr("AttributeError", "'NoneType' object has no attribute '__iter__'")
+		return nil, pdfErr(errStructure, "a required object is missing")
 	}
-	return nil, classErr("TypeError", "object is not iterable")
+	return nil, pdfErr(errType, "not an array, dictionary, string or name")
 }
 
 // containsKey reports whether key is in a resolved object that is not a dictionary: an
@@ -719,12 +719,12 @@ func containsKey(o Object, key Name) (bool, error) {
 			return strings.Contains(t.goString(), string(key)), nil
 		}
 	}
-	return false, classErr("TypeError", "argument is not iterable")
+	return false, pdfErr(errType, "not an array, string or name")
 }
 
 // nonDictDescriptor checks a font descriptor that is not a dictionary: an
 // array or string can be tested for each descriptor key (and /MissingWidth)
-// with containsKey, and any key it has raises TypeError when read.
+// with containsKey, and any key it has raises errType when read.
 func nonDictDescriptor(o Object, missingWidth bool) error {
 	keys := []Name{"/FontName", "/FontFamily", "/FontWeight", "/Ascent", "/Descent", "/CapHeight",
 		"/XHeight", "/ItalicAngle", "/Flags", "/FontBBox", "/FontFile", "/FontFile2", "/FontFile3"}
@@ -737,19 +737,19 @@ func nonDictDescriptor(o Object, missingWidth bool) error {
 			return err
 		}
 		if in {
-			return classErr("TypeError", "indices must be integers")
+			return pdfErr(errType, "font descriptor is not a dictionary")
 		}
 	}
 	return nil
 }
 
 // checkBBox checks a bounding box: every element must convert to a float,
-// and there must be four (AssertionError otherwise).
+// and there must be four (errAssertion otherwise).
 func (d *Document) checkBBox(o Object) error {
 	items, err := iterObject(d.resolve(o))
 	if err != nil {
-		if errClass(err) == "AttributeError" {
-			err = classErr("TypeError", "'NoneType' object is not iterable")
+		if errKindOf(err) == errStructure {
+			err = pdfErr(errType, "bounding box is missing")
 		}
 		return err
 	}
@@ -759,7 +759,7 @@ func (d *Document) checkBBox(o Object) error {
 		}
 	}
 	if len(items) != 4 {
-		return classErr("AssertionError", "bbox")
+		return pdfErr(errAssertion, "bounding box does not have four numbers")
 	}
 	return nil
 }
