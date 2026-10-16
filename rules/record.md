@@ -86,6 +86,16 @@ rename an original.
 
 ## Storage
 
-The record is plain files, meant to be kept in git. `kb` does not commit: committing is the human's
-call, or yours when they ask. Running several copies of one record synced through git is not
-supported.
+The record is plain files, meant to be kept in git. `kb` never runs git to change anything: the git
+work is yours, as the knowledge base's mode warrants, and the session-start text tells you the mode
+and what it asks of you. The mode is the file `kent.mode` at the top of the knowledge base, committed
+so that every copy agrees; without it the knowledge base is offline.
+
+- **Offline**: this copy is the authority. Never fetch, pull or push it, even in a git repository.
+  In its own repository, commit what acts wrote.
+- **Online**: a shared git remote is the authority, and copies are synced through it. Fetch and pull
+  often, and before every act; commit each act and push it at once.
+
+A knowledge base can also sit inside a code repository, in a folder of its own that holds nothing
+else, with its own `.gitignore` and a README for people who don't have Kent yet. Its files then
+travel with the code repository's commits.

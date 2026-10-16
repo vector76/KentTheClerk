@@ -125,6 +125,13 @@ func runSessionStart(ns argparse.Namespace) (code int) {
 	} else {
 		println("- Not pinned: any version of Kent writes here.")
 	}
+	modes, problem := modeLines(root)
+	for _, l := range modes {
+		println("- " + l)
+	}
+	if problem != "" {
+		problems = append(problems, problem)
+	}
 	people, problem := describeUsers(root)
 	for _, l := range people {
 		if strings.HasPrefix(l, "  ") {
@@ -184,9 +191,16 @@ func absPath(p string) string {
 }
 
 // kentAllow, kentDeny and kentHook are what Kent needs in a project's settings for the knowledge base at kb.
+// For an online knowledge base that includes git in its folder, since the agent pulls and pushes it all the
+// time (S-DR9W), in the one form the session-start text tells the agent to use.
 func kentAllow(kb string) []string {
-	return []string{"Bash(kb)", "Bash(kb *)", "PowerShell(kb)", "PowerShell(kb *)",
+	allow := []string{"Bash(kb)", "Bash(kb *)", "PowerShell(kb)", "PowerShell(kb *)",
 		"Edit(" + permPath(kb) + "/off-record/drafts/**)"}
+	if mode, _, _ := readKBMode(kb); mode == modeOnline {
+		g := gitPrefix(kb)
+		allow = append(allow, "Bash("+g+" *)", "PowerShell("+g+" *)")
+	}
+	return allow
 }
 
 func kentDeny(kb string) []string {
@@ -533,8 +547,24 @@ func buildReport(project, kbArg string) report {
 	r.section("Knowledge base")
 	if kb == "" {
 		r.item("None chosen: %s is not set, and no --kb was given.", kbEnv)
-		r.need(1, "Ask the human whether this project uses a new knowledge base or an existing one, and where it " +
-			"is or should go; then run kb setup --report --kb <folder>.")
+		// a knowledge base already kept inside the code repository, found by its shape, not its name
+		where := project
+		if inGit {
+			where = top
+		}
+		found := findKBsIn(where, 4)
+		for _, f := range found {
+			r.item("Inside the code repository, %s is shaped like a knowledge base: %d attested statement(s), "+
+				"%d evidence file(s).", f, countFiles(filepath.Join(f, "attested"), "S-*.md"),
+				countFiles(filepath.Join(f, "evidence"), "*.jsonl"))
+		}
+		if len(found) > 0 {
+			r.need(1, "The code repository already holds a knowledge base (%s): ask the human whether this project "+
+				"uses it, which the runbook recommends; then run kb setup --report --kb <folder>.", strings.Join(found, ", "))
+		} else {
+			r.need(1, "Ask the human whether this project uses a new knowledge base or an existing one, and where it " +
+				"is or should go; then run kb setup --report --kb <folder>.")
+		}
 	} else {
 		r.item("%s (%s).", kb, kbHow)
 		kbReport(&r, kb)
@@ -623,6 +653,18 @@ func kbReport(r *report, kb string) {
 		countFiles(filepath.Join(kb, "attested"), "S-*.md"), countFiles(filepath.Join(kb, "agent"), "A-*.md"),
 		countFiles(filepath.Join(kb, "evidence"), "*.jsonl"))
 
+	mode, found, modeErr := readKBMode(kb)
+	switch {
+	case modeErr != nil:
+		r.item("Its %s cannot be read (%v), so it is treated as offline.", modeFileName, modeErr)
+		r.need(1, "The knowledge base's %s cannot be read: show the human %s and fix it as the runbook says.",
+			modeFileName, modePath(kb))
+	case found:
+		r.item("Knowledge base mode: %s, from %s.", mode, modeFileName)
+	default:
+		r.item("Knowledge base mode: offline, since it has no %s.", modeFileName)
+	}
+
 	top, status := git(kb, "rev-parse", "--show-toplevel")
 	switch {
 	case status == -1:
@@ -630,16 +672,43 @@ func kbReport(r *report, kb string) {
 	case status != 0:
 		r.item("Not in a git repository. Git is recommended, not required; if the human wants it, " +
 			"the runbook says how.")
-	default:
-		if samePath(top, kb) {
-			r.item("Its own git repository.")
-		} else {
-			r.item("Inside the git repository at %s.", top)
+		if mode == modeOnline {
+			r.need(3, "%s says online, but the knowledge base is in no git repository: ask the human whether to put "+
+				"it in git with a shared remote, or to make it offline.", modeFileName)
 		}
-		if url, st := git(kb, "remote", "get-url", "origin"); st == 0 && url != "" {
+	default:
+		inCode := !samePath(top, kb)
+		if inCode {
+			r.item("Inside the git repository at %s, so its files travel with that repository's commits.", top)
+		} else {
+			r.item("Its own git repository.")
+		}
+		url, st := git(kb, "remote", "get-url", "origin")
+		if st == 0 && url != "" {
 			r.item("Its remote origin is %s.", url)
 		} else {
 			r.item("No remote named origin.")
+		}
+		if mode == modeOnline {
+			if url == "" {
+				r.need(3, "%s says online, but the repository has no remote named origin to pull from and push to: "+
+					"the human creates the shared remote, or makes the knowledge base offline.", modeFileName)
+			}
+			if inCode {
+				r.item("Online inside another repository: the agent pulls and pushes that whole repository.")
+			}
+		}
+		if inCode {
+			if !hasHintFile(kb) {
+				r.item("No README or other hint file for people who check out the code without Kent.")
+				r.need(3, "Add the hint file README.md to the knowledge base's folder, as the runbook says, for people "+
+					"who check out the code without Kent.")
+			}
+			if s := strangers(kb); len(s) > 0 {
+				r.item("Its folder also holds %s, which is not part of a knowledge base.", strings.Join(s, ", "))
+				r.need(1, "The knowledge base's folder holds %s besides the knowledge base. A knowledge base inside a "+
+					"code repository has a folder of its own: ask the human where those belong.", strings.Join(s, ", "))
+			}
 		}
 		var unignored []string
 		for _, p := range []string{"off-record/x", "index.db", "render/x"} {

@@ -25,7 +25,9 @@ Ground rules for this conversation:
   so do not touch CLAUDE.md, README, `.gitignore` or any other tracked file of the code project, except
   to remove a block an earlier version of Kent had pasted into CLAUDE.md, with the human's agreement. If
   the human wants a note for their colleagues that the project has a knowledge base, that is theirs to
-  write, in a README or another document for people, not CLAUDE.md.
+  write, in a README or another document for people, not CLAUDE.md. The one exception is a knowledge
+  base the human chooses to keep inside the code repository: its own folder, and only that folder, is
+  committed with the code.
 - **Every change is approved.** Say what you are about to change before you change it. Many changes also
   bring up a Claude Code permission prompt, which is the human's approval: tell them up front to expect
   prompts for each `kb` command and for files outside the project until the settings exist, and one for
@@ -47,13 +49,31 @@ Otherwise ask all the questions that apply in one message, each with its options
 so the human can answer them together:
 
 - **Which knowledge base.** A code project refers to at most one; several code projects may share one.
+  If the report found a knowledge base inside the code repository, recommend that one: someone already
+  keeps it there, and it travels with the code.
   - *New:* where it goes. Recommend a folder beside the code repository, named after the project, such
-    as `<project>-kb`. It can sit inside the code repository instead, but then the codebase is no longer
-    silent about it; say so if they choose that.
-  - *Existing:* where it is on this machine, for example one another project uses, or the URL of a git
-    repository a colleague or the human has, to clone beside the code repository.
-- **For a new one: keep it in git?** Git is optional but recommended: it is how a knowledge base is
-  kept, shared and backed up. If yes: a first commit now? `kb` never commits by itself.
+    as `<project>-kb`, usually its own git repository. It can sit inside the code repository instead,
+    in a folder of its own used for nothing else, such as `kent` at the top; never mixed into a folder
+    of other documents. Then the codebase is no longer silent about it: that folder, with its own
+    `.gitignore` and a README for colleagues who don't have Kent yet, is committed with the code, and
+    its record travels with the code's commits. Say so if they choose that.
+  - *Existing:* where it is on this machine, for example one another project uses or one inside the
+    code repository, or the URL of a git repository a colleague or the human has, to clone beside the
+    code repository.
+- **For a new one beside the code: keep it in git?** Git is optional but recommended: it is how a
+  knowledge base is kept, shared and backed up. If yes: a first commit now? `kb` never runs git; you do
+  the git work, now and in later conversations.
+- **For one in its own git repository: offline or online?** The mode belongs to the knowledge base, in
+  a committed file, so every copy agrees.
+  - *Offline* (the default, and what a knowledge base without the file is): this copy is the authority.
+    It is never fetched, pulled or pushed; you commit what acts wrote.
+  - *Online:* a shared git remote is the authority, for a knowledge base several people write to. In
+    every conversation the agent pulls it often and pushes after every act. It needs a remote that
+    everyone can push to.
+
+  For a knowledge base inside the code repository, recommend offline: it moves with the code's own
+  commits, pulls and pushes, and online would have the agent pull and push the whole code repository
+  after every act. An existing knowledge base already has its mode; the report says which.
 - **For a new one: pin it?** `kb pin --set` writes `kent.pin`, naming the version of Kent running now,
   and from then on `kb` refuses to write under any other version. It keeps everyone who writes here on
   the same version. It is optional, alone or in a team.
@@ -85,9 +105,11 @@ anything turns out different from what you described.
 1. **The knowledge base.**
    - New: `kb setup --create <folder>` makes the folder with its `attested/` and `evidence/` folders,
      which is how `kb` finds a knowledge base. Run `kb pin --set` there if they asked for a pin.
-   - If they chose git, run git yourself in the knowledge base's folder: `git init`, unless the report
-     says a repository already holds it; an empty `.gitkeep` file in `attested/` and in `evidence/`, since
-     git keeps no empty folder and a clone must still be a knowledge base; and a `.gitignore` holding:
+   - If they chose git, or the folder is inside the code repository, which is always in git, set the
+     folder up for git yourself: `git init` in it, unless the report says a repository already holds it;
+     an empty `.gitkeep` file in `attested/` and in `evidence/`, since git keeps no empty folder and a
+     clone must still be a knowledge base; and, in the knowledge base's own folder even when it is inside
+     the code repository, a `.gitignore` holding:
 
      ```
      # off-record material: outside the record by design, never committed
@@ -107,7 +129,46 @@ anything turns out different from what you described.
      users.jsonl merge=union
      ```
 
-     Then make the first commit if they asked for it, including `kent.pin` if there is one.
+   - Inside the code repository, also a `README.md` in the knowledge base's folder, for colleagues who
+     check out the code without Kent. Fill in `<folder>` with the folder's path from the top of the
+     code repository, and, if the human says where colleagues get Kent, put that in place of the
+     sentence in brackets:
+
+     ```
+     # Knowledge base
+
+     This folder is a knowledge base kept with Kent the Clerk: what was decided about this project in
+     conversations with an AI agent, why, and who confirmed it. Nothing else belongs in this folder.
+
+     - `attested/` holds the statements people confirmed, one file each: the place to start reading.
+     - `agent/` holds working choices agents recorded, and `evidence/` the conversations they rest on.
+
+     The files are plain text, but they are written only by Kent's `kb` command, never by hand.
+
+     To ask the knowledge base questions, or add to it, from your own conversations with Claude Code:
+
+     1. Install Kent the Clerk, so that `kb` is on your PATH. [Ask whoever set up this folder where to
+        get it.]
+     2. Open Claude Code at the top of this repository and ask it to run `kb setup` for the knowledge
+        base in `<folder>`. Setup connects your copy of the code to it, in settings of your own that
+        are never committed.
+     3. Then ask, for example, "what did we decide about ..., and why?"
+     ```
+
+   - Online, if they chose it: a `kent.mode` file at the top of the knowledge base holding:
+
+     ```
+     # Whether this knowledge base is synced through a shared git remote (online) or not (offline).
+     # Kent tells the agent at the start of each conversation; online, the agent pulls often and
+     # pushes after every act. Commit this file, so that every copy agrees.
+     mode: online
+     ```
+
+     Offline needs no file. Changing an existing knowledge base's mode is a change for everyone who
+     uses it: ask first, and commit the file on its own.
+   - Then make the first commit if they asked for it, including `kent.pin` and `kent.mode` if there
+     are any. For a knowledge base inside the code repository, commit only its folder, and only when the
+     human says so: it goes into the code's history.
    - Existing, from a URL: `git clone <url> <folder>`, beside the code repository.
    - Either way, run `kb setup --report --kb <folder>` and read what it finds.
 2. **The human's id, and their row in the user table.** Set the id if it needs setting. Then, if the
@@ -125,7 +186,9 @@ anything turns out different from what you described.
    - `env.KENT_KB` names the knowledge base for this project only. It must not be a user-wide
      environment variable, which would point every project at the same knowledge base.
    - `permissions.additionalDirectories` and the `allow` rules let the agent read the knowledge base,
-     run `kb`, and write drafts in `off-record/drafts/`.
+     run `kb`, and write drafts in `off-record/drafts/`. For an online knowledge base they also let it
+     run git there, written `git -C <folder> …`, the form the session-start text tells the agent to use,
+     since it pulls and pushes in every conversation. If the mode changes later, run `kb setup` again.
    - The `deny` rules stop the agent from editing the record's files by hand, so only `kb` writes there.
    - `hooks.SessionStart` runs `kb session-start` whenever a conversation starts, is resumed, cleared or
      compacted. It prints Kent's instructions into the agent's context, from the version of Kent that
@@ -139,8 +202,8 @@ anything turns out different from what you described.
 ## 3. Check
 
 Run `kb setup --report` and confirm **Left to do** is empty; deal with what it lists, asking as before.
-Then run `kb session-start` and confirm it prints Kent's instructions and the knowledge base's folder:
-that is what the agent will see at the start of each conversation. Run `kb check` to confirm the
+Then run `kb session-start` and confirm it prints Kent's instructions, the knowledge base's folder and
+its mode: that is what the agent will see at the start of each conversation. Run `kb check` to confirm the
 knowledge base reads cleanly.
 
 ## 4. Hand over
@@ -157,10 +220,14 @@ Tell the human:
 - **How to begin:** start a conversation about something they are deciding, and say whether it is on
   the record. `kb rules introduction` explains how the knowledge base works; the agent reads it when they
   are new or ask why it works as it does.
-- If the knowledge base is meant to be shared, the human creates its remote and pushes it. Colleagues
-  then clone it and run `kb setup` in their own copy of the code project.
+- If the knowledge base is meant to be shared, the human creates its remote and pushes it, and makes
+  it online if several people will write to it. Colleagues then clone it and run `kb setup` in their own
+  copy of the code project. One inside the code repository comes with the code: colleagues run
+  `kb setup`, and its README tells those who don't have Kent yet.
 - In their own terminal, `kb serve` in the knowledge base's folder renders it as pages to read.
-- Committing the knowledge base is up to them; `kb` never commits.
+- `kb` never runs git. The agent does the git work in each conversation, as the knowledge base's mode
+  warrants: offline, it commits what acts wrote and never pulls or pushes; online, it also pulls often
+  and pushes after every act.
 - After upgrading Kent, nothing in the project needs to change: the hook prints the instructions of
   whichever version runs. Running `kb setup` again at any time checks the setup and repairs it.
 

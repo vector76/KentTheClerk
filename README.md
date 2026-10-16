@@ -213,7 +213,9 @@ them like any other statement.
   - **A knowledge base.** Either a new one, usually in its own folder beside the code repository
     and, if you choose, in a git repository of its own, or an existing one, such as one a colleague
     shares or one another of your projects uses. Several code projects can share one knowledge
-    base; a code project uses at most one.
+    base; a code project uses at most one. A knowledge base can also live inside the code
+    repository, in a folder of its own such as `kent`, so that it travels with the code; setup
+    recognizes one that is already there, whatever its folder is called.
   - **Your project's `.claude/settings.local.json`.** It names the knowledge base for this project,
     gives the agent the permissions it needs, and holds a session-start hook that runs
     `kb session-start` whenever a conversation starts, which gives the agent Kent's instructions. The
@@ -225,7 +227,10 @@ them like any other statement.
 
   Setup leaves nothing in what your code repository commits, not even a line in CLAUDE.md, so the
   codebase can stay silent about Kent. If you want colleagues to know the project has a knowledge
-  base, mention it in a README or another document for people. Run `kb setup` again whenever you
+  base, mention it in a README or another document for people. A knowledge base kept inside the
+  code repository is the exception: its folder is committed with the code, with its own
+  `.gitignore` and a README telling colleagues who don't have Kent yet what the folder is and how to
+  get set up. Run `kb setup` again whenever you
   like: it checks the setup and fixes what is wrong, with your agreement. Upgrading Kent needs no
   change in the project, since the hook prints the instructions of whichever version runs.
 - **Work in Claude Code's auto mode.** It is required: without it, the agent asks for your approval
@@ -236,8 +241,11 @@ them like any other statement.
   starts.
 - Keep the knowledge base in git, with `off-record/`, `index.db` and `render/` left out, as setup
   arranges: the first is outside the record by design, and the other two are rebuilt from the
-  record whenever needed. `kb` does not commit for you; commit when it suits you, or ask your agent
-  to.
+  record whenever needed. `kb` never runs git; your agent does the git work, as the knowledge
+  base's mode warrants. The mode is offline unless the knowledge base holds a committed `kent.mode`
+  saying online. Offline, the agent commits what it recorded and never pulls or pushes. Online, for
+  a knowledge base several people write to through a shared remote, it also pulls often and pushes
+  after every act. The session-start hook tells the agent which.
 - To keep everyone who writes to the knowledge base on the same version of Kent, pin it: `kb pin
   --set` writes `kent.pin` naming the version you are running, and `kb` then refuses to write under
   any other. Commit the pin; to move to a new version, set it again under that version. A pin is
