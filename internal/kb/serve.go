@@ -15,8 +15,8 @@ import (
 	"strings"
 
 	"kenttheclerk/internal/argparse"
+	"kenttheclerk/internal/dyn"
 	"kenttheclerk/internal/mimetypes"
-	"kenttheclerk/internal/py"
 )
 
 const serveCSS = `
@@ -70,7 +70,7 @@ func sqlS(v any) string {
 	return sqlStr(v)
 }
 
-func truthy(v any) bool { return py.Truthy(sqlTruthy(v)) }
+func truthy(v any) bool { return dyn.Truthy(sqlTruthy(v)) }
 
 func linkPointer(db *sql.DB, ptr any) string {
 	p, ok := ptr.(string)
@@ -83,7 +83,7 @@ func linkPointer(db *sql.DB, ptr any) string {
 		return `<span class="dead" title="does not resolve here (off-record or missing)">` + esc(p) + `</span>`
 	}
 	r := rows[0]
-	return `<a href="/e/` + esc(r["session"]) + `#` + esc(uuid) + `">` + esc(r["label"]) + ` · ` + esc(py.Head(sess, 8)) + `#` + esc(py.Head(uuid, 8)) + `</a>`
+	return `<a href="/e/` + esc(r["session"]) + `#` + esc(uuid) + `">` + esc(r["label"]) + ` · ` + esc(dyn.Head(sess, 8)) + `#` + esc(dyn.Head(uuid, 8)) + `</a>`
 }
 
 func renderTurn(db *sql.DB, t row) string {
@@ -95,7 +95,7 @@ func renderTurn(db *sql.DB, t row) string {
 	if truthy(t["text"]) {
 		body = renderMarkdown(sqlStr(t["text"]))
 	}
-	when := strings.ReplaceAll(py.Head(sqlS(t["timestamp"]), 19), "T", " ")
+	when := strings.ReplaceAll(dyn.Head(sqlS(t["timestamp"]), 19), "T", " ")
 	if truthy(t["locator"]) {
 		when = sqlStr(t["locator"])
 	}
@@ -250,14 +250,14 @@ func (h *kbServer) original(w http.ResponseWriter, name string) {
 	}
 	for _, mode := range []string{"on-record", "off-record"} {
 		p := filepath.Join(originalsDir(h.root, mode), name)
-		if py.IsFile(p) {
+		if dyn.IsFile(p) {
 			ctype := mimetypes.GuessType(name)
 			if ctype == "" {
 				ctype = "application/octet-stream"
 			}
 			b, err := os.ReadFile(p)
 			if err != nil {
-				py.RaiseOS(err)
+				dyn.RaiseOS(err)
 			}
 			h.send(w, b, 200, ctype)
 			return
@@ -272,7 +272,7 @@ func (h *kbServer) overview(db *sql.DB) string {
 		var whos []string
 		for _, r := range query(db, "SELECT by_user FROM attestations WHERE statement = ? ORDER BY at", s["id"]) {
 			if r["by_user"] == nil {
-				py.Raise("TypeError", "sequence item 0: expected str instance, NoneType found")
+				dyn.Raise("TypeError", "an attestation has no author")
 			}
 			whos = append(whos, who(db, r["by_user"]))
 		}
@@ -314,7 +314,7 @@ func (h *kbServer) overview(db *sql.DB) string {
 		} else {
 			size = esc(s["human_turns"]) + ` human / ` + esc(s["turn_count"])
 		}
-		out = append(out, `<tr><td><a href="/e/`+esc(s["id"])+`">`+esc(py.Head(sqlStr(s["id"]), 8))+`</a> <span class="pill">`+esc(s["kind"])+`</span></td>`+
+		out = append(out, `<tr><td><a href="/e/`+esc(s["id"])+`">`+esc(dyn.Head(sqlStr(s["id"]), 8))+`</a> <span class="pill">`+esc(s["kind"])+`</span></td>`+
 			`<td>`+esc(s["title"])+`</td><td>`+esc(s["mode"])+`</td><td>`+size+`</td></tr>`)
 	}
 	out = append(out, `</table><p class="meta"><a href="/cards">card view</a> · <a href="/reindex">rebuild index</a></p>`)
@@ -362,7 +362,7 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 	}
 	for _, a := range query(db, "SELECT * FROM attestations WHERE statement = ? ORDER BY at", sid) {
 		out = append(out, "<tr><th>attested ("+esc(a["form"])+")</th><td>"+userLink(db, a["by_user"])+" "+
-			"at "+esc(py.Head(sqlS(a["at"]), 19))+" · "+linkPointer(db, a["turn"])+"</td></tr>")
+			"at "+esc(dyn.Head(sqlS(a["at"]), 19))+" · "+linkPointer(db, a["turn"])+"</td></tr>")
 	}
 	for _, c := range query(db, "SELECT turn FROM citations WHERE statement = ? AND kind = 'background'", sid) {
 		out = append(out, "<tr><th>background</th><td>"+linkPointer(db, c["turn"])+"</td></tr>")
@@ -390,7 +390,7 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 		for _, lp := range [][2]any{{"proposal", s["proposed_in"]}, {"modification", s["modified_in"]}} {
 			sess, uuid, ok := strings.Cut(sqlStr(lp[1]), "#")
 			if !ok {
-				py.Raise("ValueError", "not enough values to unpack (expected 2, got 1)")
+				dyn.Raise("ValueError", "not enough values to unpack (expected 2, got 1)")
 			}
 			ts := query(db, "SELECT * FROM turns WHERE session LIKE ? AND uuid = ?", sess+"%", uuid)
 			if len(ts) > 0 {
@@ -433,9 +433,9 @@ func (h *kbServer) evidence(w http.ResponseWriter, db *sql.DB, sid string) {
 	if sid == "" {
 		out := []string{"<h1>evidence</h1><table><tr><th>item</th><th>title</th><th>mode</th><th>filter / extractor</th><th>recorded</th></tr>"}
 		for _, s := range query(db, "SELECT * FROM sessions ORDER BY snapshot_at") {
-			out = append(out, `<tr><td><a href="/e/`+esc(s["id"])+`">`+esc(py.Head(sqlStr(s["id"]), 8))+`</a> <span class="pill">`+esc(s["kind"])+`</span></td>`+
+			out = append(out, `<tr><td><a href="/e/`+esc(s["id"])+`">`+esc(dyn.Head(sqlStr(s["id"]), 8))+`</a> <span class="pill">`+esc(s["kind"])+`</span></td>`+
 				`<td>`+esc(s["title"])+`</td><td>`+esc(s["mode"])+`</td>`+
-				`<td>`+esc(s["filter"])+`</td><td>`+esc(py.Head(sqlS(s["snapshot_at"]), 19))+`</td></tr>`)
+				`<td>`+esc(s["filter"])+`</td><td>`+esc(dyn.Head(sqlS(s["snapshot_at"]), 19))+`</td></tr>`)
 		}
 		h.html(w, page("evidence", strings.Join(out, "")+"</table>"), 200)
 		return
@@ -455,7 +455,7 @@ func (h *kbServer) evidence(w http.ResponseWriter, db *sql.DB, sid string) {
 		op := sqlS(s["original_path"])
 		oname := op[strings.LastIndex(op, "/")+1:]
 		out = []string{`<h1>` + esc(titleOrID) + `</h1><div class="meta">document ` + esc(s["id"]) + ` · mode ` + esc(s["mode"]) + ` · ` +
-			`extractor ` + esc(s["filter"]) + ` · ingested by ` + esc(s["participants"]) + ` ` + esc(py.Head(sqlS(s["snapshot_at"]), 19)) + `<br>` +
+			`extractor ` + esc(s["filter"]) + ` · ingested by ` + esc(s["participants"]) + ` ` + esc(dyn.Head(sqlS(s["snapshot_at"]), 19)) + `<br>` +
 			`original <a href="/o/` + esc(oname) + `">` + esc(s["original_name"]) + `</a> · ` + esc(s["original_media_type"]) + ` · ` +
 			esc(s["original_size"]) + ` bytes · <code>` + esc(s["original_hash"]) + `</code></div>`}
 	} else {
@@ -496,7 +496,7 @@ func (h *kbServer) user(w http.ResponseWriter, db *sql.DB, uid string) {
 func tryQuery(db *sql.DB, q string, args ...any) (rows []row, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			if e, ok := r.(*py.Exception); ok {
+			if e, ok := r.(*dyn.Exception); ok {
 				rows, err = nil, fmt.Errorf("%s", e.Msg)
 				return
 			}
@@ -542,11 +542,11 @@ func runServe(ns argparse.Namespace) int {
 	host, _ := ns.Str("host")
 	port := ns["port"].(*big.Int)
 	if !port.IsInt64() || port.Int64() < 0 || port.Int64() > 65535 {
-		py.Raise("OverflowError", "bind(): port must be 0-65535.")
+		dyn.Raise("OverflowError", "bind(): port must be 0-65535.")
 	}
 	ln, err := net.Listen("tcp", net.JoinHostPort(host, port.String()))
 	if err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	println(fmt.Sprintf("serving http://%s:%s/  (Ctrl+C to stop)", host, port.String()))
 	flushStdout()

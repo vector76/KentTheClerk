@@ -10,7 +10,7 @@
 // The extraction keeps its quirks (e.g. text dropped when a line switches
 // to right-to-left script, dictionaries kept in insertion order, which
 // errors are swallowed and which abort the extraction), because the goal
-// is stable output, not better output. Errors are *pyError values carrying
+// is stable output, not better output. Errors are *classError values carrying
 // an exception class name, raised with panic/recover where a failure has
 // to unwind to an enclosing handler.
 //
@@ -76,7 +76,7 @@ func ExtractBytes(data []byte) (pages []string, title string, hasTitle bool, err
 			if rr, ok := r.(raised); ok {
 				err = rr.err
 			} else if be, ok := r.(budgetError); ok {
-				err = pyErr("LimitReachedError", "pdftext work limit: %s", be.msg)
+				err = classErr("LimitReachedError", "pdftext work limit: %s", be.msg)
 			} else {
 				err = fmt.Errorf("pdftext: internal error: %v", r)
 			}
@@ -88,7 +88,7 @@ func ExtractBytes(data []byte) (pages []string, title string, hasTitle bool, err
 		return nil, "", false, err
 	}
 	if d.trailer.Has("/Encrypt") {
-		return nil, "", false, pyErr("NotImplemented", "encrypted PDF files are not supported")
+		return nil, "", false, classErr("NotImplemented", "encrypted PDF files are not supported")
 	}
 	// The title object; an error reading it means no title.
 	var titleObj Object
@@ -106,7 +106,7 @@ func ExtractBytes(data []byte) (pages []string, title string, hasTitle bool, err
 		// The title is converted after the pages, and its errors abort.
 		if titleObj != nil {
 			d.frame = frameTitleStr
-			title, hasTitle = d.pyStrObj(titleObj).goString(), true
+			title, hasTitle = d.objText(titleObj).goString(), true
 		}
 		return nil
 	})
@@ -120,7 +120,7 @@ func ExtractBytes(data []byte) (pages []string, title string, hasTitle bool, err
 }
 
 // titleObject returns the /Title of the document information dictionary,
-// or nil where there is none or it is falsy.
+// or nil where there is none or it is not truthy.
 func (d *Document) titleObject() Object {
 	info, ok := d.trailer.Get("/Info")
 	if !ok || isNullOrNone(d, info) {
@@ -128,7 +128,7 @@ func (d *Document) titleObject() Object {
 	}
 	idict, ok := asDict(d.resolve(info))
 	if !ok {
-		raise(pyErr("PdfReadError", "Trailer not found or does not point to a document information dictionary"))
+		raise(classErr("PdfReadError", "Trailer not found or does not point to a document information dictionary"))
 	}
 	if idict.Len() == 0 {
 		return nil
@@ -140,9 +140,9 @@ func (d *Document) titleObject() Object {
 	return t
 }
 
-// pyStrObj converts an object to text the way a title is written.
-func (d *Document) pyStrObj(o Object) pstr {
-	return pstr([]rune(d.strOf(o, 0)))
+// objText converts an object to text the way a title is written.
+func (d *Document) objText(o Object) ustr {
+	return ustr([]rune(d.strOf(o, 0)))
 }
 
 func (d *Document) strOf(o Object, depth int) string {
@@ -153,13 +153,13 @@ func (d *Document) strOf(o Object, depth int) string {
 	case nil:
 		return "None"
 	case *String:
-		return pyStr(v).goString()
+		return stringText(v).goString()
 	case Name:
 		return string(v)
 	case Int:
 		return strconv.FormatInt(int64(v), 10)
 	case Real:
-		return pyFloatRepr(float64(v))
+		return floatRepr(float64(v))
 	case Bool:
 		if v {
 			return "True"
@@ -190,33 +190,34 @@ func (d *Document) strOf(o Object, depth int) string {
 func (d *Document) dictRepr(v *Dict, depth int) string {
 	parts := make([]string, 0, v.Len())
 	for _, k := range v.Keys() {
-		parts = append(parts, pyQuote(string(k))+": "+d.reprOf(v.m[k], depth+1))
+		parts = append(parts, quoteRepr(string(k))+": "+d.reprOf(v.m[k], depth+1))
 	}
 	return "{" + strings.Join(parts, ", ") + "}"
 }
 
-// reprOf approximates repr() inside container reprs.
+// reprOf writes an element of an array or dictionary: names and strings
+// quoted, references as IndirectObject(num, gen, ...), the rest as strOf.
 func (d *Document) reprOf(o Object, depth int) string {
 	switch v := o.(type) {
 	case Name:
-		return pyQuote(string(v))
+		return quoteRepr(string(v))
 	case *String:
-		return pyQuote(pyStr(v).goString())
+		return quoteRepr(stringText(v).goString())
 	case Ref:
 		return fmt.Sprintf("IndirectObject(%d, %d, ...)", v.Num, v.Gen)
 	}
 	return d.strOf(o, depth)
 }
 
-func pyQuote(s string) string {
+func quoteRepr(s string) string {
 	if strings.Contains(s, "'") && !strings.Contains(s, "\"") {
 		return "\"" + s + "\""
 	}
 	return "'" + strings.ReplaceAll(s, "'", "\\'") + "'"
 }
 
-// pyFloatRepr is FloatObject.myrepr.
-func pyFloatRepr(f float64) string {
+// floatRepr writes a real with at most 8 significant digits before trailing zeros are dropped.
+func floatRepr(f float64) string {
 	if f == 0 {
 		return "0.0"
 	}

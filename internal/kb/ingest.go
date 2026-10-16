@@ -16,9 +16,9 @@ import (
 	"unicode/utf8"
 
 	"kenttheclerk/internal/argparse"
+	"kenttheclerk/internal/dyn"
 	"kenttheclerk/internal/htmltext"
 	"kenttheclerk/internal/mimetypes"
-	"kenttheclerk/internal/py"
 )
 
 // docNamespace is uuid5(NAMESPACE_URL, "convkb:document"). The namespace string is part of every
@@ -50,7 +50,7 @@ func uuidString(b []byte) string {
 }
 
 var (
-	headingRE = regexp.MustCompile(`^#{1,6}[` + py.SpaceClass + `]+[^` + py.SpaceClass + `]`)
+	headingRE = regexp.MustCompile(`^#{1,6}[` + dyn.SpaceClass + `]+[^` + dyn.SpaceClass + `]`)
 	textExts  = map[string]bool{".md": true, ".markdown": true, ".txt": true, ".text": true, ".csv": true, ".tsv": true,
 		".json": true, ".jsonl": true, ".yaml": true, ".yml": true, ".rst": true, ".log": true, ".py": true, ".js": true,
 		".ts": true, ".toml": true, ".ini": true, ".cfg": true, ".xml": true, ".sql": true, ".sh": true, ".bat": true}
@@ -60,7 +60,7 @@ var (
 const maxChunkChars = 3000
 
 func pickExtractor(path string) string {
-	ext := py.Lower(py.Suffix(path))
+	ext := dyn.Lower(dyn.Suffix(path))
 	switch {
 	case textExts[ext]:
 		return "text-v1"
@@ -75,7 +75,7 @@ func pickExtractor(path string) string {
 }
 
 type chunk struct {
-	locator *py.Dict
+	locator *dyn.Dict
 	text    string
 	content []any
 }
@@ -97,10 +97,10 @@ func chunkUnits(units []string, unitName string) []chunk {
 			if i == len(units) || headingRE.MatchString(units[i]) {
 				block := units[start:i]
 				text := strings.Trim(strings.Join(block, "\n"), "\n")
-				if py.Strip(text) != "" {
-					loc := py.D(unitName, []any{py.IntOf(start + 1), py.IntOf(i)})
+				if dyn.Strip(text) != "" {
+					loc := dyn.D(unitName, []any{dyn.IntOf(start + 1), dyn.IntOf(i)})
 					if headingRE.MatchString(block[0]) {
-						loc.Set("heading", py.Head(py.Strip(strings.TrimLeft(block[0], "#")), 120))
+						loc.Set("heading", dyn.Head(dyn.Strip(strings.TrimLeft(block[0], "#")), 120))
 					}
 					chunks = append(chunks, chunk{locator: loc, text: text})
 				}
@@ -109,7 +109,7 @@ func chunkUnits(units []string, unitName string) []chunk {
 		}
 		return chunks
 	}
-	blank := func(u string) bool { return py.Strip(u) == "" }
+	blank := func(u string) bool { return dyn.Strip(u) == "" }
 	i, n := 0, len(units)
 	for i < n {
 		for i < n && blank(units[i]) {
@@ -127,7 +127,7 @@ func chunkUnits(units []string, unitName string) []chunk {
 			}
 			paraLen := 0
 			for _, u := range units[i:j] {
-				paraLen += py.Len(u) + 1
+				paraLen += dyn.Len(u) + 1
 			}
 			if size > 0 && size+paraLen > maxChunkChars {
 				break
@@ -142,7 +142,7 @@ func chunkUnits(units []string, unitName string) []chunk {
 		for end > start && blank(units[end-1]) {
 			end--
 		}
-		chunks = append(chunks, chunk{locator: py.D(unitName, []any{py.IntOf(start + 1), py.IntOf(end)}),
+		chunks = append(chunks, chunk{locator: dyn.D(unitName, []any{dyn.IntOf(start + 1), dyn.IntOf(end)}),
 			text: strings.Join(units[start:end], "\n")})
 	}
 	return chunks
@@ -151,7 +151,7 @@ func chunkUnits(units []string, unitName string) []chunk {
 func readBytes(path string) []byte {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	return b
 }
@@ -160,14 +160,14 @@ func extractText(path string) ([]chunk, any) {
 	raw := readBytes(path)
 	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(raw) {
-		die(py.Name(path) + " is not UTF-8 text; pass --extractor opaque-v1 to store it without a text projection")
+		die(dyn.Name(path) + " is not UTF-8 text; pass --extractor opaque-v1 to store it without a text projection")
 	}
 	text := strings.ReplaceAll(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\r", "\n")
 	lines := strings.Split(text, "\n")
 	var title any
 	for _, l := range lines {
 		if headingRE.MatchString(l) {
-			title = py.Strip(strings.TrimLeft(l, "#"))
+			title = dyn.Strip(strings.TrimLeft(l, "#"))
 			break
 		}
 	}
@@ -179,9 +179,9 @@ func extractHTML(path string) ([]chunk, any) {
 	switch e := err.(type) {
 	case nil:
 	case *htmltext.AssertionError:
-		py.Raise("AssertionError", "%s", e.Msg)
+		dyn.Raise("AssertionError", "%s", e.Msg)
 	case *htmltext.ValueError:
-		py.Raise("ValueError", "%s", e.Msg)
+		dyn.Raise("ValueError", "%s", e.Msg)
 	default:
 		panic(err)
 	}
@@ -195,13 +195,13 @@ func extractHTML(path string) ([]chunk, any) {
 func extractOpaque(path, caption, mediaType string) ([]chunk, any) {
 	st, err := os.Stat(path)
 	if err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
-	content := []any{py.D("type", "file", "media_type", mediaType, "size", py.IntOf(int(st.Size())))}
+	content := []any{dyn.D("type", "file", "media_type", mediaType, "size", dyn.IntOf(int(st.Size())))}
 	if caption != "" {
-		content = append(content, py.D("type", "text", "text", caption))
+		content = append(content, dyn.D("type", "text", "text", caption))
 	}
-	return []chunk{{locator: py.D("whole", true), content: content}}, nil
+	return []chunk{{locator: dyn.D("whole", true), content: content}}, nil
 }
 
 func runIngest(ns argparse.Namespace) int {
@@ -211,11 +211,11 @@ func runIngest(ns argparse.Namespace) int {
 	user := currentUser(userArg, root)
 	mode, _ := ns.Str("mode")
 	if !in(mode, modes) {
-		die("mode must be one of " + py.Tuple(modes...))
+		die("mode must be one of " + dyn.Tuple(modes...))
 	}
 	pathArg, _ := ns.Str("path")
-	src := py.PathStr(pathArg)
-	if !py.IsFile(src) {
+	src := dyn.PathStr(pathArg)
+	if !dyn.IsFile(src) {
 		die("no such file: " + src)
 	}
 	extractor, _ := ns.Str("extractor")
@@ -223,7 +223,7 @@ func runIngest(ns argparse.Namespace) int {
 		extractor = pickExtractor(src)
 	}
 	if !in(extractor, extractors) {
-		die("extractor must be one of " + py.Tuple(extractors...))
+		die("extractor must be one of " + dyn.Tuple(extractors...))
 	}
 	caption, _ := ns.Str("caption")
 	if caption != "" && extractor != "opaque-v1" {
@@ -232,10 +232,10 @@ func runIngest(ns argparse.Namespace) int {
 
 	hexdigest := sha256File(src)
 	ext := ""
-	if suf := py.Suffix(src); extRE.MatchString(suf) {
-		ext = py.Lower(suf)
+	if suf := dyn.Suffix(src); extRE.MatchString(suf) {
+		ext = dyn.Lower(suf)
 	}
-	srcName := py.Name(src)
+	srcName := dyn.Name(src)
 	mediaType := mimetypes.GuessType(srcName)
 	if mediaType == "" {
 		mediaType = "application/octet-stream"
@@ -247,14 +247,14 @@ func runIngest(ns argparse.Namespace) int {
 	if mode != "on-record" {
 		otherMode = "on-record"
 	}
-	for _, e := range py.Scandir(originalsDir(root, otherMode)) {
+	for _, e := range dyn.Scandir(originalsDir(root, otherMode)) {
 		if strings.HasPrefix(e.Name(), hexdigest) {
 			die(fmt.Sprintf("these bytes are already in evidence as %s; a document has one mode (%s)", otherMode, rule("mode-fixed")))
 		}
 	}
 	// frozen projection (S-0038): same bytes + same extractor is the same evidence item
 	for _, md := range evidenceDirs(root) {
-		for _, p := range py.Glob(md.dir, "*-doc-"+docID[:8]+".jsonl") {
+		for _, p := range dyn.Glob(md.dir, "*-doc-"+docID[:8]+".jsonl") {
 			die(fmt.Sprintf("already ingested under extractor %s: %s "+
 				"(projections are frozen; a different --extractor makes a new item) (%s)", extractor, rel(p, root), rule("frozen-projection")))
 		}
@@ -278,25 +278,25 @@ func runIngest(ns argparse.Namespace) int {
 		die("extractor produced no chunks; pass --extractor opaque-v1 to store the file without a text projection")
 	}
 
-	var records []*py.Dict
+	var records []*dyn.Dict
 	for i, c := range chunks {
 		seq := i + 1
 		content := c.content
 		if len(content) == 0 {
-			content = []any{py.D("type", "text", "text", c.text)}
+			content = []any{dyn.D("type", "text", "text", c.text)}
 		}
-		records = append(records, py.D("type", "chunk",
+		records = append(records, dyn.D("type", "chunk",
 			"uuid", uuidString(uuid5(docNamespace, fmt.Sprintf("%s:%s:%d", hexdigest, extractor, seq))),
-			"seq", py.IntOf(seq), "role", "document", "author", "document", "locator", c.locator, "content", content))
+			"seq", dyn.IntOf(seq), "role", "document", "author", "document", "locator", c.locator, "content", content))
 	}
 
 	odir := originalsDir(root, mode)
 	if err := os.MkdirAll(odir, 0o777); err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	original := filepath.Join(odir, hexdigest+ext)
 	var sameHash []string
-	for _, e := range py.Scandir(odir) {
+	for _, e := range dyn.Scandir(odir) {
 		if strings.HasPrefix(e.Name(), hexdigest) {
 			sameHash = append(sameHash, filepath.Join(odir, e.Name()))
 		}
@@ -304,7 +304,7 @@ func runIngest(ns argparse.Namespace) int {
 	if len(sameHash) > 0 {
 		found := false
 		for _, p := range sameHash {
-			if p == original || (py.Windows && py.Lower(p) == py.Lower(original)) {
+			if p == original || (dyn.Windows && dyn.Lower(p) == dyn.Lower(original)) {
 				found = true
 			}
 		}
@@ -312,10 +312,10 @@ func runIngest(ns argparse.Namespace) int {
 			original = sameHash[0] // same bytes under another extension: reuse, do not duplicate
 		}
 	}
-	duplicate := py.Exists(original)
+	duplicate := dyn.Exists(original)
 	if !duplicate {
 		if err := copyFile(src, original); err != nil {
-			py.RaiseOS(err)
+			dyn.RaiseOS(err)
 		}
 		if sha256File(original) != hexdigest {
 			os.Remove(original)
@@ -328,28 +328,28 @@ func runIngest(ns argparse.Namespace) int {
 		destDir = filepath.Join(root, "off-record", "documents")
 	}
 	if err := os.MkdirAll(destDir, 0o777); err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	t := now()
 	dest := filepath.Join(destDir, t.Format("2006-01-02")+"-doc-"+docID[:8]+".jsonl")
 	st, err := os.Stat(src)
 	if err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	titleArg, _ := ns.Str("title")
 	var hTitle any = srcName
 	if titleArg != "" {
 		hTitle = titleArg
-	} else if py.Truthy(title) {
+	} else if dyn.Truthy(title) {
 		hTitle = title
 	}
-	header := py.D("type", "kb-document", "version", py.IntOf(documentVersion), "document_id", docID,
+	header := dyn.D("type", "kb-document", "version", dyn.IntOf(documentVersion), "document_id", docID,
 		"title", hTitle, "mode", mode, "extractor", extractor,
-		"original", py.D("hash", "sha256:"+hexdigest, "path", "originals/"+py.Name(original), "name", srcName,
-			"size", py.IntOf(int(st.Size())), "media_type", mediaType),
+		"original", dyn.D("hash", "sha256:"+hexdigest, "path", "originals/"+dyn.Name(original), "name", srcName,
+			"size", dyn.IntOf(int(st.Size())), "media_type", mediaType),
 		"ingested_by", user, "authentication", authentication, "ingested_at", isoSeconds(t))
 	addStamp(header)
-	header.Set("chunk_count", py.IntOf(len(records)))
+	header.Set("chunk_count", dyn.IntOf(len(records)))
 	writeJSONL(dest, header, records)
 	println(fmt.Sprintf("wrote %s: %d chunk(s), extractor=%s, mode=%s", rel(dest, root), len(records), extractor, mode))
 	how := "stored"

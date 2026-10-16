@@ -1,4 +1,4 @@
-package py
+package dyn
 
 import (
 	"fmt"
@@ -410,6 +410,6 @@ func writeJSON(b *strings.Builder, v any) {
 		}
 		b.WriteByte('}')
 	default:
-		panic(fmt.Sprintf("py.Dumps: unsupported %T", v))
+		panic(fmt.Sprintf("dyn.Dumps: unsupported %T", v))
 	}
 }

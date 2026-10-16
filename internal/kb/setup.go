@@ -567,7 +567,7 @@ func buildReport(project, kbArg string) report {
 			r.need(1, "The code repository already holds a knowledge base (%s): ask the human whether this project "+
 				"uses it, which the runbook recommends; then run kb setup --report --kb <folder>.", strings.Join(found, ", "))
 		} else {
-			r.need(1, "Ask the human whether this project uses a new knowledge base or an existing one, and where it " +
+			r.need(1, "Ask the human whether this project uses a new knowledge base or an existing one, and where it "+
 				"is or should go; then run kb setup --report --kb <folder>.")
 		}
 	} else {
@@ -661,7 +661,7 @@ func kbReport(r *report, kb string) {
 	place := readGitPlace(kb)
 	r.item("%s", place.summary())
 	if place.submodule {
-		r.item("Its .git points into another repository's modules: it is a git submodule, which Kent does not "+
+		r.item("Its .git points into another repository's modules: it is a git submodule, which Kent does not " +
 			"support. Tell the human that whoever keeps it that way is on their own with it.")
 	}
 

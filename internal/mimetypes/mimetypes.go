@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 var (
@@ -26,7 +26,7 @@ func load() {
 	}
 	readRegistry(addType)
 	for _, f := range knownFiles {
-		if py.IsFile(f) {
+		if dyn.IsFile(f) {
 			readFile(f)
 		}
 	}
@@ -43,7 +43,7 @@ func readFile(name string) {
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
 	for sc.Scan() {
-		words := py.Fields(sc.Text())
+		words := dyn.Fields(sc.Text())
 		for i, w := range words {
 			if strings.HasPrefix(w, "#") {
 				words = words[:i]
@@ -65,7 +65,7 @@ func readFile(name string) {
 func GuessType(name string) string {
 	once.Do(load)
 	path := name
-	splitext := py.Splitext
+	splitext := dyn.Splitext
 	if scheme, rest, ok := urlScheme(name); ok && len(scheme) > 1 {
 		if scheme == "data" {
 			comma := strings.Index(rest, ",")
@@ -83,12 +83,12 @@ func GuessType(name string) string {
 		}
 		path = rest
 		splitext = posixSplitext
-	} else if py.Windows && len(path) >= 2 && path[1] == ':' {
+	} else if dyn.Windows && len(path) >= 2 && path[1] == ':' {
 		path = path[2:]
 	}
 	base, ext := splitext(path)
 	for {
-		s, ok := defaultSuffixMap[py.Lower(ext)]
+		s, ok := defaultSuffixMap[dyn.Lower(ext)]
 		if !ok {
 			break
 		}
@@ -97,7 +97,7 @@ func GuessType(name string) string {
 	if _, ok := defaultEncodings[ext]; ok {
 		base, ext = splitext(base)
 	}
-	return types[py.Lower(ext)]
+	return types[dyn.Lower(ext)]
 }
 
 // urlScheme splits a URL into its scheme, lower-cased, and its path, without the authority, query and

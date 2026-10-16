@@ -21,7 +21,7 @@ import (
 	"time"
 
 	kent "kenttheclerk"
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 const (
@@ -47,7 +47,7 @@ var productRules = map[string]int{
 func rule(key string) string {
 	n, ok := productRules[key]
 	if !ok {
-		py.Raise("KeyError", "%s", py.StrRepr(key))
+		dyn.Raise("KeyError", "%s", dyn.StrRepr(key))
 	}
 	return fmt.Sprintf("Kent Rule %d: `kb rules %d` to view it", n, n)
 }
@@ -124,13 +124,13 @@ func isoSeconds(t time.Time) string { return t.Format("2006-01-02T15:04:05") + "
 const kbEnv = "KENT_KB"
 
 func isKBFolder(p string) bool {
-	return py.IsDir(filepath.Join(p, "attested")) && py.IsDir(filepath.Join(p, "evidence"))
+	return dyn.IsDir(filepath.Join(p, "attested")) && dyn.IsDir(filepath.Join(p, "evidence"))
 }
 
 // findKBRoot says where the knowledge base is and how it was found: (path or "", explanation).
 func findKBRoot() (string, string) {
 	if env := os.Getenv(kbEnv); env != "" {
-		p := py.Resolve(env)
+		p := dyn.Resolve(env)
 		if isKBFolder(p) {
 			return p, "from " + kbEnv
 		}
@@ -138,9 +138,9 @@ func findKBRoot() (string, string) {
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
-	p := py.Resolve(cwd)
+	p := dyn.Resolve(cwd)
 	for cand := p; ; {
 		if isKBFolder(cand) {
 			if cand == p {
@@ -195,7 +195,7 @@ func systemStamp() []stampField {
 }
 
 // addStamp adds the system stamp to d, each key after the given prefix ("" or e.g. "withdrawn_").
-func addStamp(d *py.Dict, prefix ...string) {
+func addStamp(d *dyn.Dict, prefix ...string) {
 	pre := strings.Join(prefix, "")
 	for _, f := range systemStamp() {
 		d.Set(pre+f.key, f.value)
@@ -318,9 +318,9 @@ func (p Pointer) String() string { return p.Session + "#" + p.UUID }
 // tryParsePointer parses "<session-id>#<turn-uuid>", ignoring surrounding whitespace; ok is false (after
 // printing the error, as die does) where parsePointer exits.
 func tryParsePointer(s string) (Pointer, bool) {
-	m := pointerRE.FindStringSubmatch(py.Strip(s))
+	m := pointerRE.FindStringSubmatch(dyn.Strip(s))
 	if m == nil {
-		io.WriteString(Stderr, "error: "+fmt.Sprintf("bad evidence pointer %s; expected <session-id>#<turn-uuid>", py.StrRepr(s))+"\n")
+		io.WriteString(Stderr, "error: "+fmt.Sprintf("bad evidence pointer %s; expected <session-id>#<turn-uuid>", dyn.StrRepr(s))+"\n")
 		return Pointer{}, false
 	}
 	return Pointer{m[1], m[2]}, true
@@ -339,11 +339,11 @@ func parsePointerValue(v any) Pointer {
 	return parsePointer(strArg(v))
 }
 
-// strArg is v where a string is needed to strip it: anything else raises AttributeError.
+// strArg is v where a string is needed to strip it: anything else raises TypeError.
 func strArg(v any) string {
 	s, ok := v.(string)
 	if !ok {
-		py.Raise("AttributeError", "'%s' object has no attribute 'strip'", py.TypeName(v))
+		dyn.Raise("TypeError", "expected a string, got %s", dyn.TypeName(v))
 	}
 	return s
 }
@@ -354,33 +354,33 @@ func strArg(v any) string {
 // S-0038). Both are a header record followed by uuid-keyed records.
 type Session struct {
 	Path   string
-	Header *py.Dict
-	Turns  []*py.Dict
+	Header *dyn.Dict
+	Turns  []*dyn.Dict
 }
 
-func item(d *py.Dict, k string) any {
+func item(d *dyn.Dict, k string) any {
 	v, ok := d.Lookup(k)
 	if !ok {
-		py.Raise("KeyError", "%s", py.StrRepr(k))
+		dyn.Raise("KeyError", "%s", dyn.StrRepr(k))
 	}
 	return v
 }
 
-func itemStr(d *py.Dict, k string) string { return py.AsStr(item(d, k)) }
+func itemStr(d *dyn.Dict, k string) string { return dyn.AsStr(item(d, k)) }
 
 func (s *Session) IDValue() any {
-	if v := s.Header.Get("session_id"); py.Truthy(v) {
+	if v := s.Header.Get("session_id"); dyn.Truthy(v) {
 		return v
 	}
 	return item(s.Header, "document_id")
 }
 
 // ID is the session or document id.
-func (s *Session) ID() string { return py.AsStr(s.IDValue()) }
+func (s *Session) ID() string { return dyn.AsStr(s.IDValue()) }
 
 // Kind is "document" for a projection, else "session".
 func (s *Session) Kind() string {
-	if py.Equal(s.Header.Get("type"), "kb-document") {
+	if dyn.Equal(s.Header.Get("type"), "kb-document") {
 		return "document"
 	}
 	return "session"
@@ -399,19 +399,19 @@ func (s *Session) Mode() string {
 	if m, ok := s.ModeValue().(string); ok {
 		return m
 	}
-	return py.Str(s.ModeValue())
+	return dyn.Str(s.ModeValue())
 }
 
-func uuidMatches(t *py.Dict, uuid string) bool {
+func uuidMatches(t *dyn.Dict, uuid string) bool {
 	u := item(t, "uuid")
-	if py.Equal(u, uuid) {
+	if dyn.Equal(u, uuid) {
 		return true
 	}
-	return strings.HasPrefix(py.AsStr(u), uuid)
+	return strings.HasPrefix(dyn.AsStr(u), uuid)
 }
 
 // Turn finds a turn by uuid or uuid prefix.
-func (s *Session) Turn(uuid string) *py.Dict {
+func (s *Session) Turn(uuid string) *dyn.Dict {
 	for _, t := range s.Turns {
 		if uuidMatches(t, uuid) {
 			return t
@@ -434,28 +434,28 @@ func (s *Session) TurnIndex(uuid string) int {
 // record it in the header; older ones fall back to the first turn's parent.
 func (s *Session) BranchPoint() any {
 	if v, ok := s.Header.Lookup("branch_point"); ok {
-		return py.Or(v, nil)
+		return dyn.Or(v, nil)
 	}
 	if len(s.Turns) == 0 {
 		return nil
 	}
-	return py.Or(s.Turns[0].Get("parent"), nil)
+	return dyn.Or(s.Turns[0].Get("parent"), nil)
 }
 
 func loadSession(path string) *Session {
-	var header *py.Dict
-	var turns []*py.Dict
-	for _, line := range py.TextLines(path) {
-		line = py.Strip(line)
+	var header *dyn.Dict
+	var turns []*dyn.Dict
+	for _, line := range dyn.TextLines(path) {
+		line = dyn.Strip(line)
 		if line == "" {
 			continue
 		}
-		v, err := py.Loads(line)
+		v, err := dyn.Loads(line)
 		if err != nil {
-			py.Raise("JSON error", "%s", err.Error())
+			dyn.Raise("JSON error", "%s", err.Error())
 		}
-		rec := py.AsDict(v)
-		if t := rec.Get("type"); py.Equal(t, "kb-snapshot") || py.Equal(t, "kb-document") {
+		rec := dyn.AsDict(v)
+		if t := rec.Get("type"); dyn.Equal(t, "kb-snapshot") || dyn.Equal(t, "kb-document") {
 			header = rec
 		} else {
 			turns = append(turns, rec)
@@ -475,7 +475,7 @@ func evidenceDirs(root string) []modeDir {
 	out := []modeDir{{filepath.Join(root, "evidence"), "on-record"}}
 	for _, sub := range []string{"sessions", "documents"} {
 		off := filepath.Join(root, "off-record", sub)
-		if py.IsDir(off) {
+		if dyn.IsDir(off) {
 			out = append(out, modeDir{off, "off-record"})
 		}
 	}
@@ -493,12 +493,12 @@ func originalsDir(root, mode string) string {
 func sha256File(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	defer f.Close()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -520,8 +520,8 @@ func (ss *Sessions) Values() []*Session {
 func (ss *Sessions) Len() int { return len(ss.order) }
 
 func sortedGlob(dir, pat string) []string {
-	g := py.Glob(dir, pat)
-	py.SortPaths(g)
+	g := dyn.Glob(dir, pat)
+	dyn.SortPaths(g)
 	return g
 }
 
@@ -530,8 +530,8 @@ func loadAllSessions(root string) *Sessions {
 	for _, md := range evidenceDirs(root) {
 		for _, p := range sortedGlob(md.dir, "*.jsonl") {
 			s := loadSession(p)
-			if !py.Equal(s.ModeValue(), md.mode) {
-				warn(fmt.Sprintf("%s: header mode %s disagrees with directory (%s)", p, py.Repr(s.ModeValue()), md.mode))
+			if !dyn.Equal(s.ModeValue(), md.mode) {
+				warn(fmt.Sprintf("%s: header mode %s disagrees with directory (%s)", p, dyn.Repr(s.ModeValue()), md.mode))
 			}
 			id := s.ID()
 			if prev, ok := out.m[id]; ok {
@@ -567,7 +567,7 @@ func ancestry(ss *Sessions, s *Session) []ancestor {
 	cur := s
 	for {
 		bp := cur.BranchPoint()
-		if !py.Truthy(bp) {
+		if !dyn.Truthy(bp) {
 			break
 		}
 		var hit *ancestor
@@ -575,7 +575,7 @@ func ancestry(ss *Sessions, s *Session) []ancestor {
 			if seen[cand.ID()] {
 				continue
 			}
-			if i := cand.TurnIndex(py.AsStr(bp)); i >= 0 {
+			if i := cand.TurnIndex(dyn.AsStr(bp)); i >= 0 {
 				hit = &ancestor{cand, i}
 				break
 			}
@@ -592,7 +592,7 @@ func ancestry(ss *Sessions, s *Session) []ancestor {
 
 // resolvePointer resolves <session>#<uuid> to (session holding the turn, turn): the named session
 // first, then its ancestry up to each branch point. (named-or-nil, nil) when not found.
-func resolvePointer(ss *Sessions, p Pointer) (*Session, *py.Dict) {
+func resolvePointer(ss *Sessions, p Pointer) (*Session, *dyn.Dict) {
 	s := sessionByPrefix(ss, p.Session)
 	if s == nil {
 		return nil, nil
@@ -610,7 +610,7 @@ func resolvePointer(ss *Sessions, p Pointer) (*Session, *py.Dict) {
 
 func findSession(root, sessionID string) *Session {
 	for _, md := range evidenceDirs(root) {
-		for _, p := range py.Glob(md.dir, "*.jsonl") {
+		for _, p := range dyn.Glob(md.dir, "*.jsonl") {
 			if strings.Contains(filepath.Base(p), sessionID) {
 				return loadSession(p)
 			}
@@ -625,22 +625,22 @@ func findSession(root, sessionID string) *Session {
 }
 
 // turnText is the visible text of a turn (text blocks joined).
-func turnText(t *py.Dict) string {
+func turnText(t *dyn.Dict) string {
 	var parts []string
-	for _, b := range py.Iter(contentOrEmpty(t)) {
-		bd := py.AsDict(b)
-		if py.Equal(bd.Get("type"), "text") {
+	for _, b := range dyn.Iter(contentOrEmpty(t)) {
+		bd := dyn.AsDict(b)
+		if dyn.Equal(bd.Get("type"), "text") {
 			v, ok := bd.Lookup("text")
 			if !ok {
 				v = ""
 			}
-			parts = append(parts, py.AsStr(v))
+			parts = append(parts, dyn.AsStr(v))
 		}
 	}
 	return strings.Join(parts, "\n")
 }
 
-func contentOrEmpty(t *py.Dict) any {
+func contentOrEmpty(t *dyn.Dict) any {
 	if v, ok := t.Lookup("content"); ok {
 		return v
 	}
@@ -654,7 +654,7 @@ var frontmatterRE = regexp.MustCompile(`(?s)^---\r?\n(.*?)\r?\n---\r?\n?(.*)$`)
 // Statement is a statement file: frontmatter and body.
 type Statement struct {
 	Path string
-	Meta *py.Dict
+	Meta *dyn.Dict
 	Body string
 }
 
@@ -662,17 +662,17 @@ type Statement struct {
 func (st *Statement) ID() any { return st.Meta.Get("id") }
 
 func parseScalar(v string) any {
-	v = py.Strip(v)
+	v = dyn.Strip(v)
 	// a double-quoted value is written by fmQuote as a JSON string, so it is read back as one; otherwise
 	// each rewrite of the file would escape its quotes and backslashes once more
-	if strings.HasPrefix(v, `"`) && strings.HasSuffix(v, `"`) && py.Len(v) >= 2 {
-		if x, err := py.Loads(v); err == nil {
+	if strings.HasPrefix(v, `"`) && strings.HasSuffix(v, `"`) && dyn.Len(v) >= 2 {
+		if x, err := dyn.Loads(v); err == nil {
 			if s, ok := x.(string); ok {
 				return s
 			}
 		}
 	}
-	if (strings.HasPrefix(v, "'") || strings.HasPrefix(v, `"`)) && strings.HasSuffix(v, v[:1]) && py.Len(v) >= 2 {
+	if (strings.HasPrefix(v, "'") || strings.HasPrefix(v, `"`)) && strings.HasSuffix(v, v[:1]) && dyn.Len(v) >= 2 {
 		return v[1 : len(v)-1]
 	}
 	switch v {
@@ -690,29 +690,29 @@ func startsIndented(l string) bool { return strings.HasPrefix(l, " ") || strings
 
 // parseFrontmatter is the minimal YAML subset: key: scalar | key: [a, b] | key:\n  - item |
 // key:\n  - k: v\n    k2: v2
-func parseFrontmatter(text string) (*py.Dict, string) {
+func parseFrontmatter(text string) (*dyn.Dict, string) {
 	m := frontmatterRE.FindStringSubmatch(text)
 	if m == nil {
-		return py.NewDict(), text
+		return dyn.NewDict(), text
 	}
 	raw, body := m[1], m[2]
-	meta := py.NewDict()
-	lines := py.Splitlines(raw)
+	meta := dyn.NewDict()
+	lines := dyn.Splitlines(raw)
 	i := 0
 	for i < len(lines) {
 		line := lines[i]
-		if py.Strip(line) == "" || strings.HasPrefix(py.LStrip(line), "#") {
+		if dyn.Strip(line) == "" || strings.HasPrefix(dyn.LStrip(line), "#") {
 			i++
 			continue
 		}
 		if startsIndented(line) {
-			die(fmt.Sprintf("unexpected indentation in frontmatter: %s", py.StrRepr(line)))
+			die(fmt.Sprintf("unexpected indentation in frontmatter: %s", dyn.StrRepr(line)))
 		}
-		key, _, rest := py.Partition(line, ":")
-		key = py.Strip(key)
-		rest = py.Strip(rest)
+		key, _, rest := dyn.Partition(line, ":")
+		key = dyn.Strip(key)
+		rest = dyn.Strip(rest)
 		if strings.HasPrefix(rest, "[") && strings.HasSuffix(rest, "]") {
-			inner := py.Strip(rest[1 : len(rest)-1])
+			inner := dyn.Strip(rest[1 : len(rest)-1])
 			items := []any{}
 			if inner != "" {
 				for _, x := range strings.Split(inner, ",") {
@@ -730,23 +730,23 @@ func parseFrontmatter(text string) (*py.Dict, string) {
 		}
 		items := []any{}
 		i++
-		for i < len(lines) && (startsIndented(lines[i]) || py.Strip(lines[i]) == "") {
+		for i < len(lines) && (startsIndented(lines[i]) || dyn.Strip(lines[i]) == "") {
 			l := lines[i]
-			if py.Strip(l) == "" {
+			if dyn.Strip(l) == "" {
 				i++
 				continue
 			}
-			s := py.Strip(l)
+			s := dyn.Strip(l)
 			if strings.HasPrefix(s, "- ") {
 				s = s[2:]
 				if strings.Contains(s, ":") && !strings.HasPrefix(s, "'") && !strings.HasPrefix(s, `"`) {
-					obj := py.NewDict()
-					k, _, v := py.Partition(s, ":")
-					obj.Set(py.Strip(k), parseScalar(v))
+					obj := dyn.NewDict()
+					k, _, v := dyn.Partition(s, ":")
+					obj.Set(dyn.Strip(k), parseScalar(v))
 					i++
-					for i < len(lines) && startsIndented(lines[i]) && !strings.HasPrefix(py.Strip(lines[i]), "- ") && py.Strip(lines[i]) != "" {
-						k, _, v := py.Partition(py.Strip(lines[i]), ":")
-						obj.Set(py.Strip(k), parseScalar(v))
+					for i < len(lines) && startsIndented(lines[i]) && !strings.HasPrefix(dyn.Strip(lines[i]), "- ") && dyn.Strip(lines[i]) != "" {
+						k, _, v := dyn.Partition(dyn.Strip(lines[i]), ":")
+						obj.Set(dyn.Strip(k), parseScalar(v))
 						i++
 					}
 					items = append(items, obj)
@@ -771,14 +771,14 @@ func fmQuote(v any) string {
 		}
 		return "false"
 	}
-	s := py.Str(v)
-	if s == "" || strings.ContainsAny(s, ":#[]{},\"'") || s != py.Strip(s) {
-		return py.JSONStr(s)
+	s := dyn.Str(v)
+	if s == "" || strings.ContainsAny(s, ":#[]{},\"'") || s != dyn.Strip(s) {
+		return dyn.JSONStr(s)
 	}
 	return s
 }
 
-func dumpFrontmatter(meta *py.Dict) string {
+func dumpFrontmatter(meta *dyn.Dict) string {
 	out := []string{"---"}
 	for _, k := range meta.Keys() {
 		v := meta.Get(k)
@@ -789,7 +789,7 @@ func dumpFrontmatter(meta *py.Dict) string {
 			}
 			out = append(out, k+":")
 			for _, it := range l {
-				if d, ok := it.(*py.Dict); ok {
+				if d, ok := it.(*dyn.Dict); ok {
 					first := true
 					for _, ik := range d.Keys() {
 						prefix := "    "
@@ -812,12 +812,12 @@ func dumpFrontmatter(meta *py.Dict) string {
 }
 
 func loadStatement(path string) *Statement {
-	meta, body := parseFrontmatter(py.ReadText(path))
+	meta, body := parseFrontmatter(dyn.ReadText(path))
 	return &Statement{path, meta, strings.Trim(body, "\n")}
 }
 
 func writeStatement(path string, st *Statement) {
-	py.WriteText(path, dumpFrontmatter(st.Meta)+"\n"+st.Body+"\n")
+	dyn.WriteText(path, dumpFrontmatter(st.Meta)+"\n"+st.Body+"\n")
 }
 
 // loadAllStatements reads attested/ in the order the statements were made (byMade).
@@ -840,14 +840,14 @@ func loadAllAgentStatements(root string) []*Statement {
 
 // madeAt is when a statement was made: its first attestation for a human statement, recorded_at for an
 // agent statement, or "" when it carries neither. Ids carry no order (S-0149), so this is the order.
-func madeAt(meta *py.Dict) string {
-	if v := meta.Get("recorded_at"); py.Truthy(v) {
-		return py.Str(v)
+func madeAt(meta *dyn.Dict) string {
+	if v := meta.Get("recorded_at"); dyn.Truthy(v) {
+		return dyn.Str(v)
 	}
 	if atts := listOf(meta.Get("attestations")); len(atts) > 0 {
-		if d, ok := atts[0].(*py.Dict); ok {
-			if v := d.Get("at"); py.Truthy(v) {
-				return py.Str(v)
+		if d, ok := atts[0].(*dyn.Dict); ok {
+			if v := d.Get("at"); dyn.Truthy(v) {
+				return dyn.Str(v)
 			}
 		}
 	}
@@ -880,12 +880,12 @@ var idSource io.Reader = rand.Reader
 func newStatementID(root, kind string) string {
 	taken := map[string]bool{}
 	d := filepath.Join(root, statementDirs[kind])
-	for _, p := range py.Glob(d, kind+"-*.md") {
+	for _, p := range dyn.Glob(d, kind+"-*.md") {
 		name := filepath.Base(p)
 		id, _, _ := strings.Cut(name[len(kind)+1:], "-")
 		taken[kind+"-"+strings.ToUpper(strings.TrimSuffix(id, ".md"))] = true
-		if v := loadStatement(p).Meta.Get("id"); py.Truthy(v) {
-			taken[strings.ToUpper(py.Str(v))] = true
+		if v := loadStatement(p).Meta.Get("id"); dyn.Truthy(v) {
+			taken[strings.ToUpper(dyn.Str(v))] = true
 		}
 	}
 	return drawID(kind, func(id string) bool { return taken[id] }, idSource)
@@ -897,7 +897,7 @@ func drawID(kind string, taken func(string) bool, src io.Reader) string {
 	buf := make([]byte, 4)
 	for range 10000 {
 		if _, err := io.ReadFull(src, buf); err != nil {
-			py.RaiseOS(err)
+			dyn.RaiseOS(err)
 		}
 		body := make([]byte, 4)
 		letter := false
@@ -916,14 +916,14 @@ func drawID(kind string, taken func(string) bool, src io.Reader) string {
 // statementPath is the file of a human (S-) or agent (A-) statement by id, or "".
 func statementPath(root string, sid any) string {
 	s := ""
-	if py.Truthy(sid) {
-		s = py.Str(sid)
+	if dyn.Truthy(sid) {
+		s = dyn.Str(sid)
 	}
 	m := statementIDRE.FindStringSubmatch(s)
 	if m == nil {
 		return ""
 	}
-	hits := py.Glob(filepath.Join(root, statementDirs[m[1]]), s+"-*.md")
+	hits := dyn.Glob(filepath.Join(root, statementDirs[m[1]]), s+"-*.md")
 	if len(hits) == 1 {
 		return hits[0]
 	}
@@ -935,7 +935,7 @@ func statementPath(root string, sid any) string {
 func markRelation(root string, oldID any, relation, newID string) {
 	p := statementPath(root, oldID)
 	if p == "" {
-		warn(fmt.Sprintf("%s %s: statement not found; not marking", relation, py.Str(oldID)))
+		warn(fmt.Sprintf("%s %s: statement not found; not marking", relation, dyn.Str(oldID)))
 		return
 	}
 	st := loadStatement(p)
@@ -943,14 +943,14 @@ func markRelation(root string, oldID any, relation, newID string) {
 	if relation == "supersedes" {
 		st.Meta.Set(key, newID)
 	} else {
-		lst := py.Or(st.Meta.Get(key), []any{})
+		lst := dyn.Or(st.Meta.Get(key), []any{})
 		l, ok := lst.([]any)
 		if !ok {
-			py.Raise("AttributeError", "'%s' object has no attribute 'append'", py.TypeName(lst))
+			dyn.Raise("TypeError", "expected an array, got %s", dyn.TypeName(lst))
 		}
 		found := false
 		for _, x := range l {
-			if py.Equal(x, newID) {
+			if dyn.Equal(x, newID) {
 				found = true
 			}
 		}
@@ -960,24 +960,24 @@ func markRelation(root string, oldID any, relation, newID string) {
 		st.Meta.Set(key, l)
 	}
 	writeStatement(p, st)
-	println(fmt.Sprintf("%s marked %s %s", py.Str(oldID), key, newID))
+	println(fmt.Sprintf("%s marked %s %s", dyn.Str(oldID), key, newID))
 }
 
 var slugRE = regexp.MustCompile(`[^a-z0-9]+`)
 
 func slugify(s string, limit int) string {
-	s = strings.Trim(slugRE.ReplaceAllString(py.Lower(s), "-"), "-")
-	return strings.TrimRight(py.Head(s, limit), "-")
+	s = strings.Trim(slugRE.ReplaceAllString(dyn.Lower(s), "-"), "-")
+	return strings.TrimRight(dyn.Head(s, limit), "-")
 }
 
 // versionTuple is "0.3.0" -> (0, 3, 0); junk gives (0,). A pre-release or build suffix is dropped, so
 // "0.9.0-dev" is (0, 9, 0): a development build follows the rules of the version it is becoming.
 func versionTuple(v any) []int64 {
 	var out []int64
-	core, _, _ := strings.Cut(py.Str(v), "-")
+	core, _, _ := strings.Cut(dyn.Str(v), "-")
 	core, _, _ = strings.Cut(core, "+")
 	for _, x := range strings.Split(core, ".") {
-		n, ok := py.ParseInt(x)
+		n, ok := dyn.ParseInt(x)
 		if !ok {
 			return []int64{0}
 		}
@@ -996,7 +996,7 @@ func tupleGE(a, b []int64) bool {
 }
 
 // normalizeWS collapses each run of whitespace in s to one space and trims both ends.
-func normalizeWS(s string) string { return strings.Join(py.Fields(s), " ") }
+func normalizeWS(s string) string { return strings.Join(dyn.Fields(s), " ") }
 
 // textContained is the whitespace-insensitive substring test used for verified copies.
 func textContained(needle, haystack string) bool {
@@ -1005,7 +1005,7 @@ func textContained(needle, haystack string) bool {
 
 // draftPath is the draft argument as attest and record resolve it: relative to the knowledge base.
 func draftPath(root, draft string) string {
-	if strings.HasPrefix(draft, "/") || strings.HasPrefix(draft, `\`) || py.Head(py.Tail(draft, 1), 1) == ":" {
+	if strings.HasPrefix(draft, "/") || strings.HasPrefix(draft, `\`) || dyn.Head(dyn.Tail(draft, 1), 1) == ":" {
 		return draft
 	}
 	return filepath.Join(root, draft)

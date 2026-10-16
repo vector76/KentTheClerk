@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"kenttheclerk/internal/argparse"
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 const (
@@ -75,15 +75,15 @@ func (u *userTable) who(key string) string {
 func loadUsers(root string) (*userTable, string) {
 	t := &userTable{}
 	p := usersPath(root)
-	if !py.IsFile(p) {
+	if !dyn.IsFile(p) {
 		return t, ""
 	}
-	for i, line := range py.TextLines(p) {
+	for i, line := range dyn.TextLines(p) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		v, err := py.Loads(line)
-		d, ok := v.(*py.Dict)
+		v, err := dyn.Loads(line)
+		d, ok := v.(*dyn.Dict)
 		if err != nil || !ok {
 			return t, fmt.Sprintf("line %d is not a JSON object", i+1)
 		}
@@ -125,16 +125,16 @@ func usersForDisplay(root string) *userTable {
 func writeUsers(root string, rows []person) {
 	var b strings.Builder
 	for _, p := range rows {
-		line := py.Dumps(py.D("key", p.key, "name", p.name, "email", p.email))
-		py.CheckEncodable(line)
+		line := dyn.Dumps(dyn.D("key", p.key, "name", p.name, "email", p.email))
+		dyn.CheckEncodable(line)
 		b.WriteString(line + "\n")
 	}
 	tmp := usersPath(root) + ".tmp"
 	if err := os.WriteFile(tmp, []byte(b.String()), 0o666); err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	if err := os.Rename(tmp, usersPath(root)); err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 }
 
@@ -161,11 +161,11 @@ func actingKeyIn(root string, t *userTable, id, source string) (key, msg string)
 	}
 	if to, ref := retiredID(root, key); to != "" {
 		return "", fmt.Sprintf("the user id %s was moved to %s by override %s in this knowledge base; act as %s: change "+
-			"the id in ~/.kenttheclerk.json, KB_USER or git's user.email, or pass --user (%s)", py.StrRepr(key), py.StrRepr(to), ref, to, rule("override-list"))
+			"the id in ~/.kenttheclerk.json, KB_USER or git's user.email, or pass --user (%s)", dyn.StrRepr(key), dyn.StrRepr(to), ref, to, rule("override-list"))
 	}
 	if !t.has(key) {
 		return "", fmt.Sprintf("%s (%s) is not in this knowledge base's user table, so kb records nothing they do here. "+
-			"Add them first: kb user add <their name> --email <their email> --key %s (%s)", py.StrRepr(key), strings.TrimPrefix(source, "from "), key, rule("add-first"))
+			"Add them first: kb user add <their name> --email <their email> --key %s (%s)", dyn.StrRepr(key), strings.TrimPrefix(source, "from "), key, rule("add-first"))
 	}
 	return key, ""
 }
@@ -222,9 +222,9 @@ func badKey(key string) string {
 	case key == "":
 		return "a key cannot be empty"
 	case badKeyRE.MatchString(key):
-		return fmt.Sprintf("%s is not a key: a key holds no spaces, #, quotes or angle brackets", py.StrRepr(key))
+		return fmt.Sprintf("%s is not a key: a key holds no spaces, #, quotes or angle brackets", dyn.StrRepr(key))
 	case strings.HasPrefix(key, "agent:") || in(key, []string{"client", "tool", "document"}):
-		return fmt.Sprintf("%s is not a person's key", py.StrRepr(key))
+		return fmt.Sprintf("%s is not a person's key", dyn.StrRepr(key))
 	}
 	return ""
 }
@@ -271,20 +271,20 @@ func actKeys(root string, sessions *Sessions) map[string]*actCount {
 	}
 	for _, s := range sessions.Values() {
 		for _, t := range s.Turns {
-			if a := py.Str(py.Or(t.Get("author"), "")); py.Equal(t.Get("role"), "user") && personKey(a) {
+			if a := dyn.Str(dyn.Or(t.Get("author"), "")); dyn.Equal(t.Get("role"), "user") && personKey(a) {
 				c := at(a)
 				c.turns++
-				c.saw(py.Str(py.Or(t.Get("timestamp"), "")))
+				c.saw(dyn.Str(dyn.Or(t.Get("timestamp"), "")))
 			}
 		}
 	}
 	for _, st := range append(loadAllStatements(root), loadAllAgentStatements(root)...) {
 		for _, a := range listOf(st.Meta.Get("attestations")) {
-			if d, ok := a.(*py.Dict); ok {
-				if by := py.Str(py.Or(d.Get("by"), "")); personKey(by) {
+			if d, ok := a.(*dyn.Dict); ok {
+				if by := dyn.Str(dyn.Or(d.Get("by"), "")); personKey(by) {
 					c := at(by)
 					c.atts++
-					c.saw(py.Str(py.Or(d.Get("at"), "")))
+					c.saw(dyn.Str(dyn.Or(d.Get("at"), "")))
 				}
 			}
 		}
@@ -355,7 +355,7 @@ func generateKey(root string, t *userTable, acts map[string]*actCount, name stri
 // replayUsers is the table the logs say there should be: every add in the user log, then each override
 // that touches a row, in order. Adds can all come first because an add refuses a key that is in the table
 // or retired, so no override in the log can depend on an add made after it.
-func replayUsers(adds, overrides []*py.Dict) []person {
+func replayUsers(adds, overrides []*dyn.Dict) []person {
 	var rows []person
 	find := func(k string) int {
 		for i, p := range rows {
@@ -431,14 +431,14 @@ func adder(root string, t *userTable, explicit, key, email string) string {
 		}
 	default:
 		if to, ref := retiredID(root, id); to != "" {
-			die(fmt.Sprintf("the user id %s was moved to %s by override %s in this knowledge base; act as %s (%s)", py.StrRepr(id), py.StrRepr(to), ref, to, rule("override-list")))
+			die(fmt.Sprintf("the user id %s was moved to %s by override %s in this knowledge base; act as %s (%s)", dyn.StrRepr(id), dyn.StrRepr(to), ref, to, rule("override-list")))
 		}
 		if t.has(id) || id == key {
 			return id
 		}
 	}
 	die(fmt.Sprintf("you are known here as %s (%s), who is not in the user table: add yourself first, then add "+
-		"others (%s)", py.StrRepr(id), strings.TrimPrefix(source, "from "), rule("add-first")))
+		"others (%s)", dyn.StrRepr(id), strings.TrimPrefix(source, "from "), rule("add-first")))
 	return ""
 }
 
@@ -457,7 +457,7 @@ func runUserAdd(ns argparse.Namespace, args []string) int {
 		die(fmt.Sprintf("--email is required: the user table holds each person's key, name and email (%s)", rule("user-table")))
 	}
 	if !emailRE.MatchString(email) {
-		die(fmt.Sprintf("%s is not an email address", py.StrRepr(email)))
+		die(fmt.Sprintf("%s is not an email address", dyn.StrRepr(email)))
 	}
 	t := mustLoadUsers(root)
 	if p, ok := t.byEmail(email); ok {
@@ -491,7 +491,7 @@ func runUserAdd(ns argparse.Namespace, args []string) int {
 		die(fmt.Sprintf("%s is already in the user table", t.who(key)))
 	}
 	if to, ref := retiredID(root, key); to != "" {
-		die(fmt.Sprintf("%s was moved to %s by override %s and is retired here", py.StrRepr(key), to, ref))
+		die(fmt.Sprintf("%s was moved to %s by override %s and is retired here", dyn.StrRepr(key), to, ref))
 	}
 	userArg, _ := ns.Str("user")
 	by := adder(root, t, userArg, key, email)
@@ -502,7 +502,7 @@ func runUserAdd(ns argparse.Namespace, args []string) int {
 		die(fmt.Sprintf("the user log %s cannot be read: %s (%s)", usersLogName, problem, rule("write-through-kb")))
 	}
 	// an entry has no id, since nothing cites one, and no number (S-QYEK)
-	e := py.D("act", "add", "key", key, "name", name, "email", email,
+	e := dyn.D("act", "add", "key", key, "name", name, "email", email,
 		"at", isoSeconds(usersNow()), "by", by, "authentication", authentication)
 	appendLogEntry(usersLogPath(root), e)
 	writeUsers(root, append(t.rows, person{key, name, email}))
@@ -581,7 +581,7 @@ func usersChecks(root string, sessions *Sessions, errorf, warnf func(string, ...
 			n = "the entry made at " + entryStr(e, "at")
 		}
 		if entryStr(e, "act") != "add" {
-			errorf("user log: %s is %s, not an add (%s)", n, py.Repr(e.Get("act")), rule("add-first"))
+			errorf("user log: %s is %s, not an add (%s)", n, dyn.Repr(e.Get("act")), rule("add-first"))
 		}
 		for _, k := range []string{"key", "name", "email", "at", "by"} {
 			if entryStr(e, k) == "" {

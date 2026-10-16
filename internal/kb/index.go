@@ -15,7 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"kenttheclerk/internal/argparse"
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 const schema = `
@@ -59,20 +59,20 @@ func sqlArg(v any) any {
 			return int64(1)
 		}
 		return int64(0)
-	case py.Int:
+	case dyn.Int:
 		if n, ok := x.Int64(); ok {
 			return n
 		}
-		py.Raise("OverflowError", "integer too large to convert to SQLite INTEGER")
+		dyn.Raise("OverflowError", "integer too large to convert to SQLite INTEGER")
 	case int:
 		return int64(x)
 	case float64:
 		return x
 	case string:
-		py.CheckEncodable(x) // strings bind as UTF-8: a lone surrogate raises
+		dyn.CheckEncodable(x) // strings bind as UTF-8: a lone surrogate raises
 		return x
 	}
-	py.Raise("SQLite error", "Error binding parameter - probably unsupported type.")
+	dyn.Raise("SQLite error", "Error binding parameter - probably unsupported type.")
 	return nil
 }
 
@@ -87,8 +87,8 @@ func sqlArgs(vs ...any) []any {
 // joinStrs joins a list of strings with commas.
 func joinStrs(v any) string {
 	var parts []string
-	for _, x := range py.Iter(v) {
-		parts = append(parts, py.AsStr(x))
+	for _, x := range dyn.Iter(v) {
+		parts = append(parts, dyn.AsStr(x))
 	}
 	return strings.Join(parts, ",")
 }
@@ -96,7 +96,7 @@ func joinStrs(v any) string {
 func openDB(p string) *sql.DB {
 	db, err := sql.Open("sqlite", p)
 	if err != nil {
-		py.Raise("SQLite error", "%v", err)
+		dyn.Raise("SQLite error", "%v", err)
 	}
 	db.SetMaxOpenConns(1)
 	return db
@@ -104,7 +104,7 @@ func openDB(p string) *sql.DB {
 
 func must(err error) {
 	if err != nil {
-		py.Raise("SQLite error", "%s", sqliteMsg(err))
+		dyn.Raise("SQLite error", "%s", sqliteMsg(err))
 	}
 }
 
@@ -124,9 +124,9 @@ func sqliteMsg(err error) string {
 func buildIndex(root string) string {
 	p := dbPath(root)
 	tmp := strings.TrimSuffix(p, ".db") + ".db.tmp"
-	if py.Exists(tmp) {
+	if dyn.Exists(tmp) {
 		if err := os.Remove(tmp); err != nil {
-			py.RaiseOS(err)
+			dyn.RaiseOS(err)
 		}
 	}
 	db := openDB(tmp)
@@ -143,12 +143,12 @@ func buildIndex(root string) string {
 	}
 	for _, s := range loadAllSessions(root).Values() {
 		h := s.Header
-		o := py.AsDict(py.Or(h.Get("original"), py.NewDict()))
+		o := dyn.AsDict(dyn.Or(h.Get("original"), dyn.NewDict()))
 		relPath := rel(s.Path, root)
 		if s.Kind() == "document" {
 			exec("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 				s.IDValue(), "document", h.Get("title"), s.ModeValue(), h.Get("extractor"), h.Get("ingested_at"),
-				getOr(h, "ingested_by", ""), "", h.Get("chunk_count"), py.IntOf(0), relPath,
+				getOr(h, "ingested_by", ""), "", h.Get("chunk_count"), dyn.IntOf(0), relPath,
 				o.Get("name"), o.Get("path"), o.Get("hash"), o.Get("media_type"), o.Get("size"))
 		} else {
 			exec("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -159,24 +159,24 @@ func buildIndex(root string) string {
 		labels := labelMap(s)
 		for i, t := range s.Turns {
 			var tools []string
-			for _, bv := range py.Iter(item(t, "content")) {
-				b := py.AsDict(bv)
-				if py.Equal(item(b, "type"), "tool_use") {
-					x := py.Str(item(b, "name"))
-					if d := b.Get("description"); py.Truthy(d) {
-						x += " — " + py.Str(d)
+			for _, bv := range dyn.Iter(item(t, "content")) {
+				b := dyn.AsDict(bv)
+				if dyn.Equal(item(b, "type"), "tool_use") {
+					x := dyn.Str(item(b, "name"))
+					if d := b.Get("description"); dyn.Truthy(d) {
+						x += " — " + dyn.Str(d)
 					}
 					tools = append(tools, x)
 				}
 			}
 			text := turnText(t)
 			loc := t.Get("locator")
-			if py.Truthy(loc) {
+			if dyn.Truthy(loc) {
 				loc = locatorText(loc)
 			}
 			l, _ := label(labels, item(t, "uuid"))
 			exec("INSERT INTO turns VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-				item(t, "uuid"), s.IDValue(), t.Get("parent"), py.IntOf(i), l, item(t, "role"), item(t, "author"),
+				item(t, "uuid"), s.IDValue(), t.Get("parent"), dyn.IntOf(i), l, item(t, "role"), item(t, "author"),
 				t.Get("timestamp"), text, strings.Join(tools, "; "), loc)
 			exec("INSERT INTO turns_fts(uuid, text) VALUES (?,?)", item(t, "uuid"), text)
 		}
@@ -203,23 +203,23 @@ func buildIndex(root string) string {
 		exec("INSERT INTO statements VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 			id, m.Get("title"), m.Get("answers"), originator, proposed,
 			m.Get("modified_in"), m.Get("supersedes"), m.Get("superseded_by"), m.Get("amends"),
-			joinStrs(py.Or(m.Get("amended_by"), []any{})), m.Get("clarifies"), joinStrs(py.Or(m.Get("clarified_by"), []any{})),
-			joinStrs(py.Or(m.Get("topics"), []any{})), ks.st.Body, rel(ks.st.Path, root),
-			ks.kind, joinStrs(py.Or(m.Get("rests_on"), []any{})), py.IntOf(len(listOf(m.Get("seen")))), m.Get("withdrawn_in"), madeAt(m))
+			joinStrs(dyn.Or(m.Get("amended_by"), []any{})), m.Get("clarifies"), joinStrs(dyn.Or(m.Get("clarified_by"), []any{})),
+			joinStrs(dyn.Or(m.Get("topics"), []any{})), ks.st.Body, rel(ks.st.Path, root),
+			ks.kind, joinStrs(dyn.Or(m.Get("rests_on"), []any{})), dyn.IntOf(len(listOf(m.Get("seen")))), m.Get("withdrawn_in"), madeAt(m))
 		for _, xv := range listOf(m.Get("seen")) {
-			exec("INSERT INTO citations VALUES (?,?,?)", id, py.AsDict(xv).Get("turn"), "seen")
+			exec("INSERT INTO citations VALUES (?,?,?)", id, dyn.AsDict(xv).Get("turn"), "seen")
 		}
-		if wi := m.Get("withdrawn_in"); py.Truthy(wi) {
+		if wi := m.Get("withdrawn_in"); dyn.Truthy(wi) {
 			exec("INSERT INTO citations VALUES (?,?,?)", id, wi, "withdrawal")
 		}
 		exec("INSERT INTO statements_fts(id, title, body) VALUES (?,?,?)", id, m.Get("title"), ks.st.Body)
 		for _, av := range listOf(m.Get("attestations")) {
-			a := py.AsDict(av)
+			a := dyn.AsDict(av)
 			exec("INSERT INTO attestations VALUES (?,?,?,?,?)", id, a.Get("by"), a.Get("at"), a.Get("turn"), a.Get("form"))
 			exec("INSERT INTO citations VALUES (?,?,?)", id, a.Get("turn"), "attestation")
 		}
 		for _, k := range [][2]string{{"proposed_in", "proposal"}, {"made_in", "made"}, {"modified_in", "modification"}} {
-			if v := m.Get(k[0]); py.Truthy(v) {
+			if v := m.Get(k[0]); dyn.Truthy(v) {
 				exec("INSERT INTO citations VALUES (?,?,?)", id, v, k[1])
 			}
 		}
@@ -233,14 +233,14 @@ func buildIndex(root string) string {
 	must(tx.Commit())
 	must(db.Close())
 	if err := os.Rename(tmp, p); err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	return p
 }
 
 func connectIndex(root string) *sql.DB {
 	p := dbPath(root)
-	if !py.Exists(p) {
+	if !dyn.Exists(p) {
 		buildIndex(root)
 	}
 	return openDB(p)
@@ -300,11 +300,11 @@ func sqlStr(v any) string {
 	case int64:
 		return fmt.Sprint(x)
 	case float64:
-		return py.FloatRepr(x)
+		return dyn.FloatRepr(x)
 	case string:
 		return x
 	case []byte:
-		return py.Repr(string(x))
+		return dyn.Repr(string(x))
 	}
 	return fmt.Sprint(v)
 }
@@ -350,7 +350,7 @@ func runSearch(ns argparse.Namespace) int {
 	q := ftsQuery(ns.List("query"))
 	limit := ns["limit"].(*big.Int)
 	if !limit.IsInt64() {
-		py.Raise("OverflowError", "integer too large to convert to SQLite INTEGER")
+		dyn.Raise("OverflowError", "integer too large to convert to SQLite INTEGER")
 	}
 	println("== statements")
 	flushStdout()
@@ -365,10 +365,10 @@ func runSearch(ns argparse.Namespace) int {
 		"FROM turns_fts JOIN turns t ON t.uuid = turns_fts.uuid "+
 		"WHERE turns_fts MATCH ? ORDER BY rank LIMIT ?", q, limit.Int64()) {
 		where := ""
-		if py.Truthy(sqlTruthy(r["locator"])) {
+		if dyn.Truthy(sqlTruthy(r["locator"])) {
 			where = " (" + sqlStr(r["locator"]) + ")"
 		}
-		println(fmt.Sprintf("%s#%s  [%s] %s%s\n    %s", py.Head(sqlStr(r["session"]), 8), sqlStr(r["uuid"]), sqlStr(r["label"]),
+		println(fmt.Sprintf("%s#%s  [%s] %s%s\n    %s", dyn.Head(sqlStr(r["session"]), 8), sqlStr(r["uuid"]), sqlStr(r["label"]),
 			users.who(sqlStr(r["author"])), where, sqlStr(r["snip"])))
 	}
 	return 0

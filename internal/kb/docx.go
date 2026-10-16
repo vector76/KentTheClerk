@@ -20,7 +20,7 @@ import (
 	"golang.org/x/text/encoding/ianaindex"
 	"golang.org/x/text/encoding/unicode"
 
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 // xmlElem is an element of the parsed tree, with what extractDocx uses.
@@ -45,7 +45,7 @@ func parseError(data []byte, offset int64, msg string) {
 	before := data[:min(int(offset), len(data))]
 	line := bytes.Count(before, []byte{'\n'}) + 1
 	col := len(before) - (bytes.LastIndexByte(before, '\n') + 1)
-	py.Raise("XML error", "%s: line %d, column %d", msg, line, col)
+	dyn.Raise("XML error", "%s: line %d, column %d", msg, line, col)
 }
 
 // attrOffset is where the name of attribute k of the start tag at offset start begins.
@@ -94,7 +94,7 @@ func parseXML(data []byte) *xmlElem {
 		}
 		out, err := unicode.UTF16(order, unicode.UseBOM).NewDecoder().Bytes(data)
 		if err != nil {
-			py.Raise("XML error", "not well-formed (invalid token): line 1, column 0")
+			dyn.Raise("XML error", "not well-formed (invalid token): line 1, column 0")
 		}
 		data, transcoded = out, true
 	}
@@ -296,8 +296,8 @@ func headingLevel(style string) (int, bool) {
 			return 0, false
 		}
 	}
-	if d := rs[len(word)]; py.IsDecimal(d) {
-		return py.DecimalValue(d), true
+	if d := rs[len(word)]; dyn.IsDecimal(d) {
+		return dyn.DecimalValue(d), true
 	}
 	return 0, false
 }
@@ -305,7 +305,7 @@ func headingLevel(style string) (int, bool) {
 // readDocumentXML reads word/document.xml from the zip at path. A file that is not a usable zip (not a
 // zip, member missing, bad CRC) is reported as not a Word document; other errors propagate.
 func readDocumentXML(path string) []byte {
-	notWord := func(msg string) { die(py.Name(path) + " is not a Word document: " + msg) }
+	notWord := func(msg string) { die(dyn.Name(path) + " is not a Word document: " + msg) }
 	zr, err := zip.OpenReader(path)
 	if err != nil {
 		notWord("File is not a zip file")
@@ -318,7 +318,7 @@ func readDocumentXML(path string) []byte {
 		if i := strings.IndexByte(n, 0); i >= 0 {
 			n = n[:i]
 		}
-		if py.Windows {
+		if dyn.Windows {
 			n = strings.ReplaceAll(n, `\`, "/")
 		}
 		if n == "word/document.xml" {
@@ -330,26 +330,26 @@ func readDocumentXML(path string) []byte {
 	}
 	switch {
 	case member.Flags&0x20 != 0:
-		py.Raise("NotImplementedError", "compressed patched data (flag bit 5)")
+		dyn.Raise("NotImplementedError", "compressed patched data (flag bit 5)")
 	case member.Flags&0x40 != 0:
-		py.Raise("NotImplementedError", "strong encryption (flag bit 6)")
+		dyn.Raise("NotImplementedError", "strong encryption (flag bit 6)")
 	case member.Flags&0x1 != 0:
-		py.Raise("RuntimeError", "File %s is encrypted, password required for extraction", py.StrRepr("word/document.xml"))
+		dyn.Raise("RuntimeError", "File %s is encrypted, password required for extraction", dyn.StrRepr("word/document.xml"))
 	}
 	rc, err := member.Open()
 	if err != nil {
 		if errors.Is(err, zip.ErrAlgorithm) {
-			py.Raise("NotImplementedError", "That compression method is not supported")
+			dyn.Raise("NotImplementedError", "That compression method is not supported")
 		}
 		notWord(err.Error())
 	}
 	data, err := io.ReadAll(rc)
 	rc.Close()
 	if errors.Is(err, zip.ErrChecksum) {
-		notWord("Bad CRC-32 for file " + py.StrRepr("word/document.xml"))
+		notWord("Bad CRC-32 for file " + dyn.StrRepr("word/document.xml"))
 	}
 	if err != nil {
-		py.Raise("zlib error", "Error -3 while decompressing data: %v", err)
+		dyn.Raise("zlib error", "Error -3 while decompressing data: %v", err)
 	}
 	return data
 }
@@ -385,16 +385,16 @@ func extractDocx(path string) ([]chunk, any) {
 				if st := el.findPath(W+"pPr", W+"pStyle"); st != nil {
 					sval = st.attr[W+"val"]
 				}
-				if level, ok := headingLevel(sval); ok && py.Strip(text) != "" {
-					text = strings.Repeat("#", level) + " " + py.Strip(text)
-					if !py.Truthy(title) {
-						title = py.Strip(strings.TrimLeft(text, "#"))
+				if level, ok := headingLevel(sval); ok && dyn.Strip(text) != "" {
+					text = strings.Repeat("#", level) + " " + dyn.Strip(text)
+					if !dyn.Truthy(title) {
+						title = dyn.Strip(strings.TrimLeft(text, "#"))
 					}
-				} else if py.Lower(sval) == "title" && py.Strip(text) != "" {
-					if !py.Truthy(title) {
-						title = py.Strip(text)
+				} else if dyn.Lower(sval) == "title" && dyn.Strip(text) != "" {
+					if !dyn.Truthy(title) {
+						title = dyn.Strip(text)
 					}
-					text = "# " + py.Strip(text)
+					text = "# " + dyn.Strip(text)
 				}
 				paras = append(paras, text)
 			case W + "tbl":
@@ -404,7 +404,7 @@ func extractDocx(path string) ([]chunk, any) {
 					}
 					var cells []string
 					tr.iter(W+"tc", func(tc *xmlElem) {
-						cells = append(cells, py.Strip(strings.ReplaceAll(paraText(tc), "\n", " ")))
+						cells = append(cells, dyn.Strip(strings.ReplaceAll(paraText(tc), "\n", " ")))
 					})
 					paras = append(paras, "| "+strings.Join(cells, " | ")+" |")
 				})

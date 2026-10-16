@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"kenttheclerk/internal/argparse"
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 // contextNoteLimit is the most characters a context_for note may hold. The note is the link's type, read
@@ -27,15 +27,15 @@ const extraContextKey = "extra_context"
 type contextLink struct{ target, note string }
 
 // contextLinks reads a statement's context_for entries as they are written, without checking them.
-func contextLinks(meta *py.Dict) []contextLink {
+func contextLinks(meta *dyn.Dict) []contextLink {
 	var out []contextLink
 	for _, e := range listOf(meta.Get("context_for")) {
-		d, ok := e.(*py.Dict)
+		d, ok := e.(*dyn.Dict)
 		if !ok {
-			out = append(out, contextLink{target: py.Str(e)})
+			out = append(out, contextLink{target: dyn.Str(e)})
 			continue
 		}
-		out = append(out, contextLink{py.Strip(py.Str(py.Or(d.Get("statement"), ""))), py.Strip(py.Str(py.Or(d.Get("note"), "")))})
+		out = append(out, contextLink{dyn.Strip(dyn.Str(dyn.Or(d.Get("statement"), ""))), dyn.Strip(dyn.Str(dyn.Or(d.Get("note"), "")))})
 	}
 	return out
 }
@@ -45,7 +45,7 @@ func contextProblem(root, self string, l contextLink) string {
 	switch {
 	case !statementIDRE.MatchString(l.target):
 		return fmt.Sprintf("%s is not a statement id; each entry names a statement and carries a note "+
-			"(statement: S-xxxx, note: how this changes its reading)", py.StrRepr(l.target))
+			"(statement: S-xxxx, note: how this changes its reading)", dyn.StrRepr(l.target))
 	case l.target == self:
 		return fmt.Sprintf("%s cannot be context for itself", l.target)
 	case statementPath(root, l.target) == "":
@@ -54,17 +54,17 @@ func contextProblem(root, self string, l contextLink) string {
 		return fmt.Sprintf("the link to %s has no note; the note says how this statement changes its reading", l.target)
 	case strings.ContainsAny(l.note, "\r\n"):
 		return fmt.Sprintf("the note on the link to %s runs over more than one line", l.target)
-	case py.Len(l.note) > contextNoteLimit:
-		return fmt.Sprintf("the note on the link to %s is %d characters; a note holds at most %d", l.target, py.Len(l.note), contextNoteLimit)
+	case dyn.Len(l.note) > contextNoteLimit:
+		return fmt.Sprintf("the note on the link to %s is %d characters; a note holds at most %d", l.target, dyn.Len(l.note), contextNoteLimit)
 	}
 	return ""
 }
 
 // contextFor checks a draft's context_for and returns it as it is written into the new statement. kind is
 // "S" for kb attest, "A" for kb record; rels are the draft's supersedes/amends/clarifies.
-func contextFor(root, kind string, meta, rels *py.Dict) []any {
+func contextFor(root, kind string, meta, rels *dyn.Dict) []any {
 	raw := meta.Get("context_for")
-	if !py.Truthy(raw) {
+	if !dyn.Truthy(raw) {
 		return nil
 	}
 	if _, ok := raw.([]any); !ok {
@@ -81,7 +81,7 @@ func contextFor(root, kind string, meta, rels *py.Dict) []any {
 		}
 		seen[l.target] = true
 		for _, r := range rels.Keys() {
-			if py.Str(rels.Get(r)) == l.target {
+			if dyn.Str(rels.Get(r)) == l.target {
 				die(fmt.Sprintf("context_for: this draft already %s %s, which marks it; no further link is needed (%s)", r, l.target, rule("context-for")))
 			}
 		}
@@ -89,7 +89,7 @@ func contextFor(root, kind string, meta, rels *py.Dict) []any {
 			die(fmt.Sprintf("context_for: %s is an agent statement; a human statement relates to an agent statement only "+
 				"by superseding it (overriding or adopting it; %s)", l.target, rule("agent-no-attestations")))
 		}
-		out = append(out, py.D("statement", l.target, "note", l.note))
+		out = append(out, dyn.D("statement", l.target, "note", l.note))
 	}
 	return out
 }
@@ -98,7 +98,7 @@ func contextFor(root, kind string, meta, rels *py.Dict) []any {
 // fact, set once: the new statement and its note stay out of the target.
 func markContext(root string, links []any, newID string) {
 	for _, e := range links {
-		target := py.Str(e.(*py.Dict).Get("statement"))
+		target := dyn.Str(e.(*dyn.Dict).Get("statement"))
 		p := statementPath(root, target)
 		if p == "" {
 			warn(fmt.Sprintf("context_for %s: statement not found; not marking", target))
@@ -123,11 +123,11 @@ func authorOf(st *Statement) string {
 	if len(atts) == 0 {
 		return ""
 	}
-	d, ok := atts[0].(*py.Dict)
+	d, ok := atts[0].(*dyn.Dict)
 	if !ok {
 		return ""
 	}
-	return py.Str(py.Or(d.Get("by"), ""))
+	return dyn.Str(dyn.Or(d.Get("by"), ""))
 }
 
 // mayChange says whether user may supersede, amend or clarify the human statement st, which only its author
@@ -139,9 +139,9 @@ func mayChange(user string, st *Statement) bool {
 
 // requireAuthor refuses a supersession, amendment or clarification of a human statement by anyone but its
 // author, pointing to context_for as the way to record a divergence.
-func requireAuthor(root, user string, rels *py.Dict) {
+func requireAuthor(root, user string, rels *dyn.Dict) {
 	for _, r := range rels.Keys() {
-		target := py.Str(rels.Get(r))
+		target := dyn.Str(rels.Get(r))
 		if !strings.HasPrefix(target, "S-") {
 			continue
 		}
@@ -189,26 +189,26 @@ func loadLinkGraph(root string) map[string]*linkNode {
 	all = append(all, loadAllStatements(root)...)
 	all = append(all, loadAllAgentStatements(root)...)
 	for _, st := range all {
-		id := py.Str(py.Or(st.Meta.Get("id"), ""))
+		id := dyn.Str(dyn.Or(st.Meta.Get("id"), ""))
 		if id == "" {
 			continue
 		}
-		n := &linkNode{id: id, path: filepath.ToSlash(rel(st.Path, root)), title: py.Str(py.Or(st.Meta.Get("title"), "")), madeAt: madeAt(st.Meta), inForce: true, status: "in force"}
-		if sb := st.Meta.Get("superseded_by"); py.Truthy(sb) {
-			n.inForce, n.status, n.supersededBy = false, "superseded by "+py.Str(sb), py.Str(sb)
-		} else if py.Truthy(st.Meta.Get("withdrawn_in")) {
+		n := &linkNode{id: id, path: filepath.ToSlash(rel(st.Path, root)), title: dyn.Str(dyn.Or(st.Meta.Get("title"), "")), madeAt: madeAt(st.Meta), inForce: true, status: "in force"}
+		if sb := st.Meta.Get("superseded_by"); dyn.Truthy(sb) {
+			n.inForce, n.status, n.supersededBy = false, "superseded by "+dyn.Str(sb), dyn.Str(sb)
+		} else if dyn.Truthy(st.Meta.Get("withdrawn_in")) {
 			n.inForce, n.status = false, "withdrawn"
 		}
 		for _, l := range contextLinks(st.Meta) {
 			n.out = append(n.out, linkEdge{"context_for", l.target, l.note})
 		}
 		for _, r := range relations {
-			if v := st.Meta.Get(r); py.Truthy(v) {
-				n.out = append(n.out, linkEdge{r, py.Str(v), ""})
+			if v := st.Meta.Get(r); dyn.Truthy(v) {
+				n.out = append(n.out, linkEdge{r, dyn.Str(v), ""})
 			}
 		}
 		for _, x := range listOf(st.Meta.Get("rests_on")) {
-			n.out = append(n.out, linkEdge{"rests_on", py.Str(x), ""})
+			n.out = append(n.out, linkEdge{"rests_on", dyn.Str(x), ""})
 		}
 		nodes[id] = n
 	}
@@ -400,7 +400,7 @@ func runLinks(ns argparse.Namespace) int {
 	for _, id := range ns.List("statements") {
 		id = strings.ToUpper(strings.TrimSpace(id))
 		if !statementIDRE.MatchString(id) {
-			die(fmt.Sprintf("%s is not a statement id (S-xxxx or A-xxxx)", py.StrRepr(id)))
+			die(fmt.Sprintf("%s is not a statement id (S-xxxx or A-xxxx)", dyn.StrRepr(id)))
 		}
 		if nodes[id] == nil {
 			die(fmt.Sprintf("statement %s not found", id))

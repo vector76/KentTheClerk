@@ -14,10 +14,10 @@ const inlineBufferSize = 8192
 
 func isWhiteByte(c int) bool { return c >= 0 && isPdfWhite(byte(c)) }
 
-// seekRel is stream.seek(n, 1); BytesIO refuses negative positions.
+// seekRel moves the position by n; a negative position is a ValueError.
 func (p *parser) seekRel(n int) error {
 	if p.pos+n < 0 {
-		return pyErr("ValueError", "negative seek value")
+		return classErr("ValueError", "negative seek value")
 	}
 	p.pos += n
 	return nil
@@ -29,13 +29,13 @@ func (p *parser) readInlineImage() error {
 	for {
 		c := p.readNonWhitespace()
 		if c < 0 {
-			return pyErr("PdfReadError", "Unexpected end of stream.")
+			return classErr("PdfReadError", "Unexpected end of stream.")
 		}
 		p.back(1)
 		if c == 'I' {
 			break
 		}
-		key, err := p.readObjectDepth(p.frame + 1) // called from _read_inline_image
+		key, err := p.readObjectDepth(p.frame + 1) // one frame below the content parser
 		if err != nil {
 			return err
 		}
@@ -50,7 +50,7 @@ func (p *parser) readInlineImage() error {
 		}
 	}
 	if tmp := p.read(3); len(tmp) < 2 || string(tmp[:2]) != "ID" {
-		return pyErr("AssertionError", "")
+		return classErr("AssertionError", "")
 	}
 	get := func(k Name, def Object) Object {
 		if v, ok := settings.Get(k); ok {
@@ -128,7 +128,7 @@ func (p *parser) readInlineImage() error {
 		if lcs > 0 && wInt && hInt {
 			n := int64(math.Ceil(float64(w)*lcs)) * int64(h)
 			if n < 0 {
-				p.pos = maxInt(p.pos, len(p.data)) // read(-n) reads everything
+				p.pos = maxInt(p.pos, len(p.data)) // a negative size reads everything
 			} else {
 				p.read(int(minInt64(n, int64(len(p.data)+1))))
 			}
@@ -155,7 +155,7 @@ func (p *parser) readInlineImage() error {
 	if p.endImageAt() {
 		return nil
 	}
-	return pyErr("PdfStreamError", "Could not extract inline image, even using fallback.")
+	return classErr("PdfStreamError", "Could not extract inline image, even using fallback.")
 }
 
 // endImageAt reads "EI" plus one byte (stepping back over that byte) and
@@ -190,7 +190,9 @@ func maxInt(a, b int) int {
 	return b
 }
 
-// checkEndImageMarker is _check_end_image_marker.
+// checkEndImageMarker reports whether "EI" followed by white space or the
+// end of the data comes next (after white space), and steps back three
+// bytes.
 func (p *parser) checkEndImageMarker() bool {
 	tok := p.readNonWhitespace()
 	var ei []byte
@@ -205,8 +207,9 @@ func (p *parser) checkEndImageMarker() bool {
 	return len(ei) == 2 || isPdfWhite(ei[2])
 }
 
-// nonWhiteAndBuffer is read_non_whitespace(stream) + stream.read(BUFFER_SIZE);
-// it returns the buffer, the position it starts at and len(read_bytes).
+// nonWhiteAndBuffer skips white space and reads the next byte plus up to
+// inlineBufferSize more; it returns the buffer, the position it starts at
+// and how many bytes the second read gave.
 func (p *parser) nonWhiteAndBuffer() ([]byte, int, int) {
 	tok := p.readNonWhitespace()
 	var buf []byte
@@ -224,7 +227,7 @@ func (p *parser) inlineASCIIHex() error {
 	for {
 		buf, start, nread := p.nonWhiteAndBuffer()
 		if len(buf) == 0 || nread == 0 {
-			return pyErr("PdfReadError", "Unexpected end of stream.")
+			return classErr("PdfReadError", "Unexpected end of stream.")
 		}
 		if i := bytes.IndexByte(buf, '>'); i >= 0 {
 			p.pos = start + i + 1
@@ -244,12 +247,12 @@ func (p *parser) inlineASCIIHex() error {
 			break
 		}
 		if len(buf) == 2 {
-			return pyErr("PdfReadError", "Unexpected end of stream.")
+			return classErr("PdfReadError", "Unexpected end of stream.")
 		}
 		p.back(2)
 	}
 	if !p.checkEndImageMarker() {
-		return pyErr("PdfReadError", "EI stream not found.")
+		return classErr("PdfReadError", "EI stream not found.")
 	}
 	return nil
 }
@@ -258,19 +261,19 @@ func (p *parser) inlineASCII85() error {
 	for {
 		buf, start, nread := p.nonWhiteAndBuffer()
 		if len(buf) == 0 || nread == 0 {
-			return pyErr("PdfReadError", "Unexpected end of stream.")
+			return classErr("PdfReadError", "Unexpected end of stream.")
 		}
 		if i := bytes.Index(buf, []byte("~>")); i >= 0 {
 			p.pos = start + i + 2
 			break
 		}
 		if len(buf) == 2 {
-			return pyErr("PdfReadError", "Unexpected end of stream.")
+			return classErr("PdfReadError", "Unexpected end of stream.")
 		}
 		p.back(2)
 	}
 	if !p.checkEndImageMarker() {
-		return pyErr("PdfReadError", "EI stream not found.")
+		return classErr("PdfReadError", "EI stream not found.")
 	}
 	return nil
 }
@@ -280,7 +283,7 @@ func (p *parser) inlineRunLength() error {
 		start := p.pos
 		buf := p.read(inlineBufferSize)
 		if len(buf) == 0 {
-			return pyErr("PdfReadError", "Unexpected end of stream.")
+			return classErr("PdfReadError", "Unexpected end of stream.")
 		}
 		i := bytes.IndexByte(buf, 0x80)
 		if i < 0 {
@@ -299,7 +302,7 @@ func (p *parser) inlineRunLength() error {
 		break
 	}
 	if !p.checkEndImageMarker() {
-		return pyErr("PdfReadError", "EI stream not found.")
+		return classErr("PdfReadError", "EI stream not found.")
 	}
 	return nil
 }
@@ -308,7 +311,7 @@ func (p *parser) inlineDCT() error {
 	read := func(n int) ([]byte, error) {
 		b := p.read(n)
 		if len(b) != n {
-			return nil, pyErr("PdfReadError", "Unexpected end of stream.")
+			return nil, classErr("PdfReadError", "Unexpected end of stream.")
 		}
 		return b, nil
 	}
@@ -330,7 +333,7 @@ func (p *parser) inlineDCT() error {
 		case m == 0x00:
 		case m == 0xD9:
 			if !p.checkEndImageMarker() {
-				return pyErr("PdfReadError", "EI stream not found.")
+				return classErr("PdfReadError", "EI stream not found.")
 			}
 			return nil
 		case (m >= 0xC0 && m <= 0xC7) || (m >= 0xC9 && m <= 0xCF) || (m >= 0xDA && m <= 0xDF) ||
@@ -341,8 +344,8 @@ func (p *parser) inlineDCT() error {
 			}
 			n := int(sz[0])*256 + int(sz[1]) - 2
 			if n < 0 {
-				// read(negative) returns everything left, never n bytes
-				return pyErr("PdfReadError", "Unexpected end of stream.")
+				// a negative size would read everything left, never n bytes
+				return classErr("PdfReadError", "Unexpected end of stream.")
 			}
 			if _, err := read(n); err != nil {
 				return err
@@ -351,14 +354,14 @@ func (p *parser) inlineDCT() error {
 	}
 }
 
-// inlineDefault is extract_inline_default: it leaves the stream on the "E"
-// of the "EI" that ends the image.
+// inlineDefault finds the end of an image without a known data length: it
+// leaves the stream on the "E" of the "EI" that ends the image.
 func (p *parser) inlineDefault() error {
 	bufStart := p.pos
 	i := p.pos
 	for {
 		if bufStart >= len(p.data) {
-			return pyErr("PdfReadError", "Unexpected end of stream.")
+			return classErr("PdfReadError", "Unexpected end of stream.")
 		}
 		bufEnd := bufStart + inlineBufferSize
 		if bufEnd > len(p.data) {
@@ -375,7 +378,7 @@ func (p *parser) inlineDefault() error {
 			bufStart, i = bufEnd, bufEnd
 			continue
 		}
-		next := e + 1 // saved_pos: a rejected candidate restarts the buffer here
+		next := e + 1 // a rejected candidate restarts the buffer here
 		if e+1 >= len(p.data) || p.data[e+1] != 'I' {
 			bufStart, i = next, next
 			continue
@@ -411,7 +414,8 @@ func (p *parser) inlineDefault() error {
 	}
 }
 
-// followedByBinaryData is is_followed_by_binary_data.
+// followedByBinaryData reports whether the (up to) 10 bytes at pos look like
+// image data rather than a content stream operator.
 func followedByBinaryData(data []byte, pos int) bool {
 	if pos >= len(data) {
 		return false

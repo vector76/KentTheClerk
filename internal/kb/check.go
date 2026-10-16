@@ -10,8 +10,8 @@ import (
 
 	kent "kenttheclerk"
 	"kenttheclerk/internal/argparse"
+	"kenttheclerk/internal/dyn"
 	"kenttheclerk/internal/pin"
-	"kenttheclerk/internal/py"
 )
 
 var (
@@ -23,18 +23,18 @@ var (
 
 // pathKey identifies a resolved path for comparison, as Path equality does (case-insensitive on Windows).
 func pathKey(p string) string {
-	p = py.Resolve(p)
-	if py.Windows {
-		return py.Lower(p)
+	p = dyn.Resolve(p)
+	if dyn.Windows {
+		return dyn.Lower(p)
 	}
 	return p
 }
 
 func listOf(v any) []any {
-	if !py.Truthy(v) {
+	if !dyn.Truthy(v) {
 		return nil
 	}
-	return py.Iter(v)
+	return dyn.Iter(v)
 }
 
 func runCheck(ns argparse.Namespace) int {
@@ -59,7 +59,7 @@ func runCheck(ns argparse.Namespace) int {
 
 	// resolve is same-session resolution by default; background citations may resolve through the
 	// fork's ancestry chain (S-0034); attestation and proposal turns may not (S-0032).
-	resolve := func(ptrStr any, throughAncestry bool) (*Session, *py.Dict) {
+	resolve := func(ptrStr any, throughAncestry bool) (*Session, *dyn.Dict) {
 		p, ok := tryParsePointer(strArg(ptrStr))
 		if !ok {
 			return nil, nil
@@ -77,17 +77,17 @@ func runCheck(ns argparse.Namespace) int {
 	// fork ancestry
 	for _, s := range sessions.Values() {
 		bp := s.BranchPoint()
-		if !py.Truthy(bp) {
+		if !dyn.Truthy(bp) {
 			continue
 		}
 		chain := ancestry(sessions, s)
 		if len(chain) == 0 {
 			warnf("session %s: forked from turn %s, which is in no snapshot "+
-				"(parent not snapshotted, or its snapshot predates the branch point)", py.Head(s.ID(), 8), py.Head(py.AsStr(bp), 8))
-		} else if py.Equal(s.ModeValue(), "on-record") {
+				"(parent not snapshotted, or its snapshot predates the branch point)", dyn.Head(s.ID(), 8), dyn.Head(dyn.AsStr(bp), 8))
+		} else if dyn.Equal(s.ModeValue(), "on-record") {
 			for _, a := range chain {
-				if !py.Equal(a.s.ModeValue(), "on-record") {
-					errorf("session %s is on-record but its ancestor %s is %s (%s)", py.Head(s.ID(), 8), py.Head(a.s.ID(), 8), a.s.Mode(), rule("fork-ancestry"))
+				if !dyn.Equal(a.s.ModeValue(), "on-record") {
+					errorf("session %s is on-record but its ancestor %s is %s (%s)", dyn.Head(s.ID(), 8), dyn.Head(a.s.ID(), 8), a.s.Mode(), rule("fork-ancestry"))
 				}
 			}
 		}
@@ -96,54 +96,54 @@ func runCheck(ns argparse.Namespace) int {
 	// documents (S-0038, S-0039)
 	referenced := map[string]bool{}
 	for _, s := range sessions.Values() {
-		if s.Kind() != "document" || py.Truthy(s.Header.Get("scrubbed")) {
+		if s.Kind() != "document" || dyn.Truthy(s.Header.Get("scrubbed")) {
 			continue
 		}
-		o := py.AsDict(py.Or(s.Header.Get("original"), py.NewDict()))
-		h := py.Str(py.Or(o.Get("hash"), ""))
+		o := dyn.AsDict(dyn.Or(s.Header.Get("original"), dyn.NewDict()))
+		h := dyn.Str(dyn.Or(o.Get("hash"), ""))
 		if !originalHashRE.MatchString(h) {
-			errorf("document %s: header has a missing or malformed original hash", py.Head(s.ID(), 8))
+			errorf("document %s: header has a missing or malformed original hash", dyn.Head(s.ID(), 8))
 			continue
 		}
 		hexdigest := strings.SplitN(h, ":", 2)[1]
-		relp := py.Or(o.Get("path"), "")
-		relS := py.AsStr(relp)
+		relp := dyn.Or(o.Get("path"), "")
+		relS := dyn.AsStr(relp)
 		var opath string
-		if py.Equal(s.ModeValue(), "on-record") {
+		if dyn.Equal(s.ModeValue(), "on-record") {
 			opath = filepath.Join(filepath.Dir(s.Path), relS)
 		} else {
 			opath = filepath.Join(root, "off-record", relS)
 		}
-		m := originalNameRE.FindStringSubmatch(py.Name(opath))
+		m := originalNameRE.FindStringSubmatch(dyn.Name(opath))
 		if m == nil || m[1] != hexdigest {
-			errorf("document %s: original path %s is not named by its hash (%s)", py.Head(s.ID(), 8), py.StrRepr(relS), rule("frozen-projection"))
+			errorf("document %s: original path %s is not named by its hash (%s)", dyn.Head(s.ID(), 8), dyn.StrRepr(relS), rule("frozen-projection"))
 		}
-		if !py.IsFile(opath) {
-			errorf("document %s: original %s is missing", py.Head(s.ID(), 8), relS)
+		if !dyn.IsFile(opath) {
+			errorf("document %s: original %s is missing", dyn.Head(s.ID(), 8), relS)
 		} else {
 			referenced[pathKey(opath)] = true
 			actual := sha256File(opath)
 			if actual != hexdigest {
 				errorf("document %s: original %s hashes to %s…, not its name; "+
-					"the bytes were damaged or modified (%s)", py.Head(s.ID(), 8), relS, actual[:12], rule("frozen-projection"))
+					"the bytes were damaged or modified (%s)", dyn.Head(s.ID(), 8), relS, actual[:12], rule("frozen-projection"))
 			}
 		}
 		for _, t := range s.Turns {
-			if !py.Equal(t.Get("role"), "document") || !py.Equal(t.Get("author"), "document") {
+			if !dyn.Equal(t.Get("role"), "document") || !dyn.Equal(t.Get("author"), "document") {
 				u := getOr(t, "uuid", "?")
-				errorf("document %s: chunk %s is not role/author 'document'", py.Head(s.ID(), 8), py.Head(py.AsStr(u), 8))
+				errorf("document %s: chunk %s is not role/author 'document'", dyn.Head(s.ID(), 8), dyn.Head(dyn.AsStr(u), 8))
 			}
 		}
-		if !py.Truthy(s.Header.Get("extractor")) {
-			errorf("document %s: header has no extractor", py.Head(s.ID(), 8))
+		if !dyn.Truthy(s.Header.Get("extractor")) {
+			errorf("document %s: header has no extractor", dyn.Head(s.ID(), 8))
 		}
 	}
 	for _, mode := range []string{"on-record", "off-record"} {
 		d := originalsDir(root, mode)
-		if py.IsDir(d) {
-			for _, e := range py.Scandir(d) {
+		if dyn.IsDir(d) {
+			for _, e := range dyn.Scandir(d) {
 				p := filepath.Join(d, e.Name())
-				if py.IsFile(p) && !referenced[pathKey(p)] {
+				if dyn.IsFile(p) && !referenced[pathKey(p)] {
 					warnf("original %s is referenced by no projection", rel(p, root))
 				}
 			}
@@ -158,9 +158,9 @@ func runCheck(ns argparse.Namespace) int {
 		name := filepath.Base(st.Path)
 		sidV := st.Meta.Get("id")
 		sid, isStr := sidV.(string)
-		if !py.Truthy(sidV) || !isStr || !humanIDRE.MatchString(sid) {
-			if py.Truthy(sidV) && !isStr {
-				py.Raise("TypeError", "expected string or bytes-like object, got '%s'", py.TypeName(sidV))
+		if !dyn.Truthy(sidV) || !isStr || !humanIDRE.MatchString(sid) {
+			if dyn.Truthy(sidV) && !isStr {
+				dyn.Raise("TypeError", "expected a string, got %s", dyn.TypeName(sidV))
 			}
 			errorf("%s: missing or malformed id", name)
 			continue
@@ -174,21 +174,21 @@ func runCheck(ns argparse.Namespace) int {
 		ids[sid] = name
 		// only the sequential ids given before S-0149 can leave a gap; a random id has a letter
 		if digitsRE.MatchString(sid) {
-			n, _ := py.ParseInt(sid[2:])
+			n, _ := dyn.ParseInt(sid[2:])
 			nums = append(nums, int(n.Int64()))
 		}
 		statementOverrideChecks(st, overrides, errorf)
-		scrubbed := py.Truthy(st.Meta.Get("scrubbed"))
-		if !py.Truthy(st.Meta.Get("title")) {
+		scrubbed := dyn.Truthy(st.Meta.Get("scrubbed"))
+		if !dyn.Truthy(st.Meta.Get("title")) {
 			errorf("%s: missing title (%s)", sid, rule("title-and-answers"))
 		}
-		if py.Strip(st.Body) == "" {
+		if dyn.Strip(st.Body) == "" {
 			errorf("%s: empty body", sid)
 		}
-		if py.Strip(py.Str(py.Or(st.Meta.Get("answers"), ""))) == "" {
+		if dyn.Strip(dyn.Str(dyn.Or(st.Meta.Get("answers"), ""))) == "" {
 			var versions []any
 			for _, a := range listOf(st.Meta.Get("attestations")) {
-				if v := py.AsDict(a).Get("system_version"); py.Truthy(v) {
+				if v := dyn.AsDict(a).Get("system_version"); dyn.Truthy(v) {
 					versions = append(versions, v)
 				}
 			}
@@ -201,43 +201,43 @@ func runCheck(ns argparse.Namespace) int {
 
 		// proposal / verified copy
 		prop := st.Meta.Get("proposed_in")
-		if !py.Truthy(prop) {
+		if !dyn.Truthy(prop) {
 			errorf("%s: missing proposed_in", sid)
 		} else {
 			s, t := resolve(prop, false)
 			switch {
 			case t == nil:
-				errorf("%s: proposed_in %s does not resolve", sid, py.Str(prop))
+				errorf("%s: proposed_in %s does not resolve", sid, dyn.Str(prop))
 			case s.Kind() == "document":
-				errorf("%s: proposed_in %s is a document chunk; documents cannot attest (%s)", sid, py.Str(prop), rule("documents-cannot-attest"))
+				errorf("%s: proposed_in %s is a document chunk; documents cannot attest (%s)", sid, dyn.Str(prop), rule("documents-cannot-attest"))
 			default:
-				if !py.Equal(s.ModeValue(), "on-record") {
-					errorf("%s: proposed_in %s is in a %s session (%s)", sid, py.Str(prop), s.Mode(), rule("on-record-only"))
+				if !dyn.Equal(s.ModeValue(), "on-record") {
+					errorf("%s: proposed_in %s is in a %s session (%s)", sid, dyn.Str(prop), s.Mode(), rule("on-record-only"))
 				}
 				modified := false
 				for _, a := range listOf(st.Meta.Get("attestations")) {
-					if py.Equal(py.AsDict(a).Get("form"), "agreed-with-modification") {
+					if dyn.Equal(dyn.AsDict(a).Get("form"), "agreed-with-modification") {
 						modified = true
 					}
 				}
 				if modified {
-					if !py.Truthy(st.Meta.Get("modified_in")) {
+					if !dyn.Truthy(st.Meta.Get("modified_in")) {
 						errorf("%s: agreed-with-modification but no modified_in turn", sid)
 					} else {
 						_, mt := resolve(st.Meta.Get("modified_in"), false)
-						if mt == nil || !py.Equal(item(mt, "role"), "user") {
-							errorf("%s: modified_in %s does not resolve to a human turn", sid, py.Str(st.Meta.Get("modified_in")))
+						if mt == nil || !dyn.Equal(item(mt, "role"), "user") {
+							errorf("%s: modified_in %s does not resolve to a human turn", sid, dyn.Str(st.Meta.Get("modified_in")))
 						}
 					}
 				} else if scrubbedTurn(t) {
 					if !scrubbed {
-						warnf("%s: the turn it was proposed in, %s, was scrubbed; review whether it should stand (%s)", sid, py.Str(prop), rule("override-scrub"))
+						warnf("%s: the turn it was proposed in, %s, was scrubbed; review whether it should stand (%s)", sid, dyn.Str(prop), rule("override-scrub"))
 					}
 				} else if !scrubbed && !textContained(st.Body, turnText(t)) {
-					errorf("%s: body text is not contained verbatim in proposal turn %s (%s)", sid, py.Str(prop), rule("exact-text"))
+					errorf("%s: body text is not contained verbatim in proposal turn %s (%s)", sid, dyn.Str(prop), rule("exact-text"))
 				}
-				if !py.Equal(st.Meta.Get("originator"), item(t, "author")) {
-					errorf("%s: originator %s != proposal turn author %s", sid, py.Repr(st.Meta.Get("originator")), py.Repr(item(t, "author")))
+				if !dyn.Equal(st.Meta.Get("originator"), item(t, "author")) {
+					errorf("%s: originator %s != proposal turn author %s", sid, dyn.Repr(st.Meta.Get("originator")), dyn.Repr(item(t, "author")))
 				}
 			}
 		}
@@ -248,49 +248,49 @@ func runCheck(ns argparse.Namespace) int {
 		}
 		var seenBy []any
 		for _, av := range atts {
-			a := py.AsDict(av)
+			a := dyn.AsDict(av)
 			by, turn, form := a.Get("by"), a.Get("turn"), a.Get("form")
 			if fs, ok := form.(string); !ok || !in(fs, attestationForms) {
-				errorf("%s: attestation form %s invalid", sid, py.Repr(form))
+				errorf("%s: attestation form %s invalid", sid, dyn.Repr(form))
 			}
 			for _, x := range seenBy {
-				if py.Equal(x, by) {
-					errorf("%s: duplicate attestation by %s (%s)", sid, py.Str(by), rule("attest-once"))
+				if dyn.Equal(x, by) {
+					errorf("%s: duplicate attestation by %s (%s)", sid, dyn.Str(by), rule("attest-once"))
 					break
 				}
 			}
 			seenBy = append(seenBy, by)
-			if !py.Truthy(turn) {
-				errorf("%s: attestation by %s has no turn", sid, py.Str(by))
+			if !dyn.Truthy(turn) {
+				errorf("%s: attestation by %s has no turn", sid, dyn.Str(by))
 				continue
 			}
 			s, t := resolve(turn, false)
 			if t == nil {
-				errorf("%s: attestation turn %s does not resolve", sid, py.Str(turn))
+				errorf("%s: attestation turn %s does not resolve", sid, dyn.Str(turn))
 				continue
 			}
 			if s.Kind() == "document" {
-				errorf("%s: attestation turn %s is a document chunk; documents cannot attest (%s)", sid, py.Str(turn), rule("documents-cannot-attest"))
+				errorf("%s: attestation turn %s is a document chunk; documents cannot attest (%s)", sid, dyn.Str(turn), rule("documents-cannot-attest"))
 				continue
 			}
-			if !py.Equal(s.ModeValue(), "on-record") {
-				errorf("%s: attestation turn %s is in a %s session (must be on-record) (%s)", sid, py.Str(turn), s.Mode(), rule("on-record-only"))
+			if !dyn.Equal(s.ModeValue(), "on-record") {
+				errorf("%s: attestation turn %s is in a %s session (must be on-record) (%s)", sid, dyn.Str(turn), s.Mode(), rule("on-record-only"))
 			}
-			if !py.Equal(item(t, "role"), "user") || !py.Equal(item(t, "author"), by) {
-				errorf("%s: attestation turn %s is authored by %s, not %s (%s)", sid, py.Str(turn), py.Repr(item(t, "author")), py.Repr(by), rule("own-turn"))
+			if !dyn.Equal(item(t, "role"), "user") || !dyn.Equal(item(t, "author"), by) {
+				errorf("%s: attestation turn %s is authored by %s, not %s (%s)", sid, dyn.Str(turn), dyn.Repr(item(t, "author")), dyn.Repr(by), rule("own-turn"))
 			}
-			if py.Equal(form, "self") && !scrubbed && !scrubbedTurn(t) && !textContained(st.Body, turnText(t)) {
-				errorf("%s: self-attestation but body not contained in %s (%s)", sid, py.Str(turn), rule("exact-text"))
+			if dyn.Equal(form, "self") && !scrubbed && !scrubbedTurn(t) && !textContained(st.Body, turnText(t)) {
+				errorf("%s: self-attestation but body not contained in %s (%s)", sid, dyn.Str(turn), rule("exact-text"))
 			}
 			h, v := a.Get("system_hash"), a.Get("system_version")
-			if !py.Truthy(h) && !py.Truthy(v) {
-				unstamped = append(unstamped, sid+"/"+py.Str(by))
+			if !dyn.Truthy(h) && !dyn.Truthy(v) {
+				unstamped = append(unstamped, sid+"/"+dyn.Str(by))
 			} else {
-				if !py.Truthy(v) {
-					errorf("%s: attestation by %s has system_hash but no system_version (%s)", sid, py.Str(by), rule("system-stamp"))
+				if !dyn.Truthy(v) {
+					errorf("%s: attestation by %s has system_hash but no system_version (%s)", sid, dyn.Str(by), rule("system-stamp"))
 				}
-				if !py.Truthy(h) || !systemHashRE.MatchString(py.Str(h)) {
-					errorf("%s: attestation by %s has a missing or malformed system_hash (%s)", sid, py.Str(by), rule("system-stamp"))
+				if !dyn.Truthy(h) || !systemHashRE.MatchString(dyn.Str(h)) {
+					errorf("%s: attestation by %s has a missing or malformed system_hash (%s)", sid, dyn.Str(by), rule("system-stamp"))
 				}
 			}
 		}
@@ -298,7 +298,7 @@ func runCheck(ns argparse.Namespace) int {
 		for _, c := range listOf(st.Meta.Get("cites")) {
 			_, t := resolve(c, true)
 			if t == nil {
-				warnf("%s: background citation %s does not resolve (off-record or missing)", sid, py.Str(c))
+				warnf("%s: background citation %s does not resolve (off-record or missing)", sid, dyn.Str(c))
 			}
 		}
 	}
@@ -309,9 +309,9 @@ func runCheck(ns argparse.Namespace) int {
 		name := filepath.Base(st.Path)
 		aidV := st.Meta.Get("id")
 		aid, isStr := aidV.(string)
-		if !py.Truthy(aidV) || !isStr || !agentIDRE.MatchString(aid) {
-			if py.Truthy(aidV) && !isStr {
-				py.Raise("TypeError", "expected string or bytes-like object, got '%s'", py.TypeName(aidV))
+		if !dyn.Truthy(aidV) || !isStr || !agentIDRE.MatchString(aid) {
+			if dyn.Truthy(aidV) && !isStr {
+				dyn.Raise("TypeError", "expected a string, got %s", dyn.TypeName(aidV))
 			}
 			errorf("agent/%s: missing or malformed id", name)
 			continue
@@ -325,53 +325,53 @@ func runCheck(ns argparse.Namespace) int {
 		ids[aid] = name
 		statementOverrideChecks(st, overrides, errorf)
 		for _, k := range []string{"title", "answers", "author"} {
-			if py.Strip(py.Str(py.Or(st.Meta.Get(k), ""))) == "" {
+			if dyn.Strip(dyn.Str(dyn.Or(st.Meta.Get(k), ""))) == "" {
 				errorf("%s: missing %s", aid, k)
 			}
 		}
-		if py.Strip(st.Body) == "" {
+		if dyn.Strip(st.Body) == "" {
 			errorf("%s: empty body", aid)
 		}
-		if py.Truthy(st.Meta.Get("attestations")) {
+		if dyn.Truthy(st.Meta.Get("attestations")) {
 			errorf("%s: an agent statement carries no attestations (%s)", aid, rule("agent-no-attestations"))
 		}
-		if !systemHashRE.MatchString(py.Str(py.Or(st.Meta.Get("system_hash"), ""))) || !py.Truthy(st.Meta.Get("system_version")) {
+		if !systemHashRE.MatchString(dyn.Str(dyn.Or(st.Meta.Get("system_hash"), ""))) || !dyn.Truthy(st.Meta.Get("system_version")) {
 			errorf("%s: missing or malformed system stamp (%s)", aid, rule("system-stamp"))
 		}
-		madeIn := py.Or(st.Meta.Get("made_in"), "")
+		madeIn := dyn.Or(st.Meta.Get("made_in"), "")
 		s, t := resolve(madeIn, false)
 		switch {
 		case t == nil:
-			errorf("%s: made_in %s does not resolve", aid, py.Str(st.Meta.Get("made_in")))
-		case s.Kind() == "document" || !py.Equal(s.ModeValue(), "on-record"):
-			errorf("%s: made_in %s is not in an on-record conversation (%s)", aid, py.Str(st.Meta.Get("made_in")), rule("on-record-only"))
-		case !py.Equal(item(t, "author"), st.Meta.Get("author")) || !py.Equal(item(t, "role"), "assistant"):
-			errorf("%s: author %s != made_in turn author %s (%s)", aid, py.Repr(st.Meta.Get("author")), py.Repr(item(t, "author")), rule("agent-own-turn"))
+			errorf("%s: made_in %s does not resolve", aid, dyn.Str(st.Meta.Get("made_in")))
+		case s.Kind() == "document" || !dyn.Equal(s.ModeValue(), "on-record"):
+			errorf("%s: made_in %s is not in an on-record conversation (%s)", aid, dyn.Str(st.Meta.Get("made_in")), rule("on-record-only"))
+		case !dyn.Equal(item(t, "author"), st.Meta.Get("author")) || !dyn.Equal(item(t, "role"), "assistant"):
+			errorf("%s: author %s != made_in turn author %s (%s)", aid, dyn.Repr(st.Meta.Get("author")), dyn.Repr(item(t, "author")), rule("agent-own-turn"))
 		}
 		for _, xv := range listOf(st.Meta.Get("seen")) {
-			x := py.AsDict(xv)
-			s, t := resolve(py.Or(x.Get("turn"), ""), false)
-			if t == nil || s.Kind() == "document" || !py.Equal(s.ModeValue(), "on-record") {
-				errorf("%s: seen turn %s does not resolve to an on-record turn (%s)", aid, py.Str(x.Get("turn")), rule("on-record-only"))
-			} else if !py.Truthy(st.Meta.Get("scrubbed")) && !scrubbedTurn(t) && !textContained(st.Body, turnText(t)) {
-				errorf("%s: seen turn %s does not show the full text (%s)", aid, py.Str(x.Get("turn")), rule("seen-in-full"))
+			x := dyn.AsDict(xv)
+			s, t := resolve(dyn.Or(x.Get("turn"), ""), false)
+			if t == nil || s.Kind() == "document" || !dyn.Equal(s.ModeValue(), "on-record") {
+				errorf("%s: seen turn %s does not resolve to an on-record turn (%s)", aid, dyn.Str(x.Get("turn")), rule("on-record-only"))
+			} else if !dyn.Truthy(st.Meta.Get("scrubbed")) && !scrubbedTurn(t) && !textContained(st.Body, turnText(t)) {
+				errorf("%s: seen turn %s does not show the full text (%s)", aid, dyn.Str(x.Get("turn")), rule("seen-in-full"))
 			}
 		}
-		if wi := st.Meta.Get("withdrawn_in"); py.Truthy(wi) {
+		if wi := st.Meta.Get("withdrawn_in"); dyn.Truthy(wi) {
 			s, t := resolve(wi, false)
-			if t == nil || !py.Equal(s.ModeValue(), "on-record") {
-				errorf("%s: withdrawn_in %s does not resolve to an on-record turn (%s)", aid, py.Str(wi), rule("on-record-only"))
+			if t == nil || !dyn.Equal(s.ModeValue(), "on-record") {
+				errorf("%s: withdrawn_in %s does not resolve to an on-record turn (%s)", aid, dyn.Str(wi), rule("on-record-only"))
 			}
 		}
 		for _, r := range []string{"supersedes", "amends", "clarifies"} {
-			if v := st.Meta.Get(r); py.Truthy(v) && !strings.HasPrefix(py.Str(v), "A-") {
-				errorf("%s: %s %s, a human statement; agents revise only agent statements (%s)", aid, r, py.Str(v), rule("agent-revision"))
+			if v := st.Meta.Get(r); dyn.Truthy(v) && !strings.HasPrefix(dyn.Str(v), "A-") {
+				errorf("%s: %s %s, a human statement; agents revise only agent statements (%s)", aid, r, dyn.Str(v), rule("agent-revision"))
 			}
 		}
 		for _, c := range listOf(st.Meta.Get("cites")) {
 			_, t := resolve(c, true)
 			if t == nil {
-				warnf("%s: background citation %s does not resolve (off-record or missing)", aid, py.Str(c))
+				warnf("%s: background citation %s does not resolve (off-record or missing)", aid, dyn.Str(c))
 			}
 		}
 	}
@@ -387,25 +387,25 @@ func runCheck(ns argparse.Namespace) int {
 	lookup := func(v any) *Statement {
 		k, ok := hashKey(v)
 		if !ok {
-			py.Raise("TypeError", "unhashable type: '%s'", py.TypeName(v))
+			dyn.Raise("TypeError", "%s cannot be used as a key", dyn.TypeName(v))
 		}
 		return byID[k]
 	}
 	for _, st := range all {
 		sid := st.Meta.Get("id")
-		inForce := !py.Truthy(st.Meta.Get("superseded_by")) && !py.Truthy(st.Meta.Get("withdrawn_in"))
+		inForce := !dyn.Truthy(st.Meta.Get("superseded_by")) && !dyn.Truthy(st.Meta.Get("withdrawn_in"))
 		for _, x := range listOf(st.Meta.Get("rests_on")) {
 			dep := lookup(x)
 			if dep == nil {
-				errorf("%s: rests_on %s, which does not exist", py.Str(sid), py.Str(x))
-			} else if inForce && py.Truthy(dep.Meta.Get("scrubbed")) {
-				warnf("%s: rests on %s, which was scrubbed; review whether it should stand (%s)", py.Str(sid), py.Str(x), rule("override-scrub"))
-			} else if inForce && strings.HasPrefix(py.Str(sid), "A-") && (py.Truthy(dep.Meta.Get("superseded_by")) || py.Truthy(dep.Meta.Get("withdrawn_in"))) {
+				errorf("%s: rests_on %s, which does not exist", dyn.Str(sid), dyn.Str(x))
+			} else if inForce && dyn.Truthy(dep.Meta.Get("scrubbed")) {
+				warnf("%s: rests on %s, which was scrubbed; review whether it should stand (%s)", dyn.Str(sid), dyn.Str(x), rule("override-scrub"))
+			} else if inForce && strings.HasPrefix(dyn.Str(sid), "A-") && (dyn.Truthy(dep.Meta.Get("superseded_by")) || dyn.Truthy(dep.Meta.Get("withdrawn_in"))) {
 				gone := "withdrawn"
-				if sb := dep.Meta.Get("superseded_by"); py.Truthy(sb) {
-					gone = "superseded by " + py.Str(sb)
+				if sb := dep.Meta.Get("superseded_by"); dyn.Truthy(sb) {
+					gone = "superseded by " + dyn.Str(sb)
 				}
-				warnf("%s: rests on %s, which is %s; review in cleanup (%s)", py.Str(sid), py.Str(x), gone, rule("agent-revision"))
+				warnf("%s: rests on %s, which is %s; review in cleanup (%s)", dyn.Str(sid), dyn.Str(x), gone, rule("agent-revision"))
 			}
 		}
 	}
@@ -416,26 +416,26 @@ func runCheck(ns argparse.Namespace) int {
 		sid := st.Meta.Get("id")
 		for _, rm := range marks {
 			relName, mark := rm[0], rm[1]
-			if old := st.Meta.Get(relName); py.Truthy(old) {
+			if old := st.Meta.Get(relName); dyn.Truthy(old) {
 				if o := lookup(old); o == nil {
-					errorf("%s: %s %s, which does not exist", py.Str(sid), relName, py.Str(old))
+					errorf("%s: %s %s, which does not exist", dyn.Str(sid), relName, dyn.Str(old))
 				} else {
 					m := o.Meta.Get(mark)
 					var ok bool
 					if relName == "supersedes" {
-						ok = py.Equal(m, sid)
+						ok = dyn.Equal(m, sid)
 					} else {
-						ok = containsValue(py.Or(m, []any{}), sid)
+						ok = containsValue(dyn.Or(m, []any{}), sid)
 					}
 					if !ok {
-						errorf("%s: not marked %s %s", py.Str(old), mark, py.Str(sid))
+						errorf("%s: not marked %s %s", dyn.Str(old), mark, dyn.Str(sid))
 					}
 				}
 			}
 			m := st.Meta.Get(mark)
 			var targets []any
 			if relName == "supersedes" {
-				if py.Truthy(m) {
+				if dyn.Truthy(m) {
 					targets = []any{m}
 				}
 			} else {
@@ -443,32 +443,32 @@ func runCheck(ns argparse.Namespace) int {
 			}
 			for _, nw := range targets {
 				n := lookup(nw)
-				if n == nil || !py.Equal(n.Meta.Get(relName), sid) {
-					errorf("%s: %s %s is not reciprocal", py.Str(sid), mark, py.Str(nw))
+				if n == nil || !dyn.Equal(n.Meta.Get(relName), sid) {
+					errorf("%s: %s %s is not reciprocal", dyn.Str(sid), mark, dyn.Str(nw))
 				}
 			}
 		}
 		// only the author changes a human statement (from 0.10.0; earlier supersessions were claims anyone
 		// could record)
-		if strings.HasPrefix(py.Str(sid), "S-") && madeFrom(st, []int64{0, 10, 0}) {
+		if strings.HasPrefix(dyn.Str(sid), "S-") && madeFrom(st, []int64{0, 10, 0}) {
 			for _, r := range relations {
 				old := st.Meta.Get(r)
-				if o := lookup(py.Or(old, "")); py.Truthy(old) && o != nil && strings.HasPrefix(py.Str(old), "S-") && !mayChange(authorOf(st), o) {
-					errorf("%s: %s %s, whose author is %s, not %s (%s)", py.Str(sid), r, py.Str(old), py.Repr(authorOf(o)), py.Repr(authorOf(st)), rule("author-only"))
+				if o := lookup(dyn.Or(old, "")); dyn.Truthy(old) && o != nil && strings.HasPrefix(dyn.Str(old), "S-") && !mayChange(authorOf(st), o) {
+					errorf("%s: %s %s, whose author is %s, not %s (%s)", dyn.Str(sid), r, dyn.Str(old), dyn.Repr(authorOf(o)), dyn.Repr(authorOf(st)), rule("author-only"))
 				}
 			}
 		}
 		nMarks := len(listOf(st.Meta.Get("amended_by"))) + len(listOf(st.Meta.Get("clarified_by")))
-		if nMarks > 2 && !py.Truthy(st.Meta.Get("superseded_by")) {
-			warnf("%s: %d amendment/clarification marks; consider consolidating by supersession (%s)", py.Str(sid), nMarks, rule("change-by-supersession"))
+		if nMarks > 2 && !dyn.Truthy(st.Meta.Get("superseded_by")) {
+			warnf("%s: %d amendment/clarification marks; consider consolidating by supersession (%s)", dyn.Str(sid), nMarks, rule("change-by-supersession"))
 		}
 	}
 
 	// context_for and the extra_context mark it sets, both ways
 	incoming := map[string]bool{}
 	for _, st := range all {
-		sid := py.Str(st.Meta.Get("id"))
-		if v := st.Meta.Get("context_for"); py.Truthy(v) {
+		sid := dyn.Str(st.Meta.Get("id"))
+		if v := st.Meta.Get("context_for"); dyn.Truthy(v) {
 			if _, ok := v.([]any); !ok {
 				errorf("%s: context_for is not a list of entries (%s)", sid, rule("context-for"))
 				continue
@@ -494,13 +494,13 @@ func runCheck(ns argparse.Namespace) int {
 		}
 	}
 	for _, st := range all {
-		sid := py.Str(st.Meta.Get("id"))
+		sid := dyn.Str(st.Meta.Get("id"))
 		v, present := st.Meta.Lookup(extraContextKey)
 		if !present {
 			continue
 		}
 		if v != true {
-			errorf("%s: %s is %s; the mark is only ever true", sid, extraContextKey, py.Repr(v))
+			errorf("%s: %s is %s; the mark is only ever true", sid, extraContextKey, dyn.Repr(v))
 		} else if !incoming[sid] {
 			errorf("%s: marked %s, but no statement is context for it", sid, extraContextKey)
 		}
@@ -547,7 +547,7 @@ func runCheck(ns argparse.Namespace) int {
 	}
 	unseen := 0
 	for _, a := range agents {
-		if !py.Truthy(a.Meta.Get("seen")) {
+		if !dyn.Truthy(a.Meta.Get("seen")) {
 			unseen++
 		}
 	}
@@ -565,8 +565,8 @@ func madeFrom(st *Statement, v []int64) bool {
 	if len(atts) == 0 {
 		return false
 	}
-	d, ok := atts[0].(*py.Dict)
-	if !ok || !py.Truthy(d.Get("system_version")) {
+	d, ok := atts[0].(*dyn.Dict)
+	if !ok || !dyn.Truthy(d.Get("system_version")) {
 		return false
 	}
 	return tupleGE(versionTuple(d.Get("system_version")), v)
@@ -576,10 +576,10 @@ func madeFrom(st *Statement, v []int64) bool {
 // substring of it).
 func containsValue(v any, x any) bool {
 	if s, ok := v.(string); ok {
-		return strings.Contains(s, py.AsStr(x))
+		return strings.Contains(s, dyn.AsStr(x))
 	}
-	for _, it := range py.Iter(v) {
-		if py.Equal(it, x) {
+	for _, it := range dyn.Iter(v) {
+		if dyn.Equal(it, x) {
 			return true
 		}
 	}

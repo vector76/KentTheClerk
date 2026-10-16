@@ -3,7 +3,7 @@ package htmltext
 import (
 	"fmt"
 
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 // The tokenizer: a tolerant HTML tokenizer that unescapes character references in text and
@@ -183,7 +183,7 @@ func (p *parser) parseMarkedSection(i int) int {
 	case "if", "else", "endif":
 		_, end = searchClose(p.raw, i+3, "]")
 	default:
-		p.fail("unknown status keyword %s in marked section", py.StrRepr(string(p.raw[i+3:j])))
+		p.fail("unknown status keyword %s in marked section", dyn.StrRepr(string(p.raw[i+3:j])))
 	}
 	return end
 }
@@ -198,7 +198,7 @@ func (p *parser) scanName(i, declstartpos int) (string, int) {
 		return "", -1
 	}
 	if !isASCIILetter(raw[i]) {
-		p.fail("expected name token at %s", py.StrRepr(string(slice(raw, declstartpos, declstartpos+20))))
+		p.fail("expected name token at %s", dyn.StrRepr(string(slice(raw, declstartpos, declstartpos+20))))
 	}
 	q := i + 1
 	for q < n {

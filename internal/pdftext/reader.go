@@ -40,7 +40,7 @@ type raised struct{ err error }
 
 func raise(err error) { panic(raised{err}) }
 
-// catch runs f, turning a raised exception into an error.
+// catch runs f, turning a raised error into its result.
 func catch(f func() error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -75,7 +75,7 @@ func (d *Document) resolve(o Object) Object {
 	return v
 }
 
-// resolveOpt returns dict[key] resolved, or nil when absent.
+// resolveOpt returns the value of key in dd resolved, or nil when absent.
 func (d *Document) resolveOpt(dd *Dict, key Name) Object {
 	v, ok := dd.Get(key)
 	if !ok {
@@ -115,15 +115,15 @@ func openDocument(data []byte) (*Document, error) {
 
 func hasPrefix(b []byte, s string) bool { return bytes.HasPrefix(b, []byte(s)) }
 
-// pyStripBytes is bytes.strip().
-func pyStripBytes(b []byte) []byte { return bytes.Trim(b, " \t\n\r\x0b\x0c") }
+// trimSpaceBytes trims ASCII whitespace from both ends.
+func trimSpaceBytes(b []byte) []byte { return bytes.Trim(b, " \t\n\r\x0b\x0c") }
 
-// pyIntLoose is int(bytes) in base 10.
-func pyIntLoose(b []byte) (int64, error) {
-	s := string(pyStripBytes(b))
+// parseIntLoose parses a signed decimal integer, ignoring surrounding ASCII whitespace.
+func parseIntLoose(b []byte) (int64, error) {
+	s := string(trimSpaceBytes(b))
 	v, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		return 0, pyErr("ValueError", "invalid literal for int() with base 10: %q", s)
+		return 0, classErr("ValueError", "invalid literal for int() with base 10: %q", s)
 	}
 	return v, nil
 }
@@ -133,7 +133,7 @@ func pyIntLoose(b []byte) (int64, error) {
 // break).
 func (p *parser) readPreviousLine() ([]byte, error) {
 	if p.pos == 0 {
-		return nil, pyErr("PdfStreamError", "Stream has ended unexpectedly")
+		return nil, classErr("PdfStreamError", "Stream has ended unexpectedly")
 	}
 	isCRLF := func(c byte) bool { return c == '\r' || c == '\n' }
 	i := p.pos - 1
@@ -154,15 +154,15 @@ func (p *parser) readPreviousLine() ([]byte, error) {
 
 func (d *Document) read() error {
 	if len(d.data) == 0 {
-		return pyErr("EmptyFileError", "Cannot read an empty file")
+		return classErr("EmptyFileError", "Cannot read an empty file")
 	}
 	p := newParser(d, len(d.data))
-	// _find_eof_marker
+	// find the %%EOF marker, reading lines backwards from the end
 	var line []byte
 	first := true
 	for !hasPrefix(line, "%%EOF") {
 		if len(line) != 0 && first {
-			s := pyStripBytes(line)
+			s := trimSpaceBytes(line)
 			trunc := false
 			for _, tr := range []string{"%%EO", "%%E", "%%", "%"} {
 				if bytes.HasSuffix(s, []byte(tr)) {
@@ -200,10 +200,10 @@ func (d *Document) read() error {
 			for _, id := range sortedKeys(entries) {
 				off, ok := entries[id]
 				if !ok {
-					return pyErr("KeyError", "%d", id)
+					return classErr("KeyError", "%d", id)
 				}
 				if off < 0 {
-					return pyErr("ValueError", "negative seek value %d", off)
+					return classErr("ValueError", "negative seek value %d", off)
 				}
 				q := newParser(d, off)
 				pid, _, err := d.readObjectHeader(q)
@@ -217,16 +217,16 @@ func (d *Document) read() error {
 					return err
 				}
 				if d.xrefIndexBad {
-					return pyErr("TypeError", "unsupported operand type(s) for -")
+					return classErr("TypeError", "unsupported operand type(s) for -")
 				}
 				if pid == id-d.xrefIndex {
 					cur, ok := d.xref[gen]
 					if !ok {
-						return pyErr("KeyError", "%d", gen)
+						return classErr("KeyError", "%d", gen)
 					}
 					v, ok := cur[id]
 					if !ok {
-						return pyErr("KeyError", "%d", id)
+						return classErr("KeyError", "%d", id)
 					}
 					cur[pid] = v
 					delete(cur, id)
@@ -244,7 +244,7 @@ func (d *Document) read() error {
 		}
 		for _, id := range sortedKeys(entries) {
 			if entries[id] < 0 {
-				return pyErr("ValueError", "negative seek value %d", entries[id])
+				return classErr("ValueError", "negative seek value %d", entries[id])
 			}
 			q := newParser(d, entries[id])
 			if _, _, err := d.readObjectHeader(q); err != nil {
@@ -273,12 +273,12 @@ func (d *Document) findStartxrefPos(p *parser) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	v, err := pyIntLoose(line)
+	v, err := parseIntLoose(line)
 	if err != nil {
 		if !hasPrefix(line, "startxref") {
-			return 0, pyErr("PdfReadError", "startxref not found")
+			return 0, classErr("PdfReadError", "startxref not found")
 		}
-		v, err = pyIntLoose(line[9:])
+		v, err = parseIntLoose(line[9:])
 		if err != nil {
 			return 0, err
 		}
@@ -289,7 +289,7 @@ func (d *Document) findStartxrefPos(p *parser) (int, error) {
 		return 0, err
 	}
 	if !hasPrefix(line, "startxref") {
-		// _find_previous_startxref_pos
+		// look further back for a startxref line
 		offset := int64(-1)
 		haveOffset := false
 		for i := 0; i < 1000; i++ {
@@ -301,7 +301,7 @@ func (d *Document) findStartxrefPos(p *parser) (int, error) {
 				return 0, err
 			}
 			if !hasPrefix(l, "startxref") {
-				if o, err := pyIntLoose(l); err == nil {
+				if o, err := parseIntLoose(l); err == nil {
 					offset, haveOffset = o, true
 				} else {
 					haveOffset = false
@@ -309,7 +309,7 @@ func (d *Document) findStartxrefPos(p *parser) (int, error) {
 				continue
 			}
 			if len(l) > 9 {
-				o, err := pyIntLoose(l[9:])
+				o, err := parseIntLoose(l[9:])
 				if err != nil {
 					return 0, err
 				}
@@ -320,7 +320,7 @@ func (d *Document) findStartxrefPos(p *parser) (int, error) {
 			}
 			break
 		}
-		return 0, pyErr("PdfReadError", "startxref not found")
+		return 0, classErr("PdfReadError", "startxref not found")
 	}
 	return int(v), nil
 }
@@ -341,7 +341,7 @@ func (d *Document) getXrefIssues(startxref int) int {
 		return 1
 	}
 	if string(p.read(4)) != "xref" {
-		c := -2 // b"" initially
+		c := -2 // nothing read yet
 		for c == -2 || (c >= '0' && c <= '9') || c == ' ' || c == '\t' {
 			c = p.read1()
 			if c < 0 {
@@ -371,7 +371,7 @@ func (d *Document) readXrefTablesAndTrailers(p *parser, startxref int, issue int
 		}
 		visited[cur] = true
 		if cur < 0 {
-			return pyErr("ValueError", "negative seek value")
+			return classErr("ValueError", "negative seek value")
 		}
 		p.pos = minInt(cur, len(d.data))
 		x := p.read1()
@@ -403,7 +403,7 @@ func (d *Document) readXrefTablesAndTrailers(p *parser, startxref int, issue int
 					have = false
 					continue
 				}
-				return pyErr("PdfReadError", "Trailer cannot be read: %v", err)
+				return classErr("PdfReadError", "Trailer cannot be read: %v", err)
 			}
 			if err := d.processXrefStream(xs); err != nil {
 				return err
@@ -411,7 +411,7 @@ func (d *Document) readXrefTablesAndTrailers(p *parser, startxref int, issue int
 			if prev, ok := xs.Dict.Get("/Prev"); ok {
 				pv, isInt := d.resolve(prev).(Int)
 				if !isInt {
-					return pyErr("TypeError", "/Prev")
+					return classErr("TypeError", "/Prev")
 				}
 				cur = int(pv)
 			} else {
@@ -437,7 +437,7 @@ func (d *Document) processXrefStream(xs *Stream) error {
 	if v, ok := xs.Dict.Get("/XRefStm"); ok {
 		n, isInt := d.resolve(v).(Int)
 		if !isInt {
-			return pyErr("TypeError", "/XRefStm")
+			return classErr("TypeError", "/XRefStm")
 		}
 		q := newParser(d, int(n)+1)
 		if _, err := d.readXrefStream(q); err != nil {
@@ -465,11 +465,11 @@ func (d *Document) readXrefOtherError(p *parser, startxref int) (int, bool, erro
 	}
 	if d.trailer.Has("/Root") {
 		if err := catch(d.rebuildXrefTable); err != nil {
-			return 0, false, pyErr("PdfReadError", "Cannot rebuild xref")
+			return 0, false, classErr("PdfReadError", "Cannot rebuild xref")
 		}
 		return 0, false, nil
 	}
-	return 0, false, pyErr("PdfReadError", "Could not find xref table at specified location")
+	return 0, false, classErr("PdfReadError", "Could not find xref table at specified location")
 }
 
 func (d *Document) readXref(p *parser) (int, bool, error) {
@@ -495,7 +495,7 @@ func (d *Document) readXref(p *parser) (int, bool, error) {
 		if s, isS := o.(*Stream); isS {
 			nt = s.Dict
 		} else {
-			return 0, false, pyErr("AttributeError", "trailer is not a dictionary")
+			return 0, false, classErr("AttributeError", "trailer is not a dictionary")
 		}
 	}
 	for _, k := range nt.Keys() {
@@ -512,17 +512,18 @@ func (d *Document) readXref(p *parser) (int, bool, error) {
 	if v, ok := nt.Get("/Prev"); ok {
 		n, isInt := d.resolve(v).(Int)
 		if !isInt {
-			return 0, false, pyErr("TypeError", "/Prev")
+			return 0, false, classErr("TypeError", "/Prev")
 		}
 		return int(n), true, nil
 	}
 	return 0, false, nil
 }
 
-// readStandardXrefTable is _read_standard_xref_table; done reports a rebuild.
+// readStandardXrefTable reads a classic xref table (after "x"); done
+// reports that the table was rebuilt instead.
 func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 	if string(p.read(3)) != "ref" {
-		return false, pyErr("PdfReadError", "xref table read error")
+		return false, classErr("PdfReadError", "xref table read error")
 	}
 	p.readNonWhitespace()
 	p.back(1)
@@ -561,7 +562,7 @@ func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 			return true, nil
 		}
 		if !isInt && size > 0 {
-			return false, pyErr("TypeError", "xref num")
+			return false, classErr("TypeError", "xref num")
 		}
 		p.readNonWhitespace()
 		p.back(1)
@@ -569,7 +570,7 @@ func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 		for cnt := 0; cnt < int(size); cnt++ {
 			line := p.read(20)
 			if len(line) == 0 {
-				return false, pyErr("PdfReadError", "Unexpected empty line in Xref table.")
+				return false, classErr("PdfReadError", "Unexpected empty line in Xref table.")
 			}
 			for len(line) > 0 && (line[0] == '\r' || line[0] == '\n') {
 				before := p.pos
@@ -578,7 +579,7 @@ func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 				if p.pos <= before {
 					// Near the end of the file this realignment can stop
 					// moving; fail rather than loop forever.
-					return false, pyErr("PdfReadError", "xref table entry realignment makes no progress")
+					return false, classErr("PdfReadError", "xref table entry realignment makes no progress")
 				}
 			}
 			if len(line) > 0 {
@@ -596,8 +597,8 @@ func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 			}
 			parts := bytes.Split(head, []byte(" "))
 			if len(parts) == 2 {
-				o, e1 := pyIntLoose(parts[0])
-				g, e2 := pyIntLoose(parts[1])
+				o, e1 := parseIntLoose(parts[0])
+				g, e2 := parseIntLoose(parts[1])
 				if e1 == nil && e2 == nil {
 					offset, generation, parsed = int(o), int(g), true
 					if len(line) >= 18 {
@@ -660,7 +661,8 @@ func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 	return false, nil
 }
 
-// findPDFObjects is _find_pdf_objects.
+// findPDFObjects calls fn for every "<num> <gen> obj" in the data, with the
+// position where num starts.
 func findPDFObjects(data []byte, fn func(num, gen, start int)) {
 	idx := 0
 	for {
@@ -707,7 +709,8 @@ func loadRecoveryCache(data []byte) map[int][2]int {
 	return cache
 }
 
-// rebuildXrefTable is _rebuild_xref_table.
+// rebuildXrefTable rebuilds the xref from the "obj" headers in the file,
+// adds the objects inside object streams, and reads every trailer.
 func (d *Document) rebuildXrefTable() error {
 	d.xref = map[int]map[int]int{}
 	d.xrefOrder = nil
@@ -816,14 +819,14 @@ func (d *Document) readXrefStream(p *parser) (*Stream, error) {
 	}
 	xs, ok := o.(*Stream)
 	if !ok {
-		return nil, pyErr("TypeError", "xref stream is not a stream")
+		return nil, classErr("TypeError", "xref stream is not a stream")
 	}
 	if t, _ := xs.Dict.Get("/Type"); d.resolve(t) != Name("/XRef") {
-		return nil, pyErr("PdfReadError", "Unexpected type %v", t)
+		return nil, classErr("PdfReadError", "Unexpected type %v", t)
 	}
 	d.cache[[2]int{gen, num}] = xs
 	if !xs.Dict.Has("/Size") {
-		return nil, pyErr("PdfReadError", "Size missing from XRef stream")
+		return nil, classErr("PdfReadError", "Size missing from XRef stream")
 	}
 	var index []int
 	if io, ok := xs.Dict.Get("/Index"); ok {
@@ -831,7 +834,7 @@ func (d *Document) readXrefStream(p *parser) (*Stream, error) {
 		for _, x := range arr {
 			v, _, ok := d.num(x)
 			if !ok {
-				return nil, pyErr("TypeError", "/Index")
+				return nil, classErr("TypeError", "/Index")
 			}
 			index = append(index, int(v))
 		}
@@ -841,7 +844,7 @@ func (d *Document) readXrefStream(p *parser) (*Stream, error) {
 	}
 	wArr, _ := d.resolve(xs.Dict.m["/W"]).(Array)
 	if len(wArr) < 3 {
-		return nil, pyErr("AssertionError", "W")
+		return nil, classErr("AssertionError", "W")
 	}
 	var w []int
 	for _, x := range wArr {
@@ -875,7 +878,7 @@ func (d *Document) readXrefStream(p *parser) (*Stream, error) {
 	getEntry := func(i int) (int, error) {
 		if w[i] > 0 {
 			if w[i] > 8 {
-				return 0, pyErr("PdfReadError", "Invalid size in convert_to_int")
+				return 0, classErr("PdfReadError", "Invalid size in convert_to_int")
 			}
 			e := pos + w[i]
 			if e > len(data) {
@@ -949,7 +952,7 @@ func (d *Document) readXrefStream(p *parser) (*Stream, error) {
 	return xs, nil
 }
 
-// readObjectHeader is read_object_header.
+// readObjectHeader reads "<num> <gen> obj" and returns num and gen.
 func (d *Document) readObjectHeader(p *parser) (int, int, error) {
 	if err := p.skipOverComment(); err != nil {
 		return 0, 0, err
@@ -965,11 +968,11 @@ func (d *Document) readObjectHeader(p *parser) (int, int, error) {
 	p.read(3)
 	p.readNonWhitespace()
 	p.back(1)
-	n, err := pyIntLoose(idnum)
+	n, err := parseIntLoose(idnum)
 	if err != nil {
 		return 0, 0, err
 	}
-	g, err := pyIntLoose(gen)
+	g, err := parseIntLoose(gen)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -992,14 +995,15 @@ func (d *Document) searchObject(num, gen int) []int {
 	return m
 }
 
-// getObject is PdfReader.get_object.
+// getObject reads the object r refers to (from the cache, an object stream,
+// the xref offset, or a search of the file).
 func (d *Document) getObject(r Ref) (Object, error) {
 	key := [2]int{r.Gen, r.Num}
 	if v, ok := d.cache[key]; ok && v != nil {
 		return v, nil
 	}
-	// IndirectObject.get_object -> PdfReader.get_object -> read_object
-	if d.frame+3 > pyRecursionLimit {
+	// resolving a reference goes through three modelled frames
+	if d.frame+3 > recursionLimit {
 		return nil, recursionError()
 	}
 	var retval Object
@@ -1011,7 +1015,7 @@ func (d *Document) getObject(r Ref) (Object, error) {
 			return Null{}, nil
 		}
 		if start < 0 {
-			return nil, pyErr("ValueError", "negative seek value %d", start)
+			return nil, classErr("ValueError", "negative seek value %d", start)
 		}
 		p := newParser(d, start)
 		idnum, generation, err := d.readObjectHeader(p)
@@ -1025,7 +1029,7 @@ func (d *Document) getObject(r Ref) (Object, error) {
 			}
 		}
 		if d.known[key] {
-			return nil, pyErr("LimitReachedError", "Detected loop with self reference")
+			return nil, classErr("LimitReachedError", "Detected loop with self reference")
 		}
 		d.known[key] = true
 		o, err := p.readObject()
@@ -1057,19 +1061,19 @@ func (d *Document) getObject(r Ref) (Object, error) {
 }
 
 // refBodyError: an object whose body is just a reference is stored in the
-// cache, but setting its indirect_reference then raises AttributeError (the
-// first access fails, later ones return the reference itself).
+// cache, but its first access raises AttributeError (later ones return the
+// reference itself).
 func refBodyError(o Object) error {
 	if _, isRef := o.(Ref); isRef {
-		return pyErr("AttributeError", "property 'indirect_reference' of 'IndirectObject' object has no setter")
+		return classErr("AttributeError", "property 'indirect_reference' of 'IndirectObject' object has no setter")
 	}
 	return nil
 }
 
 func (d *Document) getObjectFromStream(r Ref) (Object, error) {
 	stmnum := d.xrefObjStm[r.Num][0]
-	// _get_object_from_stream runs at frame+3 and resolves the stream
-	// through IndirectObject(stmnum).get_object()
+	// reading from an object stream runs at frame+3 and resolves the stream
+	// object from there
 	base := d.frame
 	d.frame = base + 3
 	so, err := d.getObject(Ref{Num: stmnum})
@@ -1079,18 +1083,18 @@ func (d *Document) getObjectFromStream(r Ref) (Object, error) {
 	}
 	sd, ok := asDict(so)
 	if !ok {
-		return nil, pyErr("TypeError", "object stream is not subscriptable")
+		return nil, classErr("TypeError", "object stream is not subscriptable")
 	}
 	t, ok := sd.Get("/Type")
 	if !ok {
-		return nil, pyErr("KeyError", "/Type")
+		return nil, classErr("KeyError", "/Type")
 	}
 	if d.resolve(t) != Name("/ObjStm") {
-		return nil, pyErr("AssertionError", "not an /ObjStm")
+		return nil, classErr("AssertionError", "not an /ObjStm")
 	}
 	st, ok := so.(*Stream)
 	if !ok {
-		return nil, pyErr("AttributeError", "no get_data")
+		return nil, classErr("AttributeError", "no get_data")
 	}
 	data, err := d.streamData(st)
 	if err != nil {
@@ -1099,7 +1103,7 @@ func (d *Document) getObjectFromStream(r Ref) (Object, error) {
 	nv, _, ok1 := d.num(st.Dict.m["/N"])
 	fv, _, ok2 := d.num(st.Dict.m["/First"])
 	if !ok1 || !ok2 {
-		return nil, pyErr("TypeError", "/N or /First")
+		return nil, classErr("TypeError", "/N or /First")
 	}
 	n, first := int(nv), int(fv)
 	if maxN := len(data) / 3; n > maxN {
@@ -1137,7 +1141,7 @@ func (d *Document) getObjectFromStream(r Ref) (Object, error) {
 		}
 		sp.pos = first + e.off
 		if sp.pos < 0 {
-			return nil, pyErr("ValueError", "negative seek value")
+			return nil, classErr("ValueError", "negative seek value")
 		}
 		sp.readNonWhitespace()
 		sp.back(1)
@@ -1162,7 +1166,9 @@ func (d *Document) getObjectFromStream(r Ref) (Object, error) {
 	return target, nil
 }
 
-// rootObject is PdfReader.root_object.
+// rootObject returns the document catalog: the trailer's /Root when it is a
+// /Catalog, otherwise the first /Catalog among objects 1 to /Size,
+// otherwise a /Root that has /Pages.
 func (d *Document) rootObject() *Dict {
 	if d.root != nil {
 		return d.root
@@ -1181,7 +1187,7 @@ func (d *Document) rootObject() *Dict {
 				d.root = rootDict
 			}
 		} else {
-			raise(pyErr("AttributeError", "root has no get"))
+			raise(classErr("AttributeError", "root has no get"))
 		}
 	}
 	if d.root == nil {
@@ -1192,8 +1198,8 @@ func (d *Document) rootObject() *Dict {
 			}
 		}
 		for i := 0; i < size; i++ {
-			if i >= 10000 { // root_object_recovery_limit
-				raise(pyErr("LimitReachedError", "Maximum Root object recovery limit reached."))
+			if i >= 10000 { // the /Root recovery limit
+				raise(classErr("LimitReachedError", "Maximum Root object recovery limit reached."))
 			}
 			var obj Object
 			_ = catch(func() error {
@@ -1213,13 +1219,13 @@ func (d *Document) rootObject() *Dict {
 		if rootDict != nil && rootDict.Has("/Pages") {
 			d.root = rootDict
 		} else {
-			raise(pyErr("PdfReadError", "Cannot find Root object in pdf"))
+			raise(classErr("PdfReadError", "Cannot find Root object in pdf"))
 		}
 	}
 	return d.root
 }
 
-// pages is PdfDocCommon._flatten: copies of the page dictionaries, with
+// pages walks the page tree: copies of the page dictionaries, with
 // inherited attributes filled in.
 func (d *Document) pages() []*Dict {
 	saved := d.frame
@@ -1228,20 +1234,20 @@ func (d *Document) pages() []*Dict {
 	catalog := d.rootObject()
 	po, ok := catalog.Get("/Pages")
 	if !ok {
-		raise(pyErr("AttributeError", "'NoneType' object has no attribute 'get_object'"))
+		raise(classErr("AttributeError", "'NoneType' object has no attribute 'get_object'"))
 	}
 	pagesObj := d.resolve(po)
 	pages, ok := asDict(pagesObj)
 	if !ok {
-		raise(pyErr("PdfReadError", "Invalid object in /Pages"))
+		raise(classErr("PdfReadError", "Invalid object in /Pages"))
 	}
 	var out []*Dict
 	inherit := newDict()
 	visited := map[*Dict]bool{}
 	var walk func(node *Dict, self Object, level int)
 	walk = func(node *Dict, self Object, level int) {
-		// _flatten recurses once per tree level
-		if frameFlattenRoot+level > pyRecursionLimit {
+		// the walk recurses once per tree level
+		if frameFlattenRoot+level > recursionLimit {
 			raise(recursionError())
 		}
 		d.frame = frameFlattenRoot + level
@@ -1267,13 +1273,13 @@ func (d *Document) pages() []*Dict {
 					kids = kv
 				case Null:
 				default:
-					raise(pyErr("PdfReadError", "Expected /Kids to be an array"))
+					raise(classErr("PdfReadError", "Expected /Kids to be an array"))
 				}
 			}
 			for _, kid := range kids {
 				if kr, isRef := kid.(Ref); isRef {
 					if sr, ok := self.(Ref); ok && sr == kr {
-						raise(pyErr("PdfReadError", "Detected cyclic page references."))
+						raise(classErr("PdfReadError", "Detected cyclic page references."))
 					}
 				}
 				obj := d.resolve(kid)
@@ -1282,10 +1288,10 @@ func (d *Document) pages() []*Dict {
 				}
 				kd, ok := asDict(obj)
 				if !ok {
-					raise(pyErr("TypeError", "page tree node is not a dictionary"))
+					raise(classErr("TypeError", "page tree node is not a dictionary"))
 				}
 				if visited[kd] {
-					raise(pyErr("PdfReadError", "Detected cyclic page references."))
+					raise(classErr("PdfReadError", "Detected cyclic page references."))
 				}
 				visited[kd] = true
 				walk(kd, kid, level+1)
@@ -1295,7 +1301,7 @@ func (d *Document) pages() []*Dict {
 			for _, a := range inherit.Keys() {
 				if !node.Has(a) {
 					if inherit.m[a] == nil {
-						raise(pyErr("ValueError", "Value must be a PdfObject"))
+						raise(classErr("ValueError", "Value must be a PdfObject"))
 					}
 					node.Set(a, inherit.m[a])
 				}

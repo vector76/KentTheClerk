@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 // checkedBefore places the double-check before every test turn, so any of them may confirm an override.
@@ -85,13 +85,13 @@ func TestOverrideMergePutsRightAWrongKey(t *testing.T) {
 	mustRefuse(t, "--reason is required", "override", "merge", "alice", "carol", "--confirm", "--turn", turnPtr(5), "--user", "alice")
 	mustRun(t, "override", "merge", "alice", "carol", "--confirm", "--turn", turnPtr(5), "--reason", "wrong key", "--user", "alice")
 
-	if by := py.AsDict(listOf(statementMeta(t, root, "S-0001").Get("attestations"))[0]).Get("by"); !py.Equal(by, "carol") {
+	if by := dyn.AsDict(listOf(statementMeta(t, root, "S-0001").Get("attestations"))[0]).Get("by"); !dyn.Equal(by, "carol") {
 		t.Fatalf("S-0001 attested by %v after the merge", by)
 	}
-	if a := turnAuthor(t, root, testTurns[1].uuid); !py.Equal(a, "carol") {
+	if a := turnAuthor(t, root, testTurns[1].uuid); !dyn.Equal(a, "carol") {
 		t.Fatalf("turn author %v after the merge", a)
 	}
-	if a := turnAuthor(t, root, testTurns[3].uuid); !py.Equal(a, "bob") {
+	if a := turnAuthor(t, root, testTurns[3].uuid); !dyn.Equal(a, "bob") {
 		t.Fatalf("bob's turn was relabelled: %v", a)
 	}
 	if tbl := mustLoadUsers(root); tbl.has("alice") || !tbl.has("carol") {
@@ -110,7 +110,7 @@ func TestOverrideMerge(t *testing.T) {
 	attestOne(t, root)
 	checkedBefore(t)
 	override(t, "alice", 5, "merge", "alice", "bob")
-	if by := py.AsDict(listOf(statementMeta(t, root, "S-0001").Get("attestations"))[0]).Get("by"); !py.Equal(by, "bob") {
+	if by := dyn.AsDict(listOf(statementMeta(t, root, "S-0001").Get("attestations"))[0]).Get("by"); !dyn.Equal(by, "bob") {
 		t.Fatalf("S-0001 attested by %v after the merge", by)
 	}
 	checkClean(t)
@@ -130,13 +130,13 @@ func TestOverrideReassign(t *testing.T) {
 	mustRefuse(t, "Kent Rule 56", "override", "reassign", turnPtr(1), "dave", "--user", "alice")
 	mustRun(t, "user", "add", "Dave Diaz", "--email", "dave@example.com", "--key", "dave", "--user", "alice")
 	override(t, "alice", 5, "reassign", turnPtr(1), "dave")
-	if a := turnAuthor(t, root, testTurns[1].uuid); !py.Equal(a, "dave") {
+	if a := turnAuthor(t, root, testTurns[1].uuid); !dyn.Equal(a, "dave") {
 		t.Fatalf("turn author %v after the reassignment", a)
 	}
-	if a := turnAuthor(t, root, testTurns[5].uuid); !py.Equal(a, "alice") {
+	if a := turnAuthor(t, root, testTurns[5].uuid); !dyn.Equal(a, "alice") {
 		t.Fatalf("another of alice's turns was reassigned: %v", a)
 	}
-	if by := py.AsDict(listOf(statementMeta(t, root, "S-0001").Get("attestations"))[0]).Get("by"); !py.Equal(by, "dave") {
+	if by := dyn.AsDict(listOf(statementMeta(t, root, "S-0001").Get("attestations"))[0]).Get("by"); !dyn.Equal(by, "dave") {
 		t.Fatalf("S-0001 attested by %v after the reassignment", by)
 	}
 	checkClean(t)
@@ -170,7 +170,7 @@ func TestOverrideScrubTurn(t *testing.T) {
 	if strings.Contains(turnText(tt), "Statement one text.") || !strings.HasPrefix(turnText(tt), "[scrubbed on ") {
 		t.Fatalf("the turn was not scrubbed: %q", turnText(tt))
 	}
-	if !py.Equal(tt.Get("author"), "agent:test") {
+	if !dyn.Equal(tt.Get("author"), "agent:test") {
 		t.Fatalf("the scrubbed turn lost its author: %v", tt.Get("author"))
 	}
 	out := checkClean(t)
@@ -182,7 +182,7 @@ func TestOverrideScrubTurn(t *testing.T) {
 	// restoring the content by hand shows
 	p := findSession(root, testSession).Path
 	s := loadSession(p)
-	s.Turn(testTurns[0].uuid).Set("content", []any{py.D("type", "text", "text", "Statement one text.")})
+	s.Turn(testTurns[0].uuid).Set("content", []any{dyn.D("type", "text", "text", "Statement one text.")})
 	writeJSONL(p, s.Header, s.Turns)
 	checkFails(t, "not the tombstone")
 }
@@ -196,7 +196,7 @@ func TestOverrideScrubStatementAndSession(t *testing.T) {
 		t.Fatalf("the scrub did not say where the text remains:\n%s", out)
 	}
 	m := statementMeta(t, root, "S-0001")
-	if !strings.HasSuffix(statementPath(root, "S-0001"), "S-0001-scrubbed.md") || !strings.HasPrefix(py.Str(m.Get("title")), "Scrubbed") {
+	if !strings.HasSuffix(statementPath(root, "S-0001"), "S-0001-scrubbed.md") || !strings.HasPrefix(dyn.Str(m.Get("title")), "Scrubbed") {
 		t.Fatalf("S-0001 was not scrubbed: %s %v", statementPath(root, "S-0001"), m.Get("title"))
 	}
 	checkClean(t)
@@ -225,7 +225,7 @@ func TestOverrideRevise(t *testing.T) {
 	p := statementPath(root, "S-0001")
 	st := loadStatement(p)
 	entries, _ := loadOverrideLog(root)
-	if st.Body != "Statement three text." || len(entries) != 1 || py.Str(st.Meta.Get("revised")) != overrideRef(entries[0]) || !strings.Contains(p, "one-revised") {
+	if st.Body != "Statement three text." || len(entries) != 1 || dyn.Str(st.Meta.Get("revised")) != overrideRef(entries[0]) || !strings.Contains(p, "one-revised") {
 		t.Fatalf("S-0001 not revised: %s %v %q", p, st.Meta.Get("revised"), st.Body)
 	}
 	if !strings.Contains(entryStr(entries[0], "original"), "Statement one text.") {
@@ -295,7 +295,7 @@ func TestOverrideIDs(t *testing.T) {
 	entries := mustLoadOverrideLog(root)
 	id := entryStr(entries[0], "id")
 	if !overrideIDRE.MatchString(id) || entries[0].Has("seq") || entries[0].Has("prev") {
-		t.Fatalf("the entry is not identified by a new id alone: %s", py.Dumps(entries[0]))
+		t.Fatalf("the entry is not identified by a new id alone: %s", dyn.Dumps(entries[0]))
 	}
 	if !strings.Contains(out, "override "+id+": ") {
 		t.Fatalf("kb override does not name the override by its id:\n%s", out)
@@ -308,7 +308,7 @@ func TestOverrideIDs(t *testing.T) {
 	// a statement's marks cite it too
 	override(t, "alice", 5, "scrub", "S-0001")
 	m := statementMeta(t, root, "S-0001")
-	if sc := py.Str(m.Get("scrubbed")); !overrideIDRE.MatchString(sc) || py.Str(m.Get("title")) != "Scrubbed by override "+sc {
+	if sc := dyn.Str(m.Get("scrubbed")); !overrideIDRE.MatchString(sc) || dyn.Str(m.Get("title")) != "Scrubbed by override "+sc {
 		t.Fatalf("S-0001 scrubbed = %v, title %v", m.Get("scrubbed"), m.Get("title"))
 	}
 	checkClean(t)
@@ -399,7 +399,7 @@ func TestOverrideLogBeforeIDs(t *testing.T) {
 	if err := os.WriteFile(sp, []byte(old(string(b))), 0o666); err != nil {
 		t.Fatal(err)
 	}
-	if m := statementMeta(t, root, "S-0001"); markRef(m.Get("scrubbed")) != "2" || py.Str(m.Get("title")) != "Scrubbed by override 2" {
+	if m := statementMeta(t, root, "S-0001"); markRef(m.Get("scrubbed")) != "2" || dyn.Str(m.Get("title")) != "Scrubbed by override 2" {
 		t.Fatalf("S-0001 was not rewritten as before: %v %v", m.Get("scrubbed"), m.Get("title"))
 	}
 	checkClean(t)
@@ -480,7 +480,7 @@ func TestSnapshotKeepsOverrides(t *testing.T) {
 	mustRun(t, "snapshot", src, "--user", "carol")
 	s = findSession(root, sid)
 	for _, n := range []int{1, 3, 5} {
-		if a := s.Turn(uuid(n)).Get("author"); !py.Equal(a, "carol") {
+		if a := s.Turn(uuid(n)).Get("author"); !dyn.Equal(a, "carol") {
 			t.Fatalf("turn %d is by %v after the merge and a re-snapshot", n, a)
 		}
 	}

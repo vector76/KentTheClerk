@@ -7,7 +7,7 @@ import (
 
 	"golang.org/x/term"
 
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 // terminalColumns is the width of the terminal on stdout, or 0 when stdout is not a terminal.
@@ -90,10 +90,10 @@ func isWS(r rune) bool {
 }
 
 // letter is [^\d\W]: a word character that is not a decimal digit.
-func letter(r rune) bool { return py.IsWord(r) && !py.IsDecimal(r) }
+func letter(r rune) bool { return dyn.IsWord(r) && !dyn.IsDecimal(r) }
 
 // wordPunct is [\w!"'&.,?].
-func wordPunct(r rune) bool { return py.IsWord(r) || strings.ContainsRune(`!"'&.,?`, r) }
+func wordPunct(r rune) bool { return dyn.IsWord(r) || strings.ContainsRune(`!"'&.,?`, r) }
 
 // splitChunks splits text into the chunks wrap places: runs of whitespace, runs of dashes between
 // words, and words, a hyphenated word split after each hyphen.
@@ -111,7 +111,7 @@ func splitChunks(s []rune) [][]rune {
 		for j < n && s[j] == '-' {
 			j++
 		}
-		if j-k >= 2 && j < n && py.IsWord(s[j]) {
+		if j-k >= 2 && j < n && dyn.IsWord(s[j]) {
 			return j - k
 		}
 		return 0

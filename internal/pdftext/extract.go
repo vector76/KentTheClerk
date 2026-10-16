@@ -61,12 +61,12 @@ type extractor struct {
 	memoCm, memoTm matrix
 	charScale      float64
 	spaceScale     float64
-	spaceWidth     float64 // _space_width (half a space)
+	spaceWidth     float64 // half the width of a space
 	strWidths      float64
 	strHeight      float64
 	tl             float64
 	fontSize       float64
-	text, output   pstr
+	text, output   ustr
 	rtl            bool
 	fontRes        *Dict
 	font           *font
@@ -85,14 +85,14 @@ func newExtractor(d *Document) *extractor {
 // tjOperand is what a Tj receives: text (isText) or bytes.
 type tjOperand struct {
 	isText bool
-	text   pstr
+	text   ustr
 	raw    []byte
-	other  Object // neither str nor bytes (decided by the font's encoding)
+	other  Object // neither text nor bytes (decided by the font's encoding)
 }
 
-// pyFloat converts an object to a float: numbers as they are, strings by
+// toFloat converts an object to a float: numbers as they are, strings by
 // parsing (surrounding whitespace and underscores allowed).
-func pyFloat(o Object) (float64, error) {
+func toFloat(o Object) (float64, error) {
 	switch v := o.(type) {
 	case Int:
 		return float64(v), nil
@@ -102,16 +102,16 @@ func pyFloat(o Object) (float64, error) {
 		s := strings.TrimSpace(string(v.Raw))
 		f, err := strconv.ParseFloat(strings.ReplaceAll(s, "_", ""), 64)
 		if err != nil {
-			return 0, pyErr("ValueError", "could not convert string to float")
+			return 0, classErr("ValueError", "could not convert string to float")
 		}
 		return f, nil
 	case Name:
-		return 0, pyErr("ValueError", "could not convert string to float")
+		return 0, classErr("ValueError", "could not convert string to float")
 	}
-	return 0, pyErr("TypeError", "float() argument must be a string or a real number")
+	return 0, classErr("TypeError", "float() argument must be a string or a real number")
 }
 
-func lastRune(a, b pstr) (rune, bool) {
+func lastRune(a, b ustr) (rune, bool) {
 	if len(b) > 0 {
 		return b[len(b)-1], true
 	}
@@ -121,7 +121,9 @@ func lastRune(a, b pstr) (rune, bool) {
 	return 0, false
 }
 
-// crlfSpaceCheck is crlf_space_check.
+// crlfSpaceCheck compares the text position with the previous one: a
+// vertical move of more than 0.8 line heights starts a new line, a
+// horizontal move of at least a space width adds a space.
 func (e *extractor) crlfSpaceCheck(strWidths, spacewidth float64) {
 	mPrev := mult(e.tmPrev, e.cmPrev)
 	m := mult(e.tm, e.cm)
@@ -139,7 +141,7 @@ func (e *extractor) crlfSpaceCheck(strWidths, spacewidth float64) {
 	}
 	a := float64(e.strHeight * scalePrevY)
 	b := float64(e.fontSize * scaleY)
-	if math.Abs(movedHeight) > float64(0.8*pyMin(a, b)) {
+	if math.Abs(movedHeight) > float64(0.8*minFloat(a, b)) {
 		if last, ok := lastRune(e.output, e.text); ok && last != '\n' {
 			e.output = append(e.output, e.text...)
 			e.output = append(e.output, '\n')
@@ -154,8 +156,8 @@ func (e *extractor) crlfSpaceCheck(strWidths, spacewidth float64) {
 	e.cmPrev = e.cm
 }
 
-func pyMin(a, b float64) float64 {
-	// min(a, b) returns a unless b < a
+func minFloat(a, b float64) float64 {
+	// a unless b < a (so a NaN in b is ignored)
 	if b < a {
 		return b
 	}
@@ -177,7 +179,7 @@ func (e *extractor) flushText() {
 	e.memoTm = e.tm
 }
 
-// processOperation is TextExtraction.process_operation.
+// processOperation applies one content stream operator to the text state.
 func (e *extractor) processOperation(op string, operands []Object, tj []tjOperand) {
 	switch op {
 	case "BT":
@@ -203,7 +205,7 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 		var v matrix
 		if ok {
 			for i := 0; i < 6; i++ {
-				f, err := pyFloat(operands[i])
+				f, err := toFloat(operands[i])
 				if err != nil {
 					ok = false
 					break
@@ -220,7 +222,7 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 		e.memoTm = e.tm
 	case "Tz":
 		if len(operands) > 0 {
-			f, err := pyFloat(operands[0])
+			f, err := toFloat(operands[0])
 			if err != nil {
 				raise(err)
 			}
@@ -232,7 +234,7 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 		f := 0.0
 		if len(operands) > 0 {
 			var err error
-			if f, err = pyFloat(operands[0]); err != nil {
+			if f, err = toFloat(operands[0]); err != nil {
 				raise(err)
 			}
 		}
@@ -242,7 +244,7 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 		f := 0.0
 		if len(operands) > 0 {
 			var err error
-			if f, err = pyFloat(operands[0]); err != nil {
+			if f, err = toFloat(operands[0]); err != nil {
 				raise(err)
 			}
 		}
@@ -258,7 +260,7 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 		if len(operands) > 0 {
 			k, ok := hashKey(operands[0])
 			if !ok {
-				raise(pyErr("TypeError", "unhashable type"))
+				raise(classErr("TypeError", "unhashable type"))
 			}
 			fr, ok1 := e.fontResources[k]
 			fnt, ok2 := e.fonts[k]
@@ -274,7 +276,7 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 		}
 		e.spaceWidth = e.font.spaceW() / 2
 		if len(operands) > 1 {
-			if f, err := pyFloat(operands[1]); err == nil {
+			if f, err := toFloat(operands[1]); err == nil {
 				e.fontSize = f
 			}
 		}
@@ -282,12 +284,12 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 		tx, ty := 0.0, 0.0
 		var err error
 		if len(operands) > 0 {
-			if tx, err = pyFloat(operands[0]); err != nil {
+			if tx, err = toFloat(operands[0]); err != nil {
 				raise(err)
 			}
 		}
 		if len(operands) > 1 {
-			if ty, err = pyFloat(operands[1]); err != nil {
+			if ty, err = toFloat(operands[1]); err != nil {
 				raise(err)
 			}
 		}
@@ -301,7 +303,7 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 		var v matrix
 		if ok {
 			for i := 0; i < 6; i++ {
-				f, err := pyFloat(operands[i])
+				f, err := toFloat(operands[i])
 				if err != nil {
 					if errClass(err) == "TypeError" || errClass(err) == "ValueError" {
 						ok = false
@@ -333,8 +335,9 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 }
 
 // hashKey gives the dictionary key for an object (equal objects
-// get equal keys: a NameObject equals the str with the same text, a float
-// equals the int with the same value); ok is false for unhashable objects.
+// get equal keys: a name equals the text string with the same text, a real
+// equals the integer with the same value); ok is false for objects that
+// cannot be keys (arrays, dictionaries).
 func hashKey(o Object) (string, bool) {
 	switch v := o.(type) {
 	case Name:
@@ -352,7 +355,7 @@ func hashKey(o Object) (string, bool) {
 		}
 		return "f" + strconv.FormatFloat(float64(v), 'g', -1, 64), true
 	case Bool:
-		if v { // BooleanObject equals only booleans
+		if v { // a boolean equals only booleans
 			return "t1", true
 		}
 		return "t0", true
@@ -364,10 +367,11 @@ func hashKey(o Object) (string, bool) {
 	return "", false
 }
 
-// handleTj is _handle_tj with get_text_operands / get_display_str.
+// handleTj decodes a Tj operand through the current font and appends the
+// text.
 func (e *extractor) handleTj(ops []tjOperand) {
 	f := e.font
-	var textOperands pstr
+	var textOperands ustr
 	isStr := false
 	if len(ops) > 0 {
 		o := ops[0]
@@ -379,17 +383,17 @@ func (e *extractor) handleTj(ops []tjOperand) {
 		} else if f.enc.isStr {
 			textOperands = decodeWith(o.raw, f.enc.name)
 		} else {
-			textOperands = make(pstr, 0, len(o.raw))
+			textOperands = make(ustr, 0, len(o.raw))
 			for _, x := range o.raw {
 				v, ok := f.enc.m[int(x)]
 				if ok && len(v) == 1 && v[0] == -1 {
-					raise(pyErr("TypeError", "sequence item: expected str instance"))
+					raise(classErr("TypeError", "sequence item: expected str instance"))
 				}
 				if !ok {
 					if x >= 0x80 {
-						raise(pyErr("UnicodeDecodeError", "utf-8 codec can't decode byte"))
+						raise(classErr("UnicodeDecodeError", "utf-8 codec can't decode byte"))
 					}
-					v = pstr{rune(x)}
+					v = ustr{rune(x)}
 				}
 				textOperands = append(textOperands, v...)
 			}
@@ -400,7 +404,7 @@ func (e *extractor) handleTj(ops []tjOperand) {
 		e.text = append(e.text, textOperands...)
 		sum := 0.0
 		for _, r := range textOperands {
-			c := pstr{r}
+			c := ustr{r}
 			if c.eq(f.spaceChar) {
 				sum += f.spaceW()
 			} else {
@@ -417,7 +421,7 @@ func (e *extractor) handleTj(ops []tjOperand) {
 
 // decodeWith decodes b with the named encoding, keeping lone surrogates,
 // and falls back to latin-1 where that fails.
-func decodeWith(b []byte, enc string) pstr {
+func decodeWith(b []byte, enc string) ustr {
 	switch enc {
 	case "charmap", "latin1", "latin-1":
 		return decodeLatin1(b)
@@ -435,11 +439,11 @@ func decodeWith(b []byte, enc string) pstr {
 	return decodeLatin1(b)
 }
 
-func (e *extractor) displayStr(textOperands pstr) float64 {
+func (e *extractor) displayStr(textOperands ustr) float64 {
 	f := e.font
 	widths := 0.0
 	for _, r := range textOperands {
-		raw := pstr{r}
+		raw := ustr{r}
 		if raw.eq(f.spaceChar) {
 			widths += f.spaceW()
 		} else {
@@ -456,7 +460,7 @@ func (e *extractor) displayStr(textOperands pstr) float64 {
 		switch {
 		case xx <= 0x2F || (xx >= 0x3A && xx <= 0x40) || (xx >= 0x2000 && xx <= 0x206F) || (xx >= 0x20A0 && xx <= 0x21FF):
 			if e.rtl {
-				e.text = append(append(pstr{}, x...), e.text...)
+				e.text = append(append(ustr{}, x...), e.text...)
 			} else {
 				e.text = append(e.text, x...)
 			}
@@ -465,7 +469,7 @@ func (e *extractor) displayStr(textOperands pstr) float64 {
 				e.rtl = true
 				e.text = nil
 			}
-			e.text = append(append(pstr{}, x...), e.text...)
+			e.text = append(append(ustr{}, x...), e.text...)
 		default:
 			if e.rtl {
 				e.rtl = false
@@ -482,7 +486,7 @@ func toTjOperand(o Object) (tjOperand, bool) {
 	case *String:
 		return tjOperand{raw: v.Raw}, true
 	case Name:
-		return tjOperand{isText: true, text: pstr([]rune(string(v)))}, true
+		return tjOperand{isText: true, text: ustr([]rune(string(v)))}, true
 	}
 	return tjOperand{}, false
 }
@@ -500,12 +504,12 @@ func tjOperands(operands []Object) []tjOperand {
 	return []tjOperand{t}
 }
 
-// codesFromObject is get_text_operands on an operand that is neither str nor
-// bytes: a str encoding calls .decode() on it (AttributeError); a dict
-// encoding iterates it and looks each item up as a character code.
-func codesFromObject(o Object, enc *encoding) pstr {
+// codesFromObject decodes an operand that is neither text nor bytes: a
+// codec-name encoding fails with AttributeError; a table encoding iterates
+// it and looks each item up as a character code.
+func codesFromObject(o Object, enc *encoding) ustr {
 	if enc.isStr {
-		raise(pyErr("AttributeError", "object has no attribute 'decode'"))
+		raise(classErr("AttributeError", "object has no attribute 'decode'"))
 	}
 	var items []Object
 	switch v := o.(type) {
@@ -516,9 +520,9 @@ func codesFromObject(o Object, enc *encoding) pstr {
 			items = append(items, k)
 		}
 	default:
-		raise(pyErr("TypeError", "object is not iterable"))
+		raise(classErr("TypeError", "object is not iterable"))
 	}
-	var out pstr
+	var out ustr
 	for _, x := range items {
 		code, ok := 0, false
 		switch n := x.(type) {
@@ -530,30 +534,30 @@ func codesFromObject(o Object, enc *encoding) pstr {
 			}
 		}
 		if !ok {
-			raise(pyErr("TypeError", "'%T' object cannot be interpreted as an integer", x))
+			raise(classErr("TypeError", "'%T' object cannot be interpreted as an integer", x))
 		}
 		v, found := enc.m[code]
 		if found && len(v) == 1 && v[0] == -1 {
-			raise(pyErr("TypeError", "sequence item: expected str instance"))
+			raise(classErr("TypeError", "sequence item: expected str instance"))
 		}
 		if !found {
 			switch {
 			case code < 0 || code > 255:
-				raise(pyErr("ValueError", "bytes must be in range(0, 256)"))
+				raise(classErr("ValueError", "bytes must be in range(0, 256)"))
 			case code >= 0x80:
-				raise(pyErr("UnicodeDecodeError", "utf-8 codec can't decode byte"))
+				raise(classErr("UnicodeDecodeError", "utf-8 codec can't decode byte"))
 			}
-			v = pstr{rune(code)}
+			v = ustr{rune(code)}
 		}
 		out = append(out, v...)
 	}
 	return out
 }
 
-// extractText is PageObject._extract_text for a page (contentKey true) or a
-// form XObject stream (contentKey false).
+// extractText extracts the text of a page (contentKey true) or a form
+// XObject stream (contentKey false).
 // level is the form XObject nesting level (0 for the page itself).
-func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known map[*Stream]bool, level int) pstr {
+func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known map[*Stream]bool, level int) ustr {
 	if known == nil {
 		known = map[*Stream]bool{}
 	}
@@ -567,11 +571,12 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 
 	resObj := getInherited(d, obj, "/Resources")
 	if resObj == nil || isNullOrNone(d, resObj) || !truthy(resObj) {
-		return pstr{}
+		return ustr{}
 	}
 	resources, ok := asDict(resObj)
 	if !ok {
-		// `"/Font" in resources_dict` on whatever the entry holds
+		// /Resources is not a dictionary: test whether it contains "/Font"
+		// as an array, name or string would (a match fails below)
 		hasFont := false
 		switch r := resObj.(type) {
 		case Array:
@@ -585,14 +590,14 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 		case *String:
 			t, isText := textString(r.Raw)
 			if !isText {
-				raise(pyErr("TypeError", "a bytes-like object is required"))
+				raise(classErr("TypeError", "a bytes-like object is required"))
 			}
 			hasFont = strings.Contains(t.goString(), "/Font")
 		default:
-			raise(pyErr("TypeError", "argument is not iterable"))
+			raise(classErr("TypeError", "argument is not iterable"))
 		}
 		if hasFont {
-			raise(pyErr("TypeError", "indices must be integers"))
+			raise(classErr("TypeError", "indices must be integers"))
 		}
 		resources = newDict() // no /Font; /XObject lookups fail (and are caught)
 		resources.Set("/__not_a_dict__", Null{})
@@ -600,8 +605,9 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 	if resources.Has("/Font") {
 		fontsObj := d.resolve(resources.m["/Font"])
 		if truthy(fontsObj) {
-			// for font_resource in font_resources_dict:
-			//     font_resources_dict[font_resource].get_object() ...
+			// each entry of /Font (keys of a dictionary, items of an array
+			// used as indices, characters or bytes of a string) is loaded
+			// as a font; AttributeError and TypeError skip the entry
 			type entry struct {
 				key   Object
 				value Object // nil: the lookup raises lookupErr
@@ -618,7 +624,7 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 				for _, x := range fv {
 					idx, isInt := x.(Int)
 					if !isInt {
-						entries = append(entries, entry{key: x, err: pyErr("TypeError", "list indices must be integers")})
+						entries = append(entries, entry{key: x, err: classErr("TypeError", "list indices must be integers")})
 						continue
 					}
 					i := int(idx)
@@ -626,24 +632,24 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 						i += len(fv)
 					}
 					if i < 0 || i >= len(fv) {
-						raise(pyErr("IndexError", "list index out of range"))
+						raise(classErr("IndexError", "list index out of range"))
 					}
 					entries = append(entries, entry{key: x, value: fv[i]})
 				}
 			case Name:
-				// str[char]: TypeError for every character
+				// indexing by a character: TypeError for every character
 			case *String:
 				if _, isText := textString(fv.Raw); !isText {
 					for _, b := range fv.Raw {
 						if int(b) >= len(fv.Raw) {
-							raise(pyErr("IndexError", "index out of range"))
+							raise(classErr("IndexError", "index out of range"))
 						}
-						// bytes[i] is an int: no get_object()
-						entries = append(entries, entry{key: Int(b), err: pyErr("AttributeError", "'int' object has no attribute 'get_object'")})
+						// each byte is an integer, not a font
+						entries = append(entries, entry{key: Int(b), err: classErr("AttributeError", "'int' object has no attribute 'get_object'")})
 					}
 				}
 			default:
-				raise(pyErr("TypeError", "object is not iterable"))
+				raise(classErr("TypeError", "object is not iterable"))
 			}
 			for _, en := range entries {
 				en := en
@@ -653,12 +659,12 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 					}
 					k, ok := hashKey(en.key)
 					if !ok {
-						return pyErr("TypeError", "unhashable type")
+						return classErr("TypeError", "unhashable type")
 					}
 					fo := d.resolve(en.value)
 					fdict, ok := asDict(fo)
 					if !ok {
-						return pyErr("AttributeError", "font is not a dictionary")
+						return classErr("AttributeError", "font is not a dictionary")
 					}
 					e.fontResources[k] = fdict
 					fnt, err := d.fontFromResource(fdict)
@@ -686,10 +692,9 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 	if contentKey {
 		co, ok := obj.Get("/Contents")
 		if !ok {
-			return pstr{}
+			return ustr{}
 		}
-		// try: content = ...; ContentStream(content, pdf, "bytes")
-		// except (AttributeError, KeyError): return ""
+		// AttributeError or KeyError while building the content: no text
 		noContent := false
 		err := catch(func() error {
 			data, noContent = d.pageContent(co)
@@ -697,12 +702,12 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 		})
 		if err != nil {
 			if c := errClass(err); c == "AttributeError" || c == "KeyError" {
-				return pstr{}
+				return ustr{}
 			}
 			raise(err)
 		}
 		if noContent {
-			return pstr{}
+			return ustr{}
 		}
 	} else {
 		b, err := d.streamData(self)
@@ -736,12 +741,12 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 						e.processOperation("Tj", nil, []tjOperand{el.op})
 					}
 					if el.isNum && math.Abs(el.num) >= confirm && len(e.text) > 0 && e.text[len(e.text)-1] != ' ' {
-						e.processOperation("Tj", nil, []tjOperand{{isText: true, text: pstr{' '}}})
+						e.processOperation("Tj", nil, []tjOperand{{isText: true, text: ustr{' '}}})
 					}
 				}
 			}
 		case o.operator == "TD" && len(operands) >= 2:
-			neg, err := pyNeg(operands[1])
+			neg, err := negate(operands[1])
 			if err != nil {
 				raise(err)
 			}
@@ -752,49 +757,49 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 			if len(e.output) > 0 && e.output[len(e.output)-1] != '\n' {
 				e.output = append(e.output, '\n')
 			}
-			var text pstr
+			var text ustr
 			err := catch(func() error {
 				xo, ok := resources.Get("/XObject")
 				if !ok || resources.Has("/__not_a_dict__") {
-					return pyErr("KeyError", "/XObject")
+					return classErr("KeyError", "/XObject")
 				}
 				xobj, ok := asDict(d.resolve(xo))
 				if !ok {
-					return pyErr("TypeError", "/XObject")
+					return classErr("TypeError", "/XObject")
 				}
 				if len(operands) == 0 {
-					return pyErr("IndexError", "Do without operand")
+					return classErr("IndexError", "Do without operand")
 				}
 				n, ok := operands[0].(Name)
 				if !ok {
-					return pyErr("KeyError", "Do operand")
+					return classErr("KeyError", "Do operand")
 				}
 				xr, ok := xobj.Get(n)
 				if !ok {
-					return pyErr("KeyError", "%s", string(n))
+					return classErr("KeyError", "%s", string(n))
 				}
 				xform := d.resolve(xr)
 				xd, ok := asDict(xform)
 				if !ok {
-					return pyErr("TypeError", "XObject is not a dictionary")
+					return classErr("TypeError", "XObject is not a dictionary")
 				}
 				st, ok := xd.Get("/Subtype")
 				if !ok {
-					return pyErr("KeyError", "/Subtype")
+					return classErr("KeyError", "/Subtype")
 				}
 				if d.resolve(st) == Name("/Image") {
 					return nil
 				}
 				xs, ok := xform.(*Stream)
 				if !ok {
-					return pyErr("AttributeError", "form is not a stream")
+					return classErr("AttributeError", "form is not a stream")
 				}
 				if known[xs] {
-					text = pstr{}
+					text = ustr{}
 				} else {
 					// a RecursionError deep down a chain of forms is caught
 					// by this handler (see frames.go)
-					if extractFrame(level+1)+frameFormWork > pyRecursionLimit {
+					if extractFrame(level+1)+frameFormWork > recursionLimit {
 						return recursionError()
 					}
 					d.spend(1, 0, 0)
@@ -810,8 +815,8 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 				return nil
 			})
 			if err != nil && len(operands) == 0 {
-				// the warning's operand=operands[0] raises IndexError
-				raise(pyErr("IndexError", "list index out of range"))
+				// a failed Do without operands raises IndexError
+				raise(classErr("IndexError", "list index out of range"))
 			}
 			e.text = nil
 			e.memoCm = e.cm
@@ -847,7 +852,7 @@ func tjElements(o Object) []tjElement {
 			case *String:
 				out = append(out, tjElement{isStr: true, op: tjOperand{raw: x.Raw}})
 			case Name:
-				out = append(out, tjElement{isStr: true, op: tjOperand{isText: true, text: pstr([]rune(string(x)))}})
+				out = append(out, tjElement{isStr: true, op: tjOperand{isText: true, text: ustr([]rune(string(x)))}})
 			case Int:
 				out = append(out, tjElement{isNum: true, num: float64(x)})
 			case Real:
@@ -860,35 +865,36 @@ func tjElements(o Object) []tjElement {
 		}
 	case Name:
 		for _, r := range string(v) {
-			out = append(out, tjElement{isStr: true, op: tjOperand{isText: true, text: pstr{r}}})
+			out = append(out, tjElement{isStr: true, op: tjOperand{isText: true, text: ustr{r}}})
 		}
 	case *Dict:
 		for _, k := range v.Keys() {
-			out = append(out, tjElement{isStr: true, op: tjOperand{isText: true, text: pstr([]rune(string(k)))}})
+			out = append(out, tjElement{isStr: true, op: tjOperand{isText: true, text: ustr([]rune(string(k)))}})
 		}
 	default:
-		raise(pyErr("TypeError", "object is not iterable"))
+		raise(classErr("TypeError", "object is not iterable"))
 	}
 	return out
 }
 
-func pyNeg(o Object) (Object, error) {
+func negate(o Object) (Object, error) {
 	switch v := o.(type) {
 	case Int:
 		return -v, nil
 	case Real:
 		return -v, nil
 	}
-	return nil, pyErr("TypeError", "bad operand type for unary -")
+	return nil, classErr("TypeError", "bad operand type for unary -")
 }
 
-// getInherited is DictionaryObject.get_inherited (resolved value or nil).
+// getInherited looks key up in obj and then up its /Parent chain: the
+// resolved value, or an empty dictionary where no node has it.
 func getInherited(d *Document, obj *Dict, key Name) Object {
 	cur := obj
 	seen := map[*Dict]bool{}
 	for {
 		if seen[cur] {
-			raise(pyErr("LimitReachedError", "Detected cycle in /Parent hierarchy"))
+			raise(classErr("LimitReachedError", "Detected cycle in /Parent hierarchy"))
 		}
 		seen[cur] = true
 		if cur.Has(key) {
@@ -900,15 +906,16 @@ func getInherited(d *Document, obj *Dict, key Name) Object {
 		p := d.resolve(cur.m["/Parent"])
 		pd, ok := asDict(p)
 		if !ok {
-			// `key in current` and `"/Parent" in current` on a list or a
-			// string work; subscripting one raises TypeError.
+			// a /Parent that is an array or string can be tested for the
+			// key and /Parent (containsKey); where it has one, reading it
+			// raises TypeError.
 			for _, k := range []Name{key, "/Parent"} {
-				in, err := pyIn(p, k)
+				in, err := containsKey(p, k)
 				if err != nil {
 					raise(err)
 				}
 				if in {
-					raise(pyErr("TypeError", "indices must be integers"))
+					raise(classErr("TypeError", "indices must be integers"))
 				}
 			}
 			return newDict()
@@ -917,14 +924,15 @@ func getInherited(d *Document, obj *Dict, key Name) Object {
 	}
 }
 
-// pageContent builds a page's content bytes like ContentStream(obj, pdf,
-// "bytes"); noContent stands for a page without extractable content.
+// pageContent builds a page's content bytes: a stream's data, or the data
+// of an array of streams joined by newlines; noContent stands for a page
+// without extractable content.
 func (d *Document) pageContent(co Object) (data []byte, noContent bool) {
 	content := d.resolve(co)
 	switch c := content.(type) {
 	case Array:
 		if len(c) > maxContentArrayLength {
-			raise(pyErr("LimitReachedError", "Array-based stream has %d > %d elements.", len(c), maxContentArrayLength))
+			raise(classErr("LimitReachedError", "Array-based stream has %d > %d elements.", len(c), maxContentArrayLength))
 		}
 		var buf []byte
 		length := 0
@@ -940,7 +948,7 @@ func (d *Document) pageContent(co Object) (data []byte, noContent bool) {
 				}
 				length += len(b)
 				if length > maxArrayStreamOutput {
-					raise(pyErr("LimitReachedError", "Array-based stream has at least %d > %d output bytes.", length, maxArrayStreamOutput))
+					raise(classErr("LimitReachedError", "Array-based stream has at least %d > %d output bytes.", length, maxArrayStreamOutput))
 				}
 				buf = append(buf, b...)
 			}

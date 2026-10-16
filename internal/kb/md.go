@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 // htmlEscape escapes &, < and > in s, and with quote also " and '.
@@ -27,14 +27,14 @@ func htmlEscape(s string, quote bool) string {
 var (
 	mdCode    = regexp.MustCompile("`([^`]+)`")
 	mdBold    = regexp.MustCompile(`\*\*([^*]+)\*\*`)
-	mdAbsLink = regexp.MustCompile(`\[([^\]]+)\]\((https?://[^)` + py.SpaceClass + `]+)\)`)
-	mdRelLink = regexp.MustCompile(`\[([^\]]+)\]\(([^)` + py.SpaceClass + `]+)\)`)
-	mdHeading = regexp.MustCompile(`^(#{1,6})[` + py.SpaceClass + `]+(.*)$`)
-	mdBullet  = regexp.MustCompile(`^[` + py.SpaceClass + `]*[-*][` + py.SpaceClass + `]+`)
-	mdNumber  = regexp.MustCompile(`^[` + py.SpaceClass + `]*\p{Nd}+\.[` + py.SpaceClass + `]+`)
-	mdOrdered = regexp.MustCompile(`^[` + py.SpaceClass + `]*\p{Nd}+\.`)
-	mdItem    = regexp.MustCompile(`^[` + py.SpaceClass + `]*(?:[-*]|\p{Nd}+\.)[` + py.SpaceClass + `]+`)
-	mdTable   = regexp.MustCompile(`^\|[` + py.SpaceClass + `:|-]+\|\n?$`)
+	mdAbsLink = regexp.MustCompile(`\[([^\]]+)\]\((https?://[^)` + dyn.SpaceClass + `]+)\)`)
+	mdRelLink = regexp.MustCompile(`\[([^\]]+)\]\(([^)` + dyn.SpaceClass + `]+)\)`)
+	mdHeading = regexp.MustCompile(`^(#{1,6})[` + dyn.SpaceClass + `]+(.*)$`)
+	mdBullet  = regexp.MustCompile(`^[` + dyn.SpaceClass + `]*[-*][` + dyn.SpaceClass + `]+`)
+	mdNumber  = regexp.MustCompile(`^[` + dyn.SpaceClass + `]*\p{Nd}+\.[` + dyn.SpaceClass + `]+`)
+	mdOrdered = regexp.MustCompile(`^[` + dyn.SpaceClass + `]*\p{Nd}+\.`)
+	mdItem    = regexp.MustCompile(`^[` + dyn.SpaceClass + `]*(?:[-*]|\p{Nd}+\.)[` + dyn.SpaceClass + `]+`)
+	mdTable   = regexp.MustCompile(`^\|[` + dyn.SpaceClass + `:|-]+\|\n?$`)
 )
 
 func runeBefore(s string, i int) (rune, bool) {
@@ -62,7 +62,7 @@ func italic(s string) string {
 			i++
 			continue
 		}
-		if r, ok := runeBefore(s, i); ok && (py.IsWord(r) || r == '*') {
+		if r, ok := runeBefore(s, i); ok && (dyn.IsWord(r) || r == '*') {
 			i++
 			continue
 		}
@@ -74,7 +74,7 @@ func italic(s string) string {
 			i++
 			continue
 		}
-		if r, ok := runeAt(s, j+1); ok && (py.IsWord(r) || r == '*') {
+		if r, ok := runeAt(s, j+1); ok && (dyn.IsWord(r) || r == '*') {
 			i++
 			continue
 		}
@@ -96,7 +96,7 @@ func stmtRefs(s string) string {
 		if (s[i] != 'S' && s[i] != 'A') || s[i+1] != '-' {
 			continue
 		}
-		if r, ok := runeBefore(s, i); ok && py.IsWord(r) {
+		if r, ok := runeBefore(s, i); ok && dyn.IsWord(r) {
 			continue
 		}
 		// both branches match word chars only and must end at a boundary, so the id is the whole run of
@@ -105,10 +105,10 @@ func stmtRefs(s string) string {
 		n, digits, alphabet := 0, true, true
 		for {
 			r, ok := runeAt(s, j)
-			if !ok || !py.IsWord(r) {
+			if !ok || !dyn.IsWord(r) {
 				break
 			}
-			digits = digits && py.IsDecimal(r)
+			digits = digits && dyn.IsDecimal(r)
 			alphabet = alphabet && r < utf8.RuneSelf && strings.IndexByte(idAlphabet, byte(r)) >= 0
 			j += utf8.RuneLen(r)
 			n++
@@ -181,7 +181,7 @@ func renderMarkdown(text string) string {
 				if mdItem.MatchString(l) {
 					items = append(items, mdItem.ReplaceAllString(l, ""))
 				} else {
-					items[len(items)-1] += " " + py.Strip(l)
+					items[len(items)-1] += " " + dyn.Strip(l)
 				}
 				i++
 			}
@@ -198,7 +198,7 @@ func renderMarkdown(text string) string {
 			flush()
 			var buf []string
 			for i < len(lines) && strings.HasPrefix(lines[i], ">") {
-				buf = append(buf, py.Strip(lines[i][1:]))
+				buf = append(buf, dyn.Strip(lines[i][1:]))
 				i++
 			}
 			out = append(out, "<blockquote>"+renderMarkdown(strings.Join(buf, "\n"))+"</blockquote>")
@@ -209,7 +209,7 @@ func renderMarkdown(text string) string {
 			cells := func(l string) []string {
 				var c []string
 				for _, x := range strings.Split(strings.Trim(l, "|"), "|") {
-					c = append(c, py.Strip(x))
+					c = append(c, dyn.Strip(x))
 				}
 				return c
 			}
@@ -237,12 +237,12 @@ func renderMarkdown(text string) string {
 			out = append(out, b.String())
 			continue
 		}
-		if py.Strip(line) == "" {
+		if dyn.Strip(line) == "" {
 			flush()
 			i++
 			continue
 		}
-		para = append(para, py.Strip(line))
+		para = append(para, dyn.Strip(line))
 		i++
 	}
 	flush()

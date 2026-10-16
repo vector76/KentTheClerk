@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"kenttheclerk/internal/argparse"
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 // overrideLogName is the override log, at the top of the knowledge base: one JSON entry per line. An entry
@@ -56,23 +56,23 @@ var overrideNow = now
 
 // loadOverrideLog reads the log's entries in the order they were made. problem is "" unless a line is not
 // a JSON object.
-func loadOverrideLog(root string) (entries []*py.Dict, problem string) {
+func loadOverrideLog(root string) (entries []*dyn.Dict, problem string) {
 	return loadLogFile(overrideLogPath(root))
 }
 
 // loadLogFile reads a log kb only appends to, the override log or the user log, in the order its entries
 // were made (S-QYEK): by their at, and where two share a time, in the order of their lines. A merge leaves
 // one copy's new entries after the other's, so the order of the lines is not the order they were made in.
-func loadLogFile(p string) (entries []*py.Dict, problem string) {
-	if !py.IsFile(p) {
+func loadLogFile(p string) (entries []*dyn.Dict, problem string) {
+	if !dyn.IsFile(p) {
 		return nil, ""
 	}
-	for i, line := range py.TextLines(p) {
+	for i, line := range dyn.TextLines(p) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		v, err := py.Loads(line)
-		d, ok := v.(*py.Dict)
+		v, err := dyn.Loads(line)
+		d, ok := v.(*dyn.Dict)
 		if err != nil || !ok {
 			problem = fmt.Sprintf("line %d is not a JSON object", i+1)
 			break
@@ -84,7 +84,7 @@ func loadLogFile(p string) (entries []*py.Dict, problem string) {
 	return entries, problem
 }
 
-func mustLoadOverrideLog(root string) []*py.Dict {
+func mustLoadOverrideLog(root string) []*dyn.Dict {
 	entries, problem := loadOverrideLog(root)
 	if problem != "" {
 		die(fmt.Sprintf("the override log %s cannot be read: %s (%s)", overrideLogName, problem, rule("write-through-kb")))
@@ -99,19 +99,19 @@ func sha256Tag(s string) string {
 }
 
 // entrySeq is the number an override made before S-QYEK carries, or 0 when it has none.
-func entrySeq(e *py.Dict) int {
-	n, err := strconv.Atoi(py.Str(py.Or(e.Get("seq"), "")))
+func entrySeq(e *dyn.Dict) int {
+	n, err := strconv.Atoi(dyn.Str(dyn.Or(e.Get("seq"), "")))
 	if err != nil {
 		return 0
 	}
 	return n
 }
 
-func entryStr(e *py.Dict, k string) string { return py.Str(py.Or(e.Get(k), "")) }
+func entryStr(e *dyn.Dict, k string) string { return dyn.Str(dyn.Or(e.Get(k), "")) }
 
 // overrideRef is how an override is cited: its id, or the number of one made before S-QYEK, written as
 // text. "" when it has neither.
-func overrideRef(e *py.Dict) string {
+func overrideRef(e *dyn.Dict) string {
 	if id := entryStr(e, "id"); id != "" {
 		return id
 	}
@@ -134,13 +134,13 @@ func newOverrideID(root string) string {
 type overrideAuth struct{ user, turn, reason string }
 
 // appendOverride enters an override in the log under its id.
-func appendOverride(root string, id string, kind string, auth overrideAuth, fields *py.Dict) {
+func appendOverride(root string, id string, kind string, auth overrideAuth, fields *dyn.Dict) {
 	for _, e := range mustLoadOverrideLog(root) {
 		if overrideRef(e) == id {
 			die(fmt.Sprintf("the override log gained an entry with the id %s while this override was being made", id))
 		}
 	}
-	e := py.D("id", id, "kind", kind, "at", isoSeconds(overrideNow()), "by", auth.user,
+	e := dyn.D("id", id, "kind", kind, "at", isoSeconds(overrideNow()), "by", auth.user,
 		"authentication", authentication, "turn", auth.turn, "reason", auth.reason)
 	for _, k := range fields.Keys() {
 		e.Set(k, fields.Get(k))
@@ -149,17 +149,17 @@ func appendOverride(root string, id string, kind string, auth overrideAuth, fiel
 }
 
 // appendLogEntry stamps an entry and appends it to the log at p.
-func appendLogEntry(p string, e *py.Dict) {
+func appendLogEntry(p string, e *dyn.Dict) {
 	addStamp(e)
-	line := py.Dumps(e)
-	py.CheckEncodable(line)
+	line := dyn.Dumps(e)
+	dyn.CheckEncodable(line)
 	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	defer f.Close()
 	if _, err := f.WriteString(line + "\n"); err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 }
 
@@ -179,7 +179,7 @@ func retiredID(root, id string) (string, string) {
 
 // idAfter is the id an act recorded as by id in entries[from] is recorded under now: the renames and
 // merges from that entry on, in the order made, move it, and so does a reassignment of the turn itself.
-func idAfter(entries []*py.Dict, from int, id, turn string) string {
+func idAfter(entries []*dyn.Dict, from int, id, turn string) string {
 	for _, e := range entries[min(from, len(entries)):] {
 		switch entryStr(e, "kind") {
 		case ovRename, ovMerge:
@@ -204,7 +204,7 @@ func mayOverride(root, user string) bool { return true }
 
 // overrideAuthority checks the turn an override is made on: a turn of the user's own, in an on-record
 // conversation (S-0133). It returns the authority and the turn.
-func overrideAuthority(root, user, turnArg, reason string) (overrideAuth, *py.Dict) {
+func overrideAuthority(root, user, turnArg, reason string) (overrideAuth, *dyn.Dict) {
 	if !mayOverride(root, user) {
 		die(fmt.Sprintf("%s may not make overrides in this knowledge base (%s)", user, rule("override-on-record")))
 	}
@@ -212,7 +212,7 @@ func overrideAuthority(root, user, turnArg, reason string) (overrideAuth, *py.Di
 		die(fmt.Sprintf("--turn is required: the human's own turn, in this on-record conversation, that "+
 			"authorizes the override (%s)", rule("override-on-record")))
 	}
-	if py.Strip(reason) == "" {
+	if dyn.Strip(reason) == "" {
 		die(fmt.Sprintf("--reason is required: why the override is made, for the log (%s)", rule("override-list")))
 	}
 	ptr := parsePointer(turnArg)
@@ -220,22 +220,22 @@ func overrideAuthority(root, user, turnArg, reason string) (overrideAuth, *py.Di
 	if s == nil {
 		die(fmt.Sprintf("--turn: no evidence session %s", ptr.Session))
 	}
-	if !py.Equal(s.ModeValue(), "on-record") {
+	if !dyn.Equal(s.ModeValue(), "on-record") {
 		die(fmt.Sprintf("--turn: session %s is %s; an override is made only from an on-record session, so "+
-			"the conversation around it is on the record too (%s)", py.Head(s.ID(), 8), s.Mode(), rule("override-on-record")))
+			"the conversation around it is on the record too (%s)", dyn.Head(s.ID(), 8), s.Mode(), rule("override-on-record")))
 	}
 	if s.Kind() == "document" {
-		die(fmt.Sprintf("--turn: %s is a document; an override is authorized in a conversation (%s)", py.Head(s.ID(), 8), rule("override-on-record")))
+		die(fmt.Sprintf("--turn: %s is a document; an override is authorized in a conversation (%s)", dyn.Head(s.ID(), 8), rule("override-on-record")))
 	}
 	t := s.Turn(ptr.UUID)
 	if t == nil {
-		die(fmt.Sprintf("--turn: no turn %s in session %s", ptr.UUID, py.Head(s.ID(), 8)))
+		die(fmt.Sprintf("--turn: no turn %s in session %s", ptr.UUID, dyn.Head(s.ID(), 8)))
 	}
-	if !py.Equal(item(t, "role"), "user") || !py.Equal(item(t, "author"), user) {
+	if !dyn.Equal(item(t, "role"), "user") || !dyn.Equal(item(t, "author"), user) {
 		die(fmt.Sprintf("--turn %s is authored by %s, not %s; an override is authorized by the human's own turn (%s)",
-			ptr, py.Repr(item(t, "author")), py.StrRepr(user), rule("own-turn")))
+			ptr, dyn.Repr(item(t, "author")), dyn.StrRepr(user), rule("own-turn")))
 	}
-	return overrideAuth{user, Pointer{s.ID(), py.Str(item(t, "uuid"))}.String(), py.Strip(reason)}, t
+	return overrideAuth{user, Pointer{s.ID(), dyn.Str(item(t, "uuid"))}.String(), dyn.Strip(reason)}, t
 }
 
 // pendingPath is where the double-check of one override is noted between showing it and confirming it.
@@ -261,18 +261,18 @@ func showCheck(root string, args []string, plan []string) int {
 		"--turn <that turn> and --reason <why> (%s).", rule("override-confirm")))
 	p := pendingPath(root, args)
 	if err := os.MkdirAll(filepath.Dir(p), 0o777); err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	b, _ := json.Marshal(map[string]any{"override": args, "shown_at": overrideNow().Format(time.RFC3339Nano)})
 	if err := os.WriteFile(p, b, 0o666); err != nil {
-		py.RaiseOS(err)
+		dyn.RaiseOS(err)
 	}
 	return 0
 }
 
 // requireCheck refuses a confirmation that did not follow the check: the check must have been shown, and
 // the confirming turn made after it.
-func requireCheck(root string, args []string, turn *py.Dict) {
+func requireCheck(root string, args []string, turn *dyn.Dict) {
 	p := pendingPath(root, args)
 	b, err := os.ReadFile(p)
 	var pending struct {
@@ -283,7 +283,7 @@ func requireCheck(root string, args []string, turn *py.Dict) {
 			"it would change, and confirm with a turn of theirs made after that (%s)", rule("override-confirm")))
 	}
 	shown, err1 := time.Parse(time.RFC3339Nano, pending.ShownAt)
-	at, err2 := time.Parse(time.RFC3339Nano, py.Str(py.Or(turn.Get("timestamp"), "")))
+	at, err2 := time.Parse(time.RFC3339Nano, dyn.Str(dyn.Or(turn.Get("timestamp"), "")))
 	if err1 != nil || err2 != nil || !at.After(shown) {
 		die(fmt.Sprintf("the confirming turn was made before kb showed the check (at %s); the human confirms in a "+
 			"turn of theirs after seeing it (%s)", pending.ShownAt, rule("override-confirm")))
@@ -299,14 +299,14 @@ func clearCheck(root string, args []string) { _ = os.Remove(pendingPath(root, ar
 func actsBy(root, id string) (turns, atts int) {
 	for _, s := range loadAllSessions(root).Values() {
 		for _, t := range s.Turns {
-			if py.Equal(t.Get("role"), "user") && py.Equal(t.Get("author"), id) {
+			if dyn.Equal(t.Get("role"), "user") && dyn.Equal(t.Get("author"), id) {
 				turns++
 			}
 		}
 	}
 	for _, st := range loadAllStatements(root) {
 		for _, a := range listOf(st.Meta.Get("attestations")) {
-			if d, ok := a.(*py.Dict); ok && py.Equal(d.Get("by"), id) {
+			if d, ok := a.(*dyn.Dict); ok && dyn.Equal(d.Get("by"), id) {
 				atts++
 			}
 		}
@@ -317,16 +317,16 @@ func actsBy(root, id string) (turns, atts int) {
 // relabel records the acts by from as by to: all of them, or, with only, those made through that one turn.
 // The override log is never relabelled; it is read through its own renames.
 func relabel(root, from, to string, only *Pointer) (nTurns, nAtts, nFiles int) {
-	through := func(v any) bool { return only == nil || py.Equal(v, only.String()) }
+	through := func(v any) bool { return only == nil || dyn.Equal(v, only.String()) }
 	for _, md := range evidenceDirs(root) {
 		for _, p := range sortedGlob(md.dir, "*.jsonl") {
 			s := loadSession(p)
 			changed := false
 			for _, t := range s.Turns {
-				if !py.Equal(t.Get("role"), "user") || !py.Equal(t.Get("author"), from) {
+				if !dyn.Equal(t.Get("role"), "user") || !dyn.Equal(t.Get("author"), from) {
 					continue
 				}
-				if only != nil && (s.ID() != only.Session || !py.Equal(t.Get("uuid"), only.UUID)) {
+				if only != nil && (s.ID() != only.Session || !dyn.Equal(t.Get("uuid"), only.UUID)) {
 					continue
 				}
 				t.Set("author", to)
@@ -336,7 +336,7 @@ func relabel(root, from, to string, only *Pointer) (nTurns, nAtts, nFiles int) {
 			if parts, ok := s.Header.Get("participants").([]any); ok {
 				var out []any
 				for _, x := range parts {
-					if only == nil && py.Equal(x, from) {
+					if only == nil && dyn.Equal(x, from) {
 						x = to
 					}
 					if !containsValue(out, x) {
@@ -346,7 +346,7 @@ func relabel(root, from, to string, only *Pointer) (nTurns, nAtts, nFiles int) {
 				if only != nil && changed && !containsValue(out, to) {
 					out = append(out, to)
 				}
-				if py.Dumps(out) != py.Dumps(parts) {
+				if dyn.Dumps(out) != dyn.Dumps(parts) {
 					s.Header.Set("participants", out)
 					changed = true
 				}
@@ -360,14 +360,14 @@ func relabel(root, from, to string, only *Pointer) (nTurns, nAtts, nFiles int) {
 	for _, st := range loadAllStatements(root) {
 		changed := false
 		for _, a := range listOf(st.Meta.Get("attestations")) {
-			d, ok := a.(*py.Dict)
-			if ok && py.Equal(d.Get("by"), from) && through(d.Get("turn")) {
+			d, ok := a.(*dyn.Dict)
+			if ok && dyn.Equal(d.Get("by"), from) && through(d.Get("turn")) {
 				d.Set("by", to)
 				nAtts++
 				changed = true
 			}
 		}
-		if py.Equal(st.Meta.Get("originator"), from) && through(st.Meta.Get("proposed_in")) {
+		if dyn.Equal(st.Meta.Get("originator"), from) && through(st.Meta.Get("proposed_in")) {
 			st.Meta.Set("originator", to)
 			changed = true
 		}
@@ -377,7 +377,7 @@ func relabel(root, from, to string, only *Pointer) (nTurns, nAtts, nFiles int) {
 		}
 	}
 	for _, st := range loadAllAgentStatements(root) {
-		if py.Equal(st.Meta.Get("withdrawn_by"), from) && through(st.Meta.Get("withdrawn_in")) {
+		if dyn.Equal(st.Meta.Get("withdrawn_by"), from) && through(st.Meta.Get("withdrawn_in")) {
 			st.Meta.Set("withdrawn_by", to)
 			writeStatement(st.Path, st)
 			nFiles++
@@ -388,7 +388,7 @@ func relabel(root, from, to string, only *Pointer) (nTurns, nAtts, nFiles int) {
 
 // refreshIndex rebuilds the index when there is one, so it does not go on showing what an override changed.
 func refreshIndex(root string) {
-	if py.IsFile(dbPath(root)) {
+	if dyn.IsFile(dbPath(root)) {
 		buildIndex(root)
 		println("index rebuilt")
 	}
@@ -406,7 +406,7 @@ func runOverrideMerge(ns argparse.Namespace, args []string) int {
 	if len(args) != 2 {
 		die("kb override merge takes two keys: kb override merge <from> <into>")
 	}
-	from, to := py.Strip(args[0]), py.Strip(args[1])
+	from, to := dyn.Strip(args[0]), dyn.Strip(args[1])
 	if from == "" || to == "" || from == to {
 		die("the two ids must be different and not empty")
 	}
@@ -414,32 +414,32 @@ func runOverrideMerge(ns argparse.Namespace, args []string) int {
 		die(msg)
 	}
 	if moved, ref := retiredID(root, to); moved != "" {
-		die(fmt.Sprintf("%s was moved to %s by override %s and is retired here", py.StrRepr(to), moved, ref))
+		die(fmt.Sprintf("%s was moved to %s by override %s and is retired here", dyn.StrRepr(to), moved, ref))
 	}
 	userArg, _ := ns.Str("user")
 	user := currentUser(userArg, root)
 	fromTurns, fromAtts := actsBy(root, from)
 	toTurns, toAtts := actsBy(root, to)
 	if fromTurns+fromAtts == 0 {
-		die(fmt.Sprintf("nothing is recorded as by %s", py.StrRepr(from)))
+		die(fmt.Sprintf("nothing is recorded as by %s", dyn.StrRepr(from)))
 	}
 	users := mustLoadUsers(root)
 	if !users.has(to) && toTurns+toAtts == 0 {
 		die(fmt.Sprintf("%s is not in the user table and has no acts; add the right person first with kb user add, "+
-			"choosing that key, then merge into it (%s)", py.StrRepr(to), rule("override-list")))
+			"choosing that key, then merge into it (%s)", dyn.StrRepr(to), rule("override-list")))
 	}
 	{
 		var both []string
 		for _, st := range loadAllStatements(root) {
 			var a, b bool
 			for _, x := range listOf(st.Meta.Get("attestations")) {
-				if d, ok := x.(*py.Dict); ok {
-					a = a || py.Equal(d.Get("by"), from)
-					b = b || py.Equal(d.Get("by"), to)
+				if d, ok := x.(*dyn.Dict); ok {
+					a = a || dyn.Equal(d.Get("by"), from)
+					b = b || dyn.Equal(d.Get("by"), to)
 				}
 			}
 			if a && b {
-				both = append(both, py.Str(st.ID()))
+				both = append(both, dyn.Str(st.ID()))
 			}
 		}
 		if len(both) > 0 {
@@ -452,8 +452,8 @@ func runOverrideMerge(ns argparse.Namespace, args []string) int {
 	if !ns.Bool("confirm") {
 		plan := []string{
 			fmt.Sprintf("%s %s to %s: %d human turn(s) and %d attestation(s) recorded as by %s would be recorded as by %s, "+
-				"in every file that names them", verb, py.StrRepr(from), py.StrRepr(to), fromTurns, fromAtts, from, to),
-			fmt.Sprintf("refuse any later act under %s, which would then be retired here", py.StrRepr(from)),
+				"in every file that names them", verb, dyn.StrRepr(from), dyn.StrRepr(to), fromTurns, fromAtts, from, to),
+			fmt.Sprintf("refuse any later act under %s, which would then be retired here", dyn.StrRepr(from)),
 		}
 		if toTurns+toAtts > 0 {
 			plan = append(plan, fmt.Sprintf("say that %s and %s are one person: %s already has %d turn(s) and %d attestation(s)",
@@ -476,7 +476,7 @@ func runOverrideMerge(ns argparse.Namespace, args []string) int {
 	requireCheck(root, check, turn)
 	id := newOverrideID(root)
 	nTurns, nAtts, nFiles := relabel(root, from, to, nil)
-	appendOverride(root, id, kind, auth, py.D("from", from, "to", to, "turns", py.IntOf(nTurns), "attestations", py.IntOf(nAtts)))
+	appendOverride(root, id, kind, auth, dyn.D("from", from, "to", to, "turns", dyn.IntOf(nTurns), "attestations", dyn.IntOf(nAtts)))
 	row := moveRow(root, from, to)
 	clearCheck(root, check)
 	println(fmt.Sprintf("override %s: %s %s to %s: %d turn(s) and %d attestation(s) in %d file(s)", id, verb, from, to, nTurns, nAtts, nFiles))
@@ -498,7 +498,7 @@ func runOverrideReassign(ns argparse.Namespace, args []string) int {
 		die("kb override reassign takes a turn and an id: kb override reassign <session>#<uuid> <id>")
 	}
 	ptr := parsePointer(args[0])
-	to := py.Strip(args[1])
+	to := dyn.Strip(args[1])
 	userArg, _ := ns.Str("user")
 	user := currentUser(userArg, root)
 	s := findSession(root, ptr.Session)
@@ -507,39 +507,39 @@ func runOverrideReassign(ns argparse.Namespace, args []string) int {
 	}
 	t := s.Turn(ptr.UUID)
 	if t == nil {
-		die(fmt.Sprintf("no turn %s in session %s", ptr.UUID, py.Head(s.ID(), 8)))
+		die(fmt.Sprintf("no turn %s in session %s", ptr.UUID, dyn.Head(s.ID(), 8)))
 	}
-	from := py.Str(item(t, "author"))
-	if !py.Equal(item(t, "role"), "user") || in(from, []string{"client", "tool", "document"}) {
+	from := dyn.Str(item(t, "author"))
+	if !dyn.Equal(item(t, "role"), "user") || in(from, []string{"client", "tool", "document"}) {
 		die(fmt.Sprintf("%s is not a human's turn; only a human's act is reassigned", ptr))
 	}
 	if to == "" || to == from || strings.HasPrefix(to, "agent:") || in(to, []string{"client", "tool", "document"}) {
-		die(fmt.Sprintf("%s is not another person's id", py.StrRepr(to)))
+		die(fmt.Sprintf("%s is not another person's id", dyn.StrRepr(to)))
 	}
 	if moved, ref := retiredID(root, to); moved != "" {
-		die(fmt.Sprintf("%s was moved to %s by override %s and is retired here", py.StrRepr(to), moved, ref))
+		die(fmt.Sprintf("%s was moved to %s by override %s and is retired here", dyn.StrRepr(to), moved, ref))
 	}
 	if !mustLoadUsers(root).has(to) {
 		die(fmt.Sprintf("%s is not in the user table; an act is reassigned to someone in it, so add them first with kb "+
-			"user add (%s)", py.StrRepr(to), rule("add-first")))
+			"user add (%s)", dyn.StrRepr(to), rule("add-first")))
 	}
-	full := Pointer{s.ID(), py.Str(item(t, "uuid"))}
+	full := Pointer{s.ID(), dyn.Str(item(t, "uuid"))}
 	var atts []string
 	for _, st := range loadAllStatements(root) {
 		for _, a := range listOf(st.Meta.Get("attestations")) {
-			if d, ok := a.(*py.Dict); ok && py.Equal(d.Get("turn"), full.String()) && py.Equal(d.Get("by"), from) {
+			if d, ok := a.(*dyn.Dict); ok && dyn.Equal(d.Get("turn"), full.String()) && dyn.Equal(d.Get("by"), from) {
 				for _, b := range listOf(st.Meta.Get("attestations")) {
-					if bd, ok := b.(*py.Dict); ok && py.Equal(bd.Get("by"), to) {
-						die(fmt.Sprintf("%s has already attested %s, which this turn attests (%s)", to, py.Str(st.ID()), rule("attest-once")))
+					if bd, ok := b.(*dyn.Dict); ok && dyn.Equal(bd.Get("by"), to) {
+						die(fmt.Sprintf("%s has already attested %s, which this turn attests (%s)", to, dyn.Str(st.ID()), rule("attest-once")))
 					}
 				}
-				atts = append(atts, py.Str(st.ID()))
+				atts = append(atts, dyn.Str(st.ID()))
 			}
 		}
 	}
 	check := []string{"override", ovReassign, full.String(), to}
 	if !ns.Bool("confirm") {
-		plan := []string{fmt.Sprintf("record turn %s, now by %s, as by %s", full, py.StrRepr(from), py.StrRepr(to))}
+		plan := []string{fmt.Sprintf("record turn %s, now by %s, as by %s", full, dyn.StrRepr(from), dyn.StrRepr(to))}
 		if len(atts) > 0 {
 			plan = append(plan, fmt.Sprintf("and with it the attestation(s) made through that turn: %s", strings.Join(atts, ", ")))
 		}
@@ -551,7 +551,7 @@ func runOverrideReassign(ns argparse.Namespace, args []string) int {
 	requireCheck(root, check, turn)
 	id := newOverrideID(root)
 	_, nAtts, _ := relabel(root, from, to, &full)
-	appendOverride(root, id, ovReassign, auth, py.D("target", full.String(), "from", from, "to", to, "attestations", py.IntOf(nAtts)))
+	appendOverride(root, id, ovReassign, auth, dyn.D("target", full.String(), "from", from, "to", to, "attestations", dyn.IntOf(nAtts)))
 	clearCheck(root, check)
 	println(fmt.Sprintf("override %s: turn %s reassigned from %s to %s, with %d attestation(s)", id, full, from, to, nAtts))
 	refreshIndex(root)
@@ -563,38 +563,38 @@ func runOverrideReassign(ns argparse.Namespace, args []string) int {
 // tombstone is the text that takes the place of scrubbed content, citing the override by its id, or by its
 // number for one made before S-QYEK.
 func tombstone(ref string, at, reason string) string {
-	return fmt.Sprintf("[scrubbed on %s by override %s: %s]", py.Head(at, 10), ref, reason)
+	return fmt.Sprintf("[scrubbed on %s by override %s: %s]", dyn.Head(at, 10), ref, reason)
 }
 
 // scrubMark is the mark a scrubbed turn, session or statement carries, pointing to its log entry.
-func scrubMark(ref string, at, reason string) *py.Dict {
-	return py.D("override", ref, "at", at, "reason", reason)
+func scrubMark(ref string, at, reason string) *dyn.Dict {
+	return dyn.D("override", ref, "at", at, "reason", reason)
 }
 
 // markRef is the override a mark points to, as overrideRef cites it: the "override" of a mark in
 // evidence, or what a statement's "scrubbed" or "revised" holds (frontmatter keeps a statement's marks
 // flat). A number from before S-QYEK comes back as text. "" when there is none.
 func markRef(v any) string {
-	if d, ok := v.(*py.Dict); ok {
+	if d, ok := v.(*dyn.Dict); ok {
 		v = d.Get("override")
 	}
-	if !py.Truthy(v) {
+	if !dyn.Truthy(v) {
 		return ""
 	}
-	return py.Str(v)
+	return dyn.Str(v)
 }
 
-func scrubbedTurn(t *py.Dict) bool { return py.Truthy(t.Get("scrubbed")) }
+func scrubbedTurn(t *dyn.Dict) bool { return dyn.Truthy(t.Get("scrubbed")) }
 
-func scrubTurnIn(t *py.Dict, ref string, at, reason string) {
-	t.Set("content", []any{py.D("type", "text", "text", tombstone(ref, at, reason))})
+func scrubTurnIn(t *dyn.Dict, ref string, at, reason string) {
+	t.Set("content", []any{dyn.D("type", "text", "text", tombstone(ref, at, reason))})
 	t.Set("scrubbed", scrubMark(ref, at, reason))
 }
 
 func excerptOf(s string) string {
 	s = normalizeWS(s)
-	if py.Len(s) > 80 {
-		return py.Head(s, 80) + "..."
+	if dyn.Len(s) > 80 {
+		return dyn.Head(s, 80) + "..."
 	}
 	return s
 }
@@ -614,7 +614,7 @@ func runOverrideScrub(ns argparse.Namespace, args []string) int {
 		die("kb override scrub takes one target: <session>#<uuid> for a turn, <session> for a whole session or " +
 			"document, or S-xxxx / A-xxxx for a statement")
 	}
-	target := py.Strip(args[0])
+	target := dyn.Strip(args[0])
 	userArg, _ := ns.Str("user")
 	user := currentUser(userArg, root)
 
@@ -629,20 +629,20 @@ func runOverrideScrub(ns argparse.Namespace, args []string) int {
 			die(fmt.Sprintf("statement %s not found", sid))
 		}
 		st := loadStatement(p)
-		if py.Truthy(st.Meta.Get("scrubbed")) {
+		if dyn.Truthy(st.Meta.Get("scrubbed")) {
 			die(fmt.Sprintf("%s is already scrubbed", sid))
 		}
 		plan = []string{fmt.Sprintf("replace the title, answers line and text of %s (%s) with a tombstone, keeping its id, "+
-			"links and attestations", sid, excerptOf(py.Str(st.Meta.Get("title"))))}
+			"links and attestations", sid, excerptOf(dyn.Str(st.Meta.Get("title"))))}
 		for _, k := range []string{"proposed_in", "modified_in", "made_in"} {
-			if v := st.Meta.Get(k); py.Truthy(v) {
+			if v := st.Meta.Get(k); dyn.Truthy(v) {
 				remains = append(remains, fmt.Sprintf("the turn it was %s, %s: scrub it with kb override scrub %s",
-					map[string]string{"proposed_in": "proposed in", "modified_in": "modified in", "made_in": "made in"}[k], py.Str(v), py.Str(v)))
+					map[string]string{"proposed_in": "proposed in", "modified_in": "modified in", "made_in": "made in"}[k], dyn.Str(v), dyn.Str(v)))
 			}
 		}
 		for _, a := range listOf(st.Meta.Get("attestations")) {
-			if d, ok := a.(*py.Dict); ok && py.Equal(d.Get("form"), "self") {
-				remains = append(remains, fmt.Sprintf("the turn it was attested in, %s", py.Str(d.Get("turn"))))
+			if d, ok := a.(*dyn.Dict); ok && dyn.Equal(d.Get("form"), "self") {
+				remains = append(remains, fmt.Sprintf("the turn it was attested in, %s", dyn.Str(d.Get("turn"))))
 			}
 		}
 		apply = func(ref string, at, reason string) (string, string) {
@@ -658,7 +658,7 @@ func runOverrideScrub(ns argparse.Namespace, args []string) int {
 			writeStatement(dest, st)
 			if pathKey(dest) != pathKey(p) {
 				if err := os.Remove(p); err != nil {
-					py.RaiseOS(err)
+					dyn.RaiseOS(err)
 				}
 			}
 			return ovScrubStatement, sid
@@ -667,23 +667,23 @@ func runOverrideScrub(ns argparse.Namespace, args []string) int {
 	case strings.Contains(target, "#"):
 		ptr := parsePointer(target)
 		s := findSession(root, ptr.Session)
-		if s == nil || !py.Equal(s.ModeValue(), "on-record") {
+		if s == nil || !dyn.Equal(s.ModeValue(), "on-record") {
 			die(fmt.Sprintf("no on-record evidence session %s; off-record material is outside the record, and its "+
 				"files may simply be deleted", ptr.Session))
 		}
 		t := s.Turn(ptr.UUID)
 		if t == nil {
-			die(fmt.Sprintf("no turn %s in session %s", ptr.UUID, py.Head(s.ID(), 8)))
+			die(fmt.Sprintf("no turn %s in session %s", ptr.UUID, dyn.Head(s.ID(), 8)))
 		}
 		if scrubbedTurn(t) {
 			die(fmt.Sprintf("%s is already scrubbed", target))
 		}
-		full := Pointer{s.ID(), py.Str(item(t, "uuid"))}
+		full := Pointer{s.ID(), dyn.Str(item(t, "uuid"))}
 		plan = []string{fmt.Sprintf("replace the content of %s %s by %s at %s (%s) with a tombstone, keeping the turn's "+
-			"id, author and time", s.Kind(), full, py.Str(t.Get("author")), py.Str(t.Get("timestamp")), excerptOf(turnText(t)))}
+			"id, author and time", s.Kind(), full, dyn.Str(t.Get("author")), dyn.Str(t.Get("timestamp")), excerptOf(turnText(t)))}
 		if s.Kind() == "document" {
 			remains = append(remains, "the document's original bytes, which hold the whole document: to remove them, scrub "+
-				"the whole document with kb override scrub "+py.Head(s.ID(), 8))
+				"the whole document with kb override scrub "+dyn.Head(s.ID(), 8))
 		}
 		apply = func(ref string, at, reason string) (string, string) {
 			scrubTurnIn(t, ref, at, reason)
@@ -694,12 +694,12 @@ func runOverrideScrub(ns argparse.Namespace, args []string) int {
 
 	default:
 		s := sessionByPrefix(loadAllSessions(root), target)
-		if s == nil || !py.Equal(s.ModeValue(), "on-record") {
+		if s == nil || !dyn.Equal(s.ModeValue(), "on-record") {
 			die(fmt.Sprintf("no on-record evidence session %s; off-record material is outside the record, and its "+
-				"files may simply be deleted", py.StrRepr(target)))
+				"files may simply be deleted", dyn.StrRepr(target)))
 		}
-		if py.Truthy(s.Header.Get("scrubbed")) {
-			die(fmt.Sprintf("%s %s is already scrubbed", s.Kind(), py.Head(s.ID(), 8)))
+		if dyn.Truthy(s.Header.Get("scrubbed")) {
+			die(fmt.Sprintf("%s %s is already scrubbed", s.Kind(), dyn.Head(s.ID(), 8)))
 		}
 		n := 0
 		for _, t := range s.Turns {
@@ -708,15 +708,15 @@ func runOverrideScrub(ns argparse.Namespace, args []string) int {
 			}
 		}
 		plan = []string{fmt.Sprintf("replace the content of all %d turn(s) of %s %s (%s) with tombstones, and its title, "+
-			"keeping each turn's id, author and time", n, s.Kind(), s.ID(), excerptOf(py.Str(py.Or(s.Header.Get("title"), ""))))}
+			"keeping each turn's id, author and time", n, s.Kind(), s.ID(), excerptOf(dyn.Str(dyn.Or(s.Header.Get("title"), ""))))}
 		var original string
 		if s.Kind() == "document" {
-			o := py.AsDict(py.Or(s.Header.Get("original"), py.NewDict()))
-			original = filepath.Join(filepath.Dir(s.Path), py.Str(py.Or(o.Get("path"), "")))
+			o := dyn.AsDict(dyn.Or(s.Header.Get("original"), dyn.NewDict()))
+			original = filepath.Join(filepath.Dir(s.Path), dyn.Str(dyn.Or(o.Get("path"), "")))
 			if sharedOriginal(root, s, original) {
 				remains = append(remains, "the original bytes, which another projection still uses: scrub that one too")
 				original = ""
-			} else if py.IsFile(original) {
+			} else if dyn.IsFile(original) {
 				plan = append(plan, "delete the document's original bytes, "+rel(original, root))
 			}
 		}
@@ -734,9 +734,9 @@ func runOverrideScrub(ns argparse.Namespace, args []string) int {
 			}
 			s.Header.Set("scrubbed", scrubMark(ref, at, reason))
 			writeJSONL(s.Path, s.Header, s.Turns)
-			if original != "" && py.IsFile(original) {
+			if original != "" && dyn.IsFile(original) {
 				if err := os.Remove(original); err != nil {
-					py.RaiseOS(err)
+					dyn.RaiseOS(err)
 				}
 			}
 			return ovScrubSession, s.ID()
@@ -761,7 +761,7 @@ func runOverrideScrub(ns argparse.Namespace, args []string) int {
 	id := newOverrideID(root)
 	at := isoSeconds(overrideNow())
 	kind, key := apply(id, at, auth.reason)
-	appendOverride(root, id, kind, auth, py.D("target", key))
+	appendOverride(root, id, kind, auth, dyn.D("target", key))
 	clearCheck(root, check)
 	println(fmt.Sprintf("override %s: %s scrubbed", id, key))
 	refreshIndex(root)
@@ -777,7 +777,7 @@ func runOverrideScrub(ns argparse.Namespace, args []string) int {
 // sourceRemains is where a scrubbed conversation's content still lives outside the knowledge base: the
 // session file it was snapshotted from.
 func sourceRemains(s *Session) []string {
-	if src := py.Str(py.Or(s.Header.Get("source"), "")); src != "" && s.Kind() == "session" {
+	if src := dyn.Str(dyn.Or(s.Header.Get("source"), "")); src != "" && s.Kind() == "session" {
 		return []string{"the session file it was snapshotted from, " + src}
 	}
 	return nil
@@ -786,11 +786,11 @@ func sourceRemains(s *Session) []string {
 // sharedOriginal says whether a projection other than s, not itself scrubbed, uses the same original bytes.
 func sharedOriginal(root string, s *Session, original string) bool {
 	for _, o := range loadAllSessions(root).Values() {
-		if o.ID() == s.ID() || o.Kind() != "document" || py.Truthy(o.Header.Get("scrubbed")) {
+		if o.ID() == s.ID() || o.Kind() != "document" || dyn.Truthy(o.Header.Get("scrubbed")) {
 			continue
 		}
-		od := py.AsDict(py.Or(o.Header.Get("original"), py.NewDict()))
-		if pathKey(filepath.Join(filepath.Dir(o.Path), py.Str(py.Or(od.Get("path"), "")))) == pathKey(original) {
+		od := dyn.AsDict(dyn.Or(o.Header.Get("original"), dyn.NewDict()))
+		if pathKey(filepath.Join(filepath.Dir(o.Path), dyn.Str(dyn.Or(od.Get("path"), "")))) == pathKey(original) {
 			return true
 		}
 	}
@@ -802,25 +802,25 @@ func sharedOriginal(root string, s *Session, original string) bool {
 // reliance is what relies on a statement, in the record or by being pushed (S-0136): each reason it can no
 // longer be revised in place.
 func reliance(root string, st *Statement) []string {
-	id := py.Str(st.ID())
+	id := dyn.Str(st.ID())
 	var out []string
-	if sb := st.Meta.Get("superseded_by"); py.Truthy(sb) {
-		out = append(out, py.Str(sb)+" supersedes it")
+	if sb := st.Meta.Get("superseded_by"); dyn.Truthy(sb) {
+		out = append(out, dyn.Str(sb)+" supersedes it")
 	}
 	for _, k := range []string{"amended_by", "clarified_by"} {
 		for _, x := range listOf(st.Meta.Get(k)) {
-			out = append(out, fmt.Sprintf("%s %s it", py.Str(x), markVerb[k]))
+			out = append(out, fmt.Sprintf("%s %s it", dyn.Str(x), markVerb[k]))
 		}
 	}
 	mention := regexp.MustCompile(`\b` + regexp.QuoteMeta(id) + `\b`)
 	others := append(loadAllStatements(root), loadAllAgentStatements(root)...)
 	for _, o := range others {
-		oid := py.Str(o.ID())
+		oid := dyn.Str(o.ID())
 		if oid == id {
 			continue
 		}
 		for _, x := range listOf(o.Meta.Get("rests_on")) {
-			if py.Str(x) == id {
+			if dyn.Str(x) == id {
 				out = append(out, oid+" rests on it")
 			}
 		}
@@ -829,15 +829,15 @@ func reliance(root string, st *Statement) []string {
 				out = append(out, oid+" links to it with context_for")
 			}
 		}
-		if mention.MatchString(o.Body) || mention.MatchString(py.Str(py.Or(o.Meta.Get("title"), ""))) ||
-			mention.MatchString(py.Str(py.Or(o.Meta.Get("answers"), ""))) {
+		if mention.MatchString(o.Body) || mention.MatchString(dyn.Str(dyn.Or(o.Meta.Get("title"), ""))) ||
+			mention.MatchString(dyn.Str(dyn.Or(o.Meta.Get("answers"), ""))) {
 			out = append(out, oid+" mentions it")
 		}
 	}
 	atts := listOf(st.Meta.Get("attestations"))
 	for _, a := range atts[min(1, len(atts)):] {
-		if d, ok := a.(*py.Dict); ok {
-			out = append(out, "it is endorsed by "+py.Str(d.Get("by")))
+		if d, ok := a.(*dyn.Dict); ok {
+			out = append(out, "it is endorsed by "+dyn.Str(d.Get("by")))
 		}
 	}
 	if up := pushedTo(root, id); up != "" {
@@ -891,9 +891,9 @@ func runOverrideRevise(ns argparse.Namespace, args []string) int {
 		die("kb override revise takes the statement and the draft of its new text: kb override revise S-xxxx <draft> " +
 			"--proposed <ptr> --turn <ptr> --reason <why>")
 	}
-	sid := strings.ToUpper(py.Strip(args[0]))
+	sid := strings.ToUpper(dyn.Strip(args[0]))
 	if !humanIDRE.MatchString(sid) {
-		die(fmt.Sprintf("%s is not a human statement id (S-xxxx); an agent revises its own choices with kb record (%s)", py.StrRepr(sid), rule("agent-revision")))
+		die(fmt.Sprintf("%s is not a human statement id (S-xxxx); an agent revises its own choices with kb record (%s)", dyn.StrRepr(sid), rule("agent-revision")))
 	}
 	p := statementPath(root, sid)
 	if p == "" {
@@ -902,7 +902,7 @@ func runOverrideRevise(ns argparse.Namespace, args []string) int {
 	st := loadStatement(p)
 	userArg, _ := ns.Str("user")
 	user := currentUser(userArg, root)
-	if py.Truthy(st.Meta.Get("scrubbed")) {
+	if dyn.Truthy(st.Meta.Get("scrubbed")) {
 		die(fmt.Sprintf("%s is scrubbed", sid))
 	}
 	if authorOf(st) != user {
@@ -913,12 +913,12 @@ func runOverrideRevise(ns argparse.Namespace, args []string) int {
 			"superseding it instead (%s; %s)", sid, strings.Join(reasons, "; "), rule("override-revise"), rule("change-by-supersession")))
 	}
 	reason, _ := ns.Str("reason")
-	if py.Strip(reason) == "" {
+	if dyn.Strip(reason) == "" {
 		die(fmt.Sprintf("--reason is required: why the statement is revised, for the log (%s)", rule("override-revise")))
 	}
 	form, _ := ns.Str("form")
 	if !in(form, attestationForms) || form == "endorsement" {
-		die("form must be one of " + py.Tuple("proposed-and-agreed", "agreed-with-modification", "self"))
+		die("form must be one of " + dyn.Tuple("proposed-and-agreed", "agreed-with-modification", "self"))
 	}
 	turnArg, _ := ns.Str("turn")
 	if turnArg == "" {
@@ -926,55 +926,55 @@ func runOverrideRevise(ns argparse.Namespace, args []string) int {
 	}
 	agreePtr := parsePointer(turnArg)
 	sess, agree := resolveOnRecord(root, agreePtr, "--turn")
-	if !py.Equal(item(agree, "role"), "user") || !py.Equal(item(agree, "author"), user) {
-		die(fmt.Sprintf("--turn %s is authored by %s, not the attesting user %s (%s)", agreePtr, py.Repr(item(agree, "author")), py.StrRepr(user), rule("own-turn")))
+	if !dyn.Equal(item(agree, "role"), "user") || !dyn.Equal(item(agree, "author"), user) {
+		die(fmt.Sprintf("--turn %s is authored by %s, not the attesting user %s (%s)", agreePtr, dyn.Repr(item(agree, "author")), dyn.StrRepr(user), rule("own-turn")))
 	}
-	first := py.AsDict(listOf(st.Meta.Get("attestations"))[0])
+	first := dyn.AsDict(listOf(st.Meta.Get("attestations"))[0])
 	if _, old := resolvePointer(loadAllSessions(root), parsePointerValue(first.Get("turn"))); old != nil && timestampOr(agree) <= timestampOr(old) {
 		die(fmt.Sprintf("the agreement to a revision comes after the attestation it revises (%s)", rule("after-proposal")))
 	}
 
 	draftArg := args[1]
 	draft := loadStatement(draftPath(root, draftArg))
-	meta, body := draft.Meta.Copy(), py.Strip(draft.Body)
+	meta, body := draft.Meta.Copy(), dyn.Strip(draft.Body)
 	if body == "" {
 		die("draft has an empty body")
 	}
-	if py.Truthy(meta.Get("id")) && !py.Equal(meta.Get("id"), sid) {
-		die(fmt.Sprintf("draft carries the id %s; a revision keeps the id of the statement it revises", py.Str(meta.Get("id"))))
+	if dyn.Truthy(meta.Get("id")) && !dyn.Equal(meta.Get("id"), sid) {
+		die(fmt.Sprintf("draft carries the id %s; a revision keeps the id of the statement it revises", dyn.Str(meta.Get("id"))))
 	}
-	if !py.Truthy(meta.Get("title")) {
+	if !dyn.Truthy(meta.Get("title")) {
 		die(fmt.Sprintf("draft needs a title (%s)", rule("title-and-answers")))
 	}
-	if py.Strip(py.Str(py.Or(meta.Get("answers"), ""))) == "" {
+	if dyn.Strip(dyn.Str(dyn.Or(meta.Get("answers"), ""))) == "" {
 		die(fmt.Sprintf("draft needs an answers line (%s)", rule("title-and-answers")))
 	}
 	// what the statement changes and how it reads others stay as they were: changing them would change
 	// marks on other statements, which is supersession's work
 	for _, r := range relations {
-		if v := meta.Get(r); py.Truthy(v) && !py.Equal(py.Str(v), py.Str(py.Or(st.Meta.Get(r), ""))) {
+		if v := meta.Get(r); dyn.Truthy(v) && !dyn.Equal(dyn.Str(v), dyn.Str(dyn.Or(st.Meta.Get(r), ""))) {
 			die(fmt.Sprintf("%s: a revision keeps what the statement %s; to change that, supersede it (%s)", r, r, rule("override-revise")))
 		}
 	}
-	if v := meta.Get("context_for"); py.Truthy(v) && contextKey(meta) != contextKey(st.Meta) {
+	if v := meta.Get("context_for"); dyn.Truthy(v) && contextKey(meta) != contextKey(st.Meta) {
 		die(fmt.Sprintf("context_for: a revision keeps the statement's context_for links; to change them, supersede it (%s)", rule("override-revise")))
 	}
 	proposed, _ := ns.Str("proposed")
 	originator, proposedIn, modifiedIn := agreedProposal(root, form, proposed, sess, agree, body, user)
-	cites := py.Or(getOr(meta, "cites", []any{}), []any{})
+	cites := dyn.Or(getOr(meta, "cites", []any{}), []any{})
 	checkCites(root, cites)
 	rests := restsOn(root, meta)
 	for _, x := range rests {
-		if py.Str(x) == sid {
+		if dyn.Str(x) == sid {
 			die("rests_on: a statement does not rest on itself")
 		}
 	}
 
 	id := newOverrideID(root)
 	ts := isoSeconds(now())
-	record := py.D("by", user, "authentication", authentication, "at", ts, "turn", Pointer{sess.ID(), py.Str(item(agree, "uuid"))}.String(), "form", form)
+	record := dyn.D("by", user, "authentication", authentication, "at", ts, "turn", Pointer{sess.ID(), dyn.Str(item(agree, "uuid"))}.String(), "form", form)
 	addStamp(record)
-	ordered := py.D("id", sid, "title", meta.Get("title"), "answers", py.Strip(py.Str(meta.Get("answers"))),
+	ordered := dyn.D("id", sid, "title", meta.Get("title"), "answers", dyn.Strip(dyn.Str(meta.Get("answers"))),
 		"originator", originator, "proposed_in", proposedIn)
 	if modifiedIn != "" {
 		ordered.Set("modified_in", modifiedIn)
@@ -984,27 +984,27 @@ func runOverrideRevise(ns argparse.Namespace, args []string) int {
 		ordered.Set("rests_on", rests)
 	}
 	for _, r := range relations {
-		if v := st.Meta.Get(r); py.Truthy(v) {
+		if v := st.Meta.Get(r); dyn.Truthy(v) {
 			ordered.Set(r, v)
 		}
 	}
-	if v := st.Meta.Get("context_for"); py.Truthy(v) {
+	if v := st.Meta.Get("context_for"); dyn.Truthy(v) {
 		ordered.Set("context_for", v)
 	}
-	ordered.Set("topics", py.Or(getOr(meta, "topics", st.Meta.Get("topics")), []any{}))
+	ordered.Set("topics", dyn.Or(getOr(meta, "topics", st.Meta.Get("topics")), []any{}))
 	ordered.Set("attestations", []any{record})
 	ordered.Set("revised", id)
 
-	original := py.ReadText(p)
-	dest := filepath.Join(root, "attested", sid+"-"+slugify(py.AsStr(meta.Get("title")), 60)+".md")
-	py.WriteText(dest, dumpFrontmatter(ordered)+"\n"+body+"\n")
+	original := dyn.ReadText(p)
+	dest := filepath.Join(root, "attested", sid+"-"+slugify(dyn.AsStr(meta.Get("title")), 60)+".md")
+	dyn.WriteText(dest, dumpFrontmatter(ordered)+"\n"+body+"\n")
 	if pathKey(dest) != pathKey(p) {
 		if err := os.Remove(p); err != nil {
-			py.RaiseOS(err)
+			dyn.RaiseOS(err)
 		}
 	}
-	auth := overrideAuth{user, Pointer{sess.ID(), py.Str(item(agree, "uuid"))}.String(), py.Strip(reason)}
-	appendOverride(root, id, ovRevise, auth, py.D("statement", sid, "proposed", proposedIn, "original", original,
+	auth := overrideAuth{user, Pointer{sess.ID(), dyn.Str(item(agree, "uuid"))}.String(), dyn.Strip(reason)}
+	appendOverride(root, id, ovRevise, auth, dyn.D("statement", sid, "proposed", proposedIn, "original", original,
 		"body_sha256", sha256Tag(body)))
 	if !ns.Bool("keep_draft") {
 		deleteDraft(draft.Path)
@@ -1015,7 +1015,7 @@ func runOverrideRevise(ns argparse.Namespace, args []string) int {
 }
 
 // contextKey is a statement's context_for links as one comparable string.
-func contextKey(meta *py.Dict) string {
+func contextKey(meta *dyn.Dict) string {
 	var parts []string
 	for _, l := range contextLinks(meta) {
 		parts = append(parts, l.target+"\x00"+l.note)
@@ -1033,11 +1033,11 @@ func runOverrideUser(ns argparse.Namespace, args []string) int {
 	if len(args) != 1 {
 		die("kb override user takes one key: kb override user <key> --name <name> --email <email>")
 	}
-	key := py.Strip(args[0])
+	key := dyn.Strip(args[0])
 	users := mustLoadUsers(root)
 	old, ok := users.get(key)
 	if !ok {
-		die(fmt.Sprintf("%s is not in the user table; a person is added with kb user add (%s)", py.StrRepr(key), rule("add-first")))
+		die(fmt.Sprintf("%s is not in the user table; a person is added with kb user add (%s)", dyn.StrRepr(key), rule("add-first")))
 	}
 	name, email := old.name, old.email
 	if v, _ := ns.Str("name"); v != "" {
@@ -1046,7 +1046,7 @@ func runOverrideUser(ns argparse.Namespace, args []string) int {
 	if v, _ := ns.Str("email"); v != "" {
 		email = strings.TrimSpace(v)
 		if !emailRE.MatchString(email) {
-			die(fmt.Sprintf("%s is not an email address", py.StrRepr(email)))
+			die(fmt.Sprintf("%s is not an email address", dyn.StrRepr(email)))
 		}
 	}
 	if name == "" {
@@ -1071,7 +1071,7 @@ func runOverrideUser(ns argparse.Namespace, args []string) int {
 	auth, turn := overrideAuthority(root, user, turnArg, reason)
 	requireCheck(root, check, turn)
 	id := newOverrideID(root)
-	appendOverride(root, id, ovUser, auth, py.D("key", key, "name", name, "email", email, "was_name", old.name, "was_email", old.email))
+	appendOverride(root, id, ovUser, auth, dyn.D("key", key, "name", name, "email", email, "was_name", old.name, "was_email", old.email))
 	var rows []person
 	for _, p := range users.rows {
 		if p.key == key {
@@ -1090,20 +1090,20 @@ func runOverrideUser(ns argparse.Namespace, args []string) int {
 
 // overrideChecks verifies the override log and the marks overrides leave, for kb check. It returns the
 // log's entries by how they are cited, their id or their number.
-func overrideChecks(root string, sessions *Sessions, errorf, warnf func(string, ...any)) map[string]*py.Dict {
+func overrideChecks(root string, sessions *Sessions, errorf, warnf func(string, ...any)) map[string]*dyn.Dict {
 	entries, problem := loadOverrideLog(root)
 	if problem != "" {
 		errorf("override log: %s (%s)", problem, rule("write-through-kb"))
 	}
 	// the log is read in the order its entries were made; it has no chain or run of numbers to check, and
 	// the hashes the earlier entries carry are left as they are (S-8MW2)
-	byRef := map[string]*py.Dict{}
+	byRef := map[string]*dyn.Dict{}
 	lastRevise := map[string]string{}
 	for i, e := range entries {
 		n := overrideRef(e)
 		switch {
 		case e.Has("id") && !overrideIDRE.MatchString(entryStr(e, "id")):
-			errorf("override log: the entry made at %s has the id %s, which is not an override's id (%s)", entryStr(e, "at"), py.Repr(e.Get("id")), rule("override-list"))
+			errorf("override log: the entry made at %s has the id %s, which is not an override's id (%s)", entryStr(e, "at"), dyn.Repr(e.Get("id")), rule("override-list"))
 			continue
 		case n == "":
 			errorf("override log: the entry made at %s has no id (%s)", entryStr(e, "at"), rule("override-list"))
@@ -1114,7 +1114,7 @@ func overrideChecks(root string, sessions *Sessions, errorf, warnf func(string, 
 		byRef[n] = e
 		kind := entryStr(e, "kind")
 		if !in(kind, overrideKinds) {
-			errorf("override log: override %s has kind %s, which is not on the list (%s)", n, py.Repr(e.Get("kind")), rule("override-list"))
+			errorf("override log: override %s has kind %s, which is not on the list (%s)", n, dyn.Repr(e.Get("kind")), rule("override-list"))
 			continue
 		}
 		for _, k := range []string{"at", "by", "turn", "reason"} {
@@ -1129,17 +1129,17 @@ func overrideChecks(root string, sessions *Sessions, errorf, warnf func(string, 
 		// recorded now
 		if p, ok := tryParsePointer(entryStr(e, "turn")); ok {
 			s := sessionByPrefix(sessions, p.Session)
-			var t *py.Dict
+			var t *dyn.Dict
 			if s != nil {
 				t = s.Turn(p.UUID)
 			}
 			switch {
 			case t == nil:
 				errorf("override log: override %s: turn %s does not resolve", n, entryStr(e, "turn"))
-			case s.Kind() == "document" || !py.Equal(s.ModeValue(), "on-record"):
+			case s.Kind() == "document" || !dyn.Equal(s.ModeValue(), "on-record"):
 				errorf("override log: override %s: turn %s is not in an on-record conversation (%s)", n, entryStr(e, "turn"), rule("override-on-record"))
-			case !py.Equal(t.Get("role"), "user") || !py.Equal(t.Get("author"), idAfter(entries, i, entryStr(e, "by"), entryStr(e, "turn"))):
-				errorf("override log: override %s: turn %s is authored by %s, not %s (%s)", n, entryStr(e, "turn"), py.Repr(t.Get("author")), entryStr(e, "by"), rule("own-turn"))
+			case !dyn.Equal(t.Get("role"), "user") || !dyn.Equal(t.Get("author"), idAfter(entries, i, entryStr(e, "by"), entryStr(e, "turn"))):
+				errorf("override log: override %s: turn %s is authored by %s, not %s (%s)", n, entryStr(e, "turn"), dyn.Repr(t.Get("author")), entryStr(e, "by"), rule("own-turn"))
 			}
 		}
 		target := entryStr(e, "target")
@@ -1152,7 +1152,7 @@ func overrideChecks(root string, sessions *Sessions, errorf, warnf func(string, 
 			}
 		case ovScrubTurn:
 			p, ok := tryParsePointer(target)
-			var t *py.Dict
+			var t *dyn.Dict
 			if ok {
 				_, t = resolvePointer(sessions, p)
 			}
@@ -1162,7 +1162,7 @@ func overrideChecks(root string, sessions *Sessions, errorf, warnf func(string, 
 		case ovScrubSession:
 			s := sessionByPrefix(sessions, target)
 			if s == nil || markRef(s.Header.Get("scrubbed")) != n {
-				errorf("override log: override %s scrubbed session %s, which no longer carries its tombstone (%s)", n, py.Head(target, 8), rule("override-scrub"))
+				errorf("override log: override %s scrubbed session %s, which no longer carries its tombstone (%s)", n, dyn.Head(target, 8), rule("override-scrub"))
 			}
 		case ovScrubStatement:
 			p := statementPath(root, target)
@@ -1183,31 +1183,31 @@ func overrideChecks(root string, sessions *Sessions, errorf, warnf func(string, 
 			errorf("override log: override %s revised %s, which does not exist", n, sid)
 			continue
 		}
-		if st := loadStatement(p); markRef(st.Meta.Get("revised")) != n && !py.Truthy(st.Meta.Get("scrubbed")) {
+		if st := loadStatement(p); markRef(st.Meta.Get("revised")) != n && !dyn.Truthy(st.Meta.Get("scrubbed")) {
 			errorf("%s: last revised by override %s, but it does not say so (%s)", sid, n, rule("override-revise"))
 		}
 	}
 
 	// tombstones in evidence, each pointing to its entry
 	for _, s := range sessions.Values() {
-		if sc := s.Header.Get("scrubbed"); py.Truthy(sc) {
+		if sc := s.Header.Get("scrubbed"); dyn.Truthy(sc) {
 			n := markRef(sc)
 			if e := byRef[n]; e == nil || entryStr(e, "kind") != ovScrubSession || entryStr(e, "target") != s.ID() {
-				errorf("%s %s: marked scrubbed by override %s, which the log does not hold (%s)", s.Kind(), py.Head(s.ID(), 8), n, rule("override-scrub"))
+				errorf("%s %s: marked scrubbed by override %s, which the log does not hold (%s)", s.Kind(), dyn.Head(s.ID(), 8), n, rule("override-scrub"))
 			}
 		}
 		for _, t := range s.Turns {
 			sc := t.Get("scrubbed")
-			if !py.Truthy(sc) {
+			if !dyn.Truthy(sc) {
 				continue
 			}
-			m := py.AsDict(sc)
+			m := dyn.AsDict(sc)
 			n := markRef(m)
-			ptr := Pointer{s.ID(), py.Str(t.Get("uuid"))}.String()
+			ptr := Pointer{s.ID(), dyn.Str(t.Get("uuid"))}.String()
 			e := byRef[n]
 			if e == nil || !(entryStr(e, "kind") == ovScrubTurn && entryStr(e, "target") == ptr || entryStr(e, "kind") == ovScrubSession && entryStr(e, "target") == s.ID()) {
 				errorf("turn %s: marked scrubbed by override %s, which the log does not hold (%s)", ptr, n, rule("override-scrub"))
-			} else if turnText(t) != tombstone(n, py.Str(m.Get("at")), py.Str(m.Get("reason"))) {
+			} else if turnText(t) != tombstone(n, dyn.Str(m.Get("at")), dyn.Str(m.Get("reason"))) {
 				errorf("turn %s: scrubbed, but its content is not the tombstone (%s)", ptr, rule("override-scrub"))
 			}
 		}
@@ -1216,21 +1216,21 @@ func overrideChecks(root string, sessions *Sessions, errorf, warnf func(string, 
 }
 
 // statementOverrideChecks verifies a statement's marks from overrides, for kb check.
-func statementOverrideChecks(st *Statement, byRef map[string]*py.Dict, errorf func(string, ...any)) {
-	sid := py.Str(st.Meta.Get("id"))
-	if sc := st.Meta.Get("scrubbed"); py.Truthy(sc) {
+func statementOverrideChecks(st *Statement, byRef map[string]*dyn.Dict, errorf func(string, ...any)) {
+	sid := dyn.Str(st.Meta.Get("id"))
+	if sc := st.Meta.Get("scrubbed"); dyn.Truthy(sc) {
 		n := markRef(sc)
 		if e := byRef[n]; e == nil || entryStr(e, "kind") != ovScrubStatement || entryStr(e, "target") != sid {
 			errorf("%s: marked scrubbed by override %s, which the log does not hold (%s)", sid, n, rule("override-scrub"))
-		} else if st.Body != tombstone(n, py.Str(st.Meta.Get("scrubbed_at")), py.Str(st.Meta.Get("scrubbed_reason"))) {
+		} else if st.Body != tombstone(n, dyn.Str(st.Meta.Get("scrubbed_at")), dyn.Str(st.Meta.Get("scrubbed_reason"))) {
 			errorf("%s: scrubbed, but its text is not the tombstone (%s)", sid, rule("override-scrub"))
 		}
 	}
-	if rv := st.Meta.Get("revised"); py.Truthy(rv) && !py.Truthy(st.Meta.Get("scrubbed")) {
+	if rv := st.Meta.Get("revised"); dyn.Truthy(rv) && !dyn.Truthy(st.Meta.Get("scrubbed")) {
 		n := markRef(rv)
 		if e := byRef[n]; e == nil || entryStr(e, "kind") != ovRevise || entryStr(e, "statement") != sid {
 			errorf("%s: marked revised by override %s, which the log does not hold (%s)", sid, n, rule("override-revise"))
-		} else if entryStr(e, "body_sha256") != sha256Tag(py.Strip(st.Body)) {
+		} else if entryStr(e, "body_sha256") != sha256Tag(dyn.Strip(st.Body)) {
 			errorf("%s: its text is not the text override %s revised it to; it was changed outside kb (%s)", sid, n, rule("write-through-kb"))
 		}
 	}
@@ -1257,7 +1257,7 @@ func runOverride(ns argparse.Namespace) int {
 	case ovUser:
 		return runOverrideUser(ns, args)
 	}
-	die(fmt.Sprintf("there is no override %s; the list is closed: merge, reassign, scrub, revise, user (%s)", py.StrRepr(kind), rule("override-list")))
+	die(fmt.Sprintf("there is no override %s; the list is closed: merge, reassign, scrub, revise, user (%s)", dyn.StrRepr(kind), rule("override-list")))
 	return 1
 }
 

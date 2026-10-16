@@ -13,7 +13,7 @@ import (
 	"regexp"
 	"strings"
 
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 // Nargs values: how many command-line arguments an action takes.
@@ -222,10 +222,10 @@ func (p *Parser) parseOptional(arg string) []optTuple {
 	if a, ok := m[arg]; ok {
 		return []optTuple{{action: a, optionString: arg}}
 	}
-	if py.Len(arg) == 1 {
+	if dyn.Len(arg) == 1 {
 		return nil
 	}
-	if opt, sep, explicit := py.Partition(arg, "="); sep != "" {
+	if opt, sep, explicit := dyn.Partition(arg, "="); sep != "" {
 		if a, ok := m[opt]; ok {
 			return []optTuple{{action: a, optionString: opt, sep: sep, hasSep: true, explicitArg: explicit, hasExplicit: true}}
 		}
@@ -247,7 +247,7 @@ func (p *Parser) optionTuples(arg string) []optTuple {
 	m := p.optionMap()
 	runes := []rune(arg)
 	if len(runes) > 1 && runes[0] == '-' && runes[1] == '-' {
-		prefix, sep, explicit := py.Partition(arg, "=")
+		prefix, sep, explicit := dyn.Partition(arg, "=")
 		for _, s := range p.optionOrder() {
 			if strings.HasPrefix(s, prefix) {
 				out = append(out, optTuple{action: m[s], optionString: s, sep: sep, hasSep: sep != "",
@@ -256,7 +256,7 @@ func (p *Parser) optionTuples(arg string) []optTuple {
 		}
 		return out
 	}
-	prefix, sep, explicit := py.Partition(arg, "=")
+	prefix, sep, explicit := dyn.Partition(arg, "=")
 	short := string(runes[:2])
 	shortExplicit := string(runes[2:])
 	for _, s := range p.optionOrder() {
@@ -442,7 +442,7 @@ func (p *Parser) parseKnown(args []string, ns Namespace, chosen **Parser) (extra
 				optRunes := []rune(t.optionString)
 				if count == 0 && optRunes[1] != '-' && t.explicitArg != "" {
 					if t.sep != "" || t.explicitArg[0] == '-' {
-						panic(argErr{t.action, "ignored explicit argument " + py.StrRepr(t.explicitArg)})
+						panic(argErr{t.action, "ignored explicit argument " + dyn.StrRepr(t.explicitArg)})
 					}
 					steps = append(steps, step{t.action, nil, t.optionString})
 					er := []rune(t.explicitArg)
@@ -466,7 +466,7 @@ func (p *Parser) parseKnown(args []string, ns Namespace, chosen **Parser) (extra
 					steps = append(steps, step{t.action, []string{t.explicitArg}, t.optionString})
 					break
 				}
-				panic(argErr{t.action, "ignored explicit argument " + py.StrRepr(t.explicitArg)})
+				panic(argErr{t.action, "ignored explicit argument " + dyn.StrRepr(t.explicitArg)})
 			}
 			s := start + 1
 			count := matchArgument(t.action, pattern[s:])
@@ -568,7 +568,7 @@ func (p *Parser) getValues(a *Action, strs []string) any {
 		return v
 	case a.Nargs == parser:
 		if !contains(a.choices, strs[0]) {
-			panic(argErr{a, fmt.Sprintf("invalid choice: %s (choose from %s)", py.StrRepr(strs[0]), strings.Join(a.choices, ", "))})
+			panic(argErr{a, fmt.Sprintf("invalid choice: %s (choose from %s)", dyn.StrRepr(strs[0]), strings.Join(a.choices, ", "))})
 		}
 		return strs
 	case a.Nargs == Zero:
@@ -581,9 +581,9 @@ func (p *Parser) getValues(a *Action, strs []string) any {
 
 func (p *Parser) getValue(a *Action, s string) any {
 	if a.Int {
-		n, ok := py.ParseInt(s)
+		n, ok := dyn.ParseInt(s)
 		if !ok {
-			panic(argErr{a, "invalid int value: " + py.StrRepr(s)})
+			panic(argErr{a, "invalid int value: " + dyn.StrRepr(s)})
 		}
 		return n
 	}
@@ -603,7 +603,7 @@ func contains(l []string, s string) bool {
 
 func termWidth() int {
 	// COLUMNS when it parses as a positive integer, else the terminal's width, else 80
-	if n, ok := py.ParseInt(os.Getenv("COLUMNS")); ok && n.Sign() > 0 {
+	if n, ok := dyn.ParseInt(os.Getenv("COLUMNS")); ok && n.Sign() > 0 {
 		if !n.IsInt64() || n.Int64() > 1<<30 {
 			return 1 << 30
 		}
@@ -710,7 +710,7 @@ func (f *formatter) usage(actions []*Action) string {
 	all := append(append([]*Action{}, opts...), pos...)
 	usage := strings.Join(nonEmpty(f.prog, strings.Join(usageParts(all), " ")), " ")
 	textWidth := f.width - f.indent
-	if len(prefix)+py.Len(usage) > textWidth {
+	if len(prefix)+dyn.Len(usage) > textWidth {
 		optParts := usageParts(opts)
 		posParts := usageParts(pos)
 		getLines := func(parts []string, indent string, prefix *string) []string {
@@ -720,13 +720,13 @@ func (f *formatter) usage(actions []*Action) string {
 				lineLen = len(*prefix) - 1
 			}
 			for _, part := range parts {
-				if lineLen+1+py.Len(part) > textWidth && len(line) > 0 {
+				if lineLen+1+dyn.Len(part) > textWidth && len(line) > 0 {
 					lines = append(lines, indent+strings.Join(line, " "))
 					line = nil
 					lineLen = len(indent) - 1
 				}
 				line = append(line, part)
-				lineLen += py.Len(part) + 1
+				lineLen += dyn.Len(part) + 1
 			}
 			if len(line) > 0 {
 				lines = append(lines, indent+strings.Join(line, " "))
@@ -737,8 +737,8 @@ func (f *formatter) usage(actions []*Action) string {
 			return lines
 		}
 		var lines []string
-		if float64(len(prefix)+py.Len(f.prog)) <= 0.75*float64(textWidth) {
-			indent := strings.Repeat(" ", len(prefix)+py.Len(f.prog)+1)
+		if float64(len(prefix)+dyn.Len(f.prog)) <= 0.75*float64(textWidth) {
+			indent := strings.Repeat(" ", len(prefix)+dyn.Len(f.prog)+1)
 			if len(optParts) > 0 {
 				lines = getLines(append([]string{f.prog}, optParts...), indent, &prefix)
 				lines = append(lines, getLines(posParts, indent, nil)...)
@@ -783,8 +783,8 @@ func (f *formatter) action(a *Action) string {
 	switch {
 	case a.Help == "":
 		header = pad + header + "\n"
-	case py.Len(header) <= actionWidth:
-		header = pad + header + strings.Repeat(" ", actionWidth-py.Len(header)) + "  "
+	case dyn.Len(header) <= actionWidth:
+		header = pad + header + strings.Repeat(" ", actionWidth-dyn.Len(header)) + "  "
 	default:
 		header = pad + header + "\n"
 		indentFirst = helpPos
@@ -827,9 +827,9 @@ func (p *Parser) FormatHelp() string {
 	}
 	// the widest invocation, at the section's indent (2) or a sub-action's (4), sets where help starts
 	for _, a := range p.actions {
-		l := py.Len(invocation(a)) + 2
+		l := dyn.Len(invocation(a)) + 2
 		for _, sa := range a.choiceActions {
-			l = max(l, py.Len(invocation(sa))+4)
+			l = max(l, dyn.Len(invocation(sa))+4)
 		}
 		f.actionMaxLen = max(f.actionMaxLen, l)
 	}

@@ -1,9 +1,9 @@
-// Package py holds the recorder's dynamic values and the text and file handling around them: JSON
+// Package dyn holds the recorder's dynamic values and the text and file handling around them: JSON
 // values with insertion-ordered dicts and integers of any size, string helpers with code-point
 // semantics (Unicode whitespace, lengths and slices in code points, full case mapping, quoted
 // literals, integer parsing), the recorder's exact JSON decoding and encoding, path normalisation and
 // globbing, reading and writing UTF-8 text files, and the exceptions that stop a command.
-package py
+package dyn
 
 import (
 	"strings"

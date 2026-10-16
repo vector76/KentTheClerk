@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 const testSession = "aaaaaaaa-0000-4000-8000-000000000001"
@@ -74,7 +74,7 @@ func kbRun(t *testing.T, args ...string) (out string, code int) {
 			switch e := r.(type) {
 			case exitCode:
 				code = int(e)
-			case *py.Exception:
+			case *dyn.Exception:
 				t.Fatalf("kb %s: unexpected %s: %s\n%s", strings.Join(args, " "), e.Type, e.Msg, buf.String())
 			default:
 				panic(r)
@@ -118,7 +118,7 @@ func mustRefuse(t *testing.T, want string, args ...string) {
 	}
 }
 
-func statementMeta(t *testing.T, root, id string) *py.Dict {
+func statementMeta(t *testing.T, root, id string) *dyn.Dict {
 	t.Helper()
 	p := statementPath(root, id)
 	if p == "" {
@@ -170,7 +170,7 @@ func TestContextForMarksTheTarget(t *testing.T) {
 	root := newTestKB(t)
 	attestOne(t, root)
 	note := `says "one" holds only before the migration: a qualification`
-	d := writeDraft(t, root, "two", fmt.Sprintf(front, "Two")+"\ncontext_for:\n  - statement: S-0001\n    note: "+py.JSONStr(note), "Statement two text.")
+	d := writeDraft(t, root, "two", fmt.Sprintf(front, "Two")+"\ncontext_for:\n  - statement: S-0001\n    note: "+dyn.JSONStr(note), "Statement two text.")
 	out := mustRun(t, "attest", d, "--proposed", turnPtr(2), "--turn", turnPtr(3), "--user", "bob")
 	if !strings.Contains(out, "S-0001 marked extra_context (context from S-0002)") {
 		t.Errorf("attest did not report the mark:\n%s", out)
@@ -233,25 +233,25 @@ func TestCheckContextMarks(t *testing.T) {
 	d := writeDraft(t, root, "two", fmt.Sprintf(front, "Two")+"\ncontext_for:\n  - statement: S-0001\n    note: x", "Statement two text.")
 	mustRun(t, "attest", d, "--proposed", turnPtr(2), "--turn", turnPtr(3), "--user", "bob")
 
-	edit := func(id string, f func(*py.Dict)) {
+	edit := func(id string, f func(*dyn.Dict)) {
 		p := statementPath(root, id)
 		st := loadStatement(p)
 		f(st.Meta)
 		writeStatement(p, st)
 	}
-	edit("S-0001", func(m *py.Dict) { delKey(m, "extra_context") })
+	edit("S-0001", func(m *dyn.Dict) { delKey(m, "extra_context") })
 	out, code := kbRun(t, "check")
 	if code == 0 || !strings.Contains(out, "S-0001: not marked extra_context, though S-0002 is context for it") {
 		t.Fatalf("check missed a missing mark:\n%s", out)
 	}
-	edit("S-0001", func(m *py.Dict) { m.Set("extra_context", true) })
-	edit("S-0002", func(m *py.Dict) { m.Set("extra_context", true) })
+	edit("S-0001", func(m *dyn.Dict) { m.Set("extra_context", true) })
+	edit("S-0002", func(m *dyn.Dict) { m.Set("extra_context", true) })
 	out, code = kbRun(t, "check")
 	if code == 0 || !strings.Contains(out, "S-0002: marked extra_context, but no statement is context for it") {
 		t.Fatalf("check missed a stray mark:\n%s", out)
 	}
-	edit("S-0002", func(m *py.Dict) { delKey(m, "extra_context"); m.Set("supersedes", "S-0001") })
-	edit("S-0001", func(m *py.Dict) { m.Set("superseded_by", "S-0002") })
+	edit("S-0002", func(m *dyn.Dict) { delKey(m, "extra_context"); m.Set("supersedes", "S-0001") })
+	edit("S-0001", func(m *dyn.Dict) { m.Set("superseded_by", "S-0002") })
 	out, code = kbRun(t, "check")
 	if code == 0 || !strings.Contains(out, "S-0002: supersedes S-0001, whose author is 'alice', not 'bob' (Kent Rule 46") {
 		t.Fatalf("check missed a supersession by someone other than the author:\n%s", out)
@@ -259,8 +259,8 @@ func TestCheckContextMarks(t *testing.T) {
 }
 
 // delKey removes a key from a frontmatter dict, as a hand edit would.
-func delKey(m *py.Dict, k string) {
-	n := py.NewDict()
+func delKey(m *dyn.Dict, k string) {
+	n := dyn.NewDict()
 	for _, x := range m.Keys() {
 		if x != k {
 			n.Set(x, m.Get(x))

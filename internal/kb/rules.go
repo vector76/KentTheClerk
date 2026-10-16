@@ -31,8 +31,8 @@ var (
 )
 
 var (
-	ruleStartRE = regexp.MustCompile(`^\*\*Kent Rule (\d+)\.\*\*`)
-	docHeadingRE   = regexp.MustCompile(`^(#+)\s+(.*)$`)
+	ruleStartRE  = regexp.MustCompile(`^\*\*Kent Rule (\d+)\.\*\*`)
+	docHeadingRE = regexp.MustCompile(`^(#+)\s+(.*)$`)
 )
 
 // ruleText is one rule: its number, the file and section it sits in, and its text.

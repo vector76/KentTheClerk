@@ -38,18 +38,18 @@ type encoding struct {
 	isStr bool
 	name  string
 	codes []int // insertion order
-	m     map[int]pstr
+	m     map[int]ustr
 }
 
-func (e *encoding) set(code int, v pstr) {
+func (e *encoding) set(code int, v ustr) {
 	if _, ok := e.m[code]; !ok {
 		e.codes = append(e.codes, code)
 	}
 	e.m[code] = v
 }
 
-func encodingFromList(lst []pstr) *encoding {
-	e := &encoding{m: map[int]pstr{}}
+func encodingFromList(lst []ustr) *encoding {
+	e := &encoding{m: map[int]ustr{}}
 	for i, v := range lst {
 		e.set(i, v)
 	}
@@ -59,12 +59,12 @@ func encodingFromList(lst []pstr) *encoding {
 // ordMap maps text to text, keeping insertion order.
 type ordMap struct {
 	keys []string
-	m    map[string]pstr
+	m    map[string]ustr
 }
 
-func newOrdMap() *ordMap { return &ordMap{m: map[string]pstr{}} }
+func newOrdMap() *ordMap { return &ordMap{m: map[string]ustr{}} }
 
-func (o *ordMap) set(k pstr, v pstr) {
+func (o *ordMap) set(k ustr, v ustr) {
 	kk := k.key()
 	if _, ok := o.m[kk]; !ok {
 		o.keys = append(o.keys, kk)
@@ -72,12 +72,13 @@ func (o *ordMap) set(k pstr, v pstr) {
 	o.m[kk] = v
 }
 
-func (o *ordMap) get(k pstr) (pstr, bool) {
+func (o *ordMap) get(k ustr) (ustr, bool) {
 	v, ok := o.m[k.key()]
 	return v, ok
 }
 
-// getEncoding is get_encoding(ft).
+// getEncoding returns a font's encoding and its /ToUnicode map; single-byte
+// codes the map names are added to a table encoding as themselves.
 func (d *Document) getEncoding(ft *Dict) (*encoding, *ordMap, error) {
 	enc, err := d.parseEncoding(ft)
 	if err != nil {
@@ -91,9 +92,9 @@ func (d *Document) getEncoding(ft *Dict) (*encoding, *ordMap, error) {
 		for _, x := range intEntry {
 			if x <= 255 {
 				if x < 0 {
-					return nil, nil, pyErr("ValueError", "chr() arg not in range")
+					return nil, nil, classErr("ValueError", "chr() arg not in range")
 				}
-				enc.set(x, pstr{rune(x)})
+				enc.set(x, ustr{rune(x)})
 			}
 		}
 	}
@@ -105,7 +106,7 @@ func (d *Document) parseEncoding(ft *Dict) (*encoding, error) {
 	if !ft.Has("/Encoding") {
 		if bf, ok := ft.Get("/BaseFont"); ok {
 			if n, ok := d.resolve(bf).(Name); ok {
-				// ft["/BaseFont"] in charset_encoding (resolved by __getitem__)
+				// a /BaseFont (resolved) that names a built-in encoding
 				if lst, ok := charsets[string(n)]; ok {
 					return encodingFromList(lst), nil
 				}
@@ -114,12 +115,12 @@ func (d *Document) parseEncoding(ft *Dict) (*encoding, error) {
 		return &encoding{isStr: true, name: "charmap"}, nil
 	}
 	encObj := d.resolve(ft.m["/Encoding"])
-	var list []pstr // the list form while Differences apply
+	var list []ustr // the list form while Differences apply
 	var result *encoding
 	switch e := encObj.(type) {
 	case Name:
 		if lst, ok := charsets[string(e)]; ok {
-			list = append([]pstr(nil), lst...)
+			list = append([]ustr(nil), lst...)
 		} else if c, ok := predefinedCMap[string(e)]; ok {
 			return &encoding{isStr: true, name: c}, nil
 		} else if strings.Contains(string(e), "-UCS2-") {
@@ -128,10 +129,10 @@ func (d *Document) parseEncoding(ft *Dict) (*encoding, error) {
 			return &encoding{isStr: true, name: string(e)}, nil
 		}
 	case *String:
-		// TextStringObject is a str too; it is compared the same way.
-		s := pyStr(e).goString()
+		// a text string is looked up by its text, like a name
+		s := stringText(e).goString()
 		if lst, ok := charsets[s]; ok {
-			list = append([]pstr(nil), lst...)
+			list = append([]ustr(nil), lst...)
 		} else if c, ok := predefinedCMap[s]; ok {
 			return &encoding{isStr: true, name: c}, nil
 		} else if strings.Contains(s, "-UCS2-") {
@@ -142,15 +143,15 @@ func (d *Document) parseEncoding(ft *Dict) (*encoding, error) {
 	case *Dict:
 		if be, ok := e.Get("/BaseEncoding"); ok {
 			if n, ok := d.resolve(be).(Name); ok && charsets[string(n)] != nil {
-				list = append([]pstr(nil), charsets[string(n)]...)
+				list = append([]ustr(nil), charsets[string(n)]...)
 			} else {
-				list = append([]pstr(nil), charsets["/StandardEncoding"]...)
+				list = append([]ustr(nil), charsets["/StandardEncoding"]...)
 			}
 		} else {
-			list = append([]pstr(nil), charsets["/StandardEncoding"]...)
+			list = append([]ustr(nil), charsets["/StandardEncoding"]...)
 		}
 		if diffs, ok := e.Get("/Differences"); ok {
-			arr, err := pyIter(d.resolve(diffs))
+			arr, err := iterObject(d.resolve(diffs))
 			if err != nil {
 				return nil, err
 			}
@@ -165,7 +166,7 @@ func (d *Document) parseEncoding(ft *Dict) (*encoding, error) {
 					if idx < 0 {
 						idx += len(list)
 					}
-					val := badEncoding // a non-str object: "".join() fails later
+					val := badEncoding // not text: joining the output fails later
 					var str string
 					isStr := false
 					switch v := o.(type) {
@@ -180,11 +181,11 @@ func (d *Document) parseEncoding(ft *Dict) (*encoding, error) {
 						if gl, found := adobeGlyphs[str]; found {
 							val = gl
 						} else {
-							val = pstr([]rune(str))
+							val = ustr([]rune(str))
 						}
 					}
 					if idx < 0 {
-						return nil, pyErr("IndexError", "list assignment index out of range")
+						return nil, classErr("IndexError", "list assignment index out of range")
 					}
 					list[idx] = val
 				}
@@ -192,16 +193,17 @@ func (d *Document) parseEncoding(ft *Dict) (*encoding, error) {
 			}
 		}
 	default:
-		list = append([]pstr(nil), charsets["/StandardEncoding"]...)
+		list = append([]ustr(nil), charsets["/StandardEncoding"]...)
 	}
 	result = encodingFromList(list)
 	return result, nil
 }
 
-// badEncoding stands for a non-str object stored in an encoding table.
-var badEncoding = pstr{-1}
+// badEncoding stands for a non-text object stored in an encoding table.
+var badEncoding = ustr{-1}
 
-// parseToUnicode is _parse_to_unicode(ft).
+// parseToUnicode reads a font's /ToUnicode CMap (or, for a Type 1 font
+// without one, the embedded font program's encoding).
 func (d *Document) parseToUnicode(ft *Dict) (*ordMap, []int, error) {
 	m := newOrdMap()
 	var intEntry []int
@@ -270,8 +272,8 @@ type cmState struct {
 	mlA                    int64
 	m                      *ordMap
 	intEntry               []int
-	width                  int  // map_dict[-1]
-	hasWidth               bool // -1 in map_dict
+	width                  int  // byte width of the codes
+	hasWidth               bool // width is set
 }
 
 const mappingLimit = 100000
@@ -314,8 +316,8 @@ func fields(line []byte) [][]byte {
 	return out
 }
 
-// pyBigHex is pyIntHex without a size limit.
-func pyBigHex(b []byte) (*big.Int, error) {
+// parseBigHex is parseIntHex without a size limit.
+func parseBigHex(b []byte) (*big.Int, error) {
 	s := strings.TrimSpace(string(b))
 	neg := false
 	if strings.HasPrefix(s, "+") || strings.HasPrefix(s, "-") {
@@ -328,7 +330,7 @@ func pyBigHex(b []byte) (*big.Int, error) {
 	s = strings.ReplaceAll(s, "_", "")
 	v, ok := new(big.Int).SetString(s, 16)
 	if s == "" || !ok {
-		return nil, pyErr("ValueError", "invalid literal for int() with base 16")
+		return nil, classErr("ValueError", "invalid literal for int() with base 16")
 	}
 	if neg {
 		v.Neg(v)
@@ -336,9 +338,9 @@ func pyBigHex(b []byte) (*big.Int, error) {
 	return v, nil
 }
 
-// pyIntHex parses a hex number; surrounding whitespace, a sign, a 0x prefix
+// parseIntHex parses a hex number; surrounding whitespace, a sign, a 0x prefix
 // and underscores are allowed.
-func pyIntHex(b []byte) (int64, error) {
+func parseIntHex(b []byte) (int64, error) {
 	s := strings.TrimSpace(string(b))
 	neg := false
 	if strings.HasPrefix(s, "+") || strings.HasPrefix(s, "-") {
@@ -350,11 +352,11 @@ func pyIntHex(b []byte) (int64, error) {
 	}
 	s = strings.ReplaceAll(s, "_", "")
 	if s == "" {
-		return 0, pyErr("ValueError", "invalid literal for int() with base 16")
+		return 0, classErr("ValueError", "invalid literal for int() with base 16")
 	}
 	v, ok := new(big.Int).SetString(s, 16)
 	if !ok || !v.IsInt64() {
-		return 0, pyErr("ValueError", "invalid literal for int() with base 16")
+		return 0, classErr("ValueError", "invalid literal for int() with base 16")
 	}
 	r := v.Int64()
 	if neg {
@@ -363,23 +365,24 @@ func pyIntHex(b []byte) (int64, error) {
 	return r, nil
 }
 
-// unhexlify is binascii.unhexlify.
+// unhexlify decodes pairs of hex digits into bytes.
 func unhexlify(b []byte) ([]byte, error) {
 	if len(b)%2 != 0 {
-		return nil, pyErr("ValueError", "Odd-length string")
+		return nil, classErr("ValueError", "Odd-length string")
 	}
 	out := make([]byte, len(b)/2)
 	for i := 0; i < len(out); i++ {
 		h, l := hexVal(b[2*i]), hexVal(b[2*i+1])
 		if h < 0 || l < 0 {
-			return nil, pyErr("ValueError", "Non-hexadecimal digit found")
+			return nil, classErr("ValueError", "Non-hexadecimal digit found")
 		}
 		out[i] = byte(h<<4 | l)
 	}
 	return out, nil
 }
 
-// fmtHex is b"%0*X" % v.
+// fmtHex writes v in upper-case hex, zero-padded to width characters (the
+// sign included).
 func fmtHex(v int64, width int) []byte {
 	neg := v < 0
 	if neg {
@@ -399,30 +402,30 @@ func fmtHex(v int64, width int) []byte {
 	return []byte(s)
 }
 
-func (s *cmState) decodeKey(b []byte) (pstr, error) {
+func (s *cmState) decodeKey(b []byte) (ustr, error) {
 	if s.width == 1 {
 		return decodeLatin1(b), nil
 	}
 	k, ok := decodeUTF16BEPass(b)
 	if !ok {
-		return nil, pyErr("ValueError", "truncated data")
+		return nil, classErr("ValueError", "truncated data")
 	}
 	return k, nil
 }
 
-func decodeValue(hex []byte) (pstr, error) {
+func decodeValue(hex []byte) (ustr, error) {
 	raw, err := unhexlify(hex)
 	if err != nil {
 		return nil, err
 	}
 	v, ok := decodeUTF16BEPass(raw)
 	if !ok {
-		return nil, pyErr("ValueError", "truncated data")
+		return nil, classErr("ValueError", "truncated data")
 	}
 	return v, nil
 }
 
-func (s *cmState) addEntry(a int64, value pstr) error {
+func (s *cmState) addEntry(a int64, value ustr) error {
 	raw, err := unhexlify(fmtHex(a, s.width*2))
 	if err != nil {
 		return err
@@ -441,11 +444,11 @@ func (s *cmState) parseBfrange(line []byte) error {
 	closure := false
 	entryCount := len(s.intEntry)
 	if entryCount > mappingLimit {
-		return pyErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
+		return classErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
 	}
 	if s.multiline {
 		if !s.hasWidth {
-			return pyErr("KeyError", "-1")
+			return classErr("KeyError", "-1")
 		}
 		a := s.mlA
 		for _, sq := range lst {
@@ -455,10 +458,10 @@ func (s *cmState) parseBfrange(line []byte) error {
 			}
 			entryCount++
 			if entryCount > mappingLimit {
-				return pyErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
+				return classErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
 			}
 			if _, err := decodeValueAfterKey(s, a, sq); err != nil {
-				return err // multiline_rg keeps its previous value
+				return err // the multi-line range state stays as it was
 			}
 			a++
 		}
@@ -470,13 +473,13 @@ func (s *cmState) parseBfrange(line []byte) error {
 		return nil
 	}
 	if len(lst) < 2 {
-		return pyErr("IndexError", "list index out of range")
+		return classErr("IndexError", "list index out of range")
 	}
-	bigA, err := pyBigHex(lst[0])
+	bigA, err := parseBigHex(lst[0])
 	if err != nil {
 		return err
 	}
-	bigB, err := pyBigHex(lst[1])
+	bigB, err := parseBigHex(lst[1])
 	if err != nil {
 		return err
 	}
@@ -491,11 +494,11 @@ func (s *cmState) parseBfrange(line []byte) error {
 	s.width = (nbi + 1) / 2
 	s.hasWidth = true
 	if len(lst) < 3 {
-		return pyErr("IndexError", "list index out of range")
+		return classErr("IndexError", "list index out of range")
 	}
 	if string(lst[2]) == "[" {
 		if !fits {
-			return pyErr("ValueError", "code out of the supported range")
+			return classErr("ValueError", "code out of the supported range")
 		}
 		for _, sq := range lst[3:] {
 			if string(sq) == "]" {
@@ -504,7 +507,7 @@ func (s *cmState) parseBfrange(line []byte) error {
 			}
 			entryCount++
 			if entryCount > mappingLimit {
-				return pyErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
+				return classErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
 			}
 			if _, err := decodeValueAfterKey(s, a, sq); err != nil {
 				return err
@@ -512,7 +515,7 @@ func (s *cmState) parseBfrange(line []byte) error {
 			a++
 		}
 	} else {
-		c, err := pyIntHex(lst[2])
+		c, err := parseIntHex(lst[2])
 		if err != nil {
 			return err
 		}
@@ -521,7 +524,7 @@ func (s *cmState) parseBfrange(line []byte) error {
 			w2 = 4
 		}
 		closure = true
-		// range_size = max(0, b - a + 1), computed without overflow
+		// the range size, b - a + 1 but at least 0, computed without overflow
 		rangeSize := new(big.Int).Sub(bigB, bigA)
 		rangeSize.Add(rangeSize, big.NewInt(1))
 		if rangeSize.Sign() < 0 {
@@ -529,10 +532,10 @@ func (s *cmState) parseBfrange(line []byte) error {
 		}
 		rangeSize.Add(rangeSize, big.NewInt(int64(entryCount)))
 		if rangeSize.Cmp(big.NewInt(mappingLimit)) > 0 {
-			return pyErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
+			return classErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
 		}
 		if !fits {
-			return pyErr("ValueError", "code out of the supported range")
+			return classErr("ValueError", "code out of the supported range")
 		}
 		for a <= b {
 			v, err := decodeValue(fmtHex(c, w2))
@@ -556,7 +559,7 @@ func (s *cmState) parseBfrange(line []byte) error {
 // decodeValueAfterKey adds one list-form bfrange entry: key from a, value
 // from the hex token sq (the value is decoded before the key, so value errors
 // win).
-func decodeValueAfterKey(s *cmState, a int64, sq []byte) (pstr, error) {
+func decodeValueAfterKey(s *cmState, a int64, sq []byte) (ustr, error) {
 	v, err := decodeValue(sq)
 	if err != nil {
 		return nil, err
@@ -570,15 +573,15 @@ func decodeValueAfterKey(s *cmState, a int64, sq []byte) (pstr, error) {
 func (s *cmState) parseBfchar(line []byte) error {
 	lst := fields(line)
 	if len(s.intEntry)+len(lst)/2 > mappingLimit {
-		return pyErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
+		return classErr("LimitReachedError", "Maximum /ToUnicode size limit reached")
 	}
 	if len(lst) == 0 {
-		return pyErr("IndexError", "list index out of range")
+		return classErr("IndexError", "list index out of range")
 	}
 	s.width = len(lst[0]) / 2
 	s.hasWidth = true
 	for len(lst) > 1 {
-		mapTo := pstr{}
+		mapTo := ustr{}
 		if string(lst[1]) != "." {
 			raw, err := unhexlify(lst[1])
 			if err == nil {
@@ -587,12 +590,12 @@ func (s *cmState) parseBfchar(line []byte) error {
 				} else {
 					v, ok := decodeUTF16BEPass(raw)
 					if !ok {
-						return pyErr("ValueError", "truncated data")
+						return classErr("ValueError", "truncated data")
 					}
 					mapTo = v
 				}
 			}
-			// binascii errors are logged and leave map_to empty
+			// a hex decoding error is skipped and leaves mapTo empty
 		}
 		rawKey, err := unhexlify(lst[0])
 		if err != nil {
@@ -603,7 +606,7 @@ func (s *cmState) parseBfchar(line []byte) error {
 			return err
 		}
 		s.m.set(k, mapTo)
-		code, err := pyIntHex(lst[0])
+		code, err := parseIntHex(lst[0])
 		if err != nil {
 			return err
 		}
@@ -620,7 +623,7 @@ func (d *Document) type1Alternative(ft *Dict, m *ordMap, intEntry []int) (*ordMa
 	}
 	fd, ok := asDict(d.resolve(ft.m["/FontDescriptor"]))
 	if !ok {
-		return nil, nil, pyErr("AttributeError", "no get")
+		return nil, nil, classErr("AttributeError", "no get")
 	}
 	ff, ok := fd.Get("/FontFile")
 	if !ok || isNullOrNone(d, ff) {
@@ -628,7 +631,7 @@ func (d *Document) type1Alternative(ft *Dict, m *ordMap, intEntry []int) (*ordMa
 	}
 	st, ok := d.resolve(ff).(*Stream)
 	if !ok {
-		return nil, nil, pyErr("AttributeError", "no get_data")
+		return nil, nil, classErr("AttributeError", "no get_data")
 	}
 	txt, err := d.streamData(st)
 	if err != nil {
@@ -656,29 +659,29 @@ func (d *Document) type1Alternative(ft *Dict, m *ordMap, intEntry []int) (*ordMa
 		if len(words) < 3 || (len(words) > 3 && string(words[3]) != "put") {
 			continue
 		}
-		iv, err := pyIntLoose(words[1])
+		iv, err := parseIntLoose(words[1])
 		if err != nil {
 			continue
 		}
-		var v pstr
+		var v ustr
 		if !utf8Valid(words[2]) {
-			return nil, nil, pyErr("UnicodeDecodeError", "utf-8")
+			return nil, nil, classErr("UnicodeDecodeError", "utf-8")
 		}
 		if g, ok := adobeGlyphs[string(words[2])]; ok {
 			v = g
 		} else if bytes.HasPrefix(words[2], []byte("/uni")) {
-			cp, err := pyIntHex(words[2][4:])
+			cp, err := parseIntHex(words[2][4:])
 			if err != nil || cp < 0 || cp > 0x10FFFF {
 				continue
 			}
-			v = pstr{rune(cp)}
+			v = ustr{rune(cp)}
 		} else {
 			continue
 		}
 		if iv < 0 || iv > 0x10FFFF {
-			return nil, nil, pyErr("ValueError", "chr() arg not in range")
+			return nil, nil, classErr("ValueError", "chr() arg not in range")
 		}
-		m.set(pstr{rune(iv)}, v)
+		m.set(ustr{rune(iv)}, v)
 		intEntry = append(intEntry, int(iv))
 	}
 	return m, intEntry, nil

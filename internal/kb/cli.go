@@ -9,14 +9,14 @@ import (
 	"os"
 
 	"kenttheclerk/internal/argparse"
-	"kenttheclerk/internal/py"
+	"kenttheclerk/internal/dyn"
 )
 
 // textWriter writes text-mode output: on Windows "\n" goes out as "\r\n".
 type textWriter struct{ w io.Writer }
 
 func (t textWriter) Write(p []byte) (int, error) {
-	if !py.Windows {
+	if !dyn.Windows {
 		return t.w.Write(p)
 	}
 	out := make([]byte, 0, len(p)+16)
@@ -91,7 +91,7 @@ func Main(args []string) (code int) {
 			switch e := r.(type) {
 			case exitCode:
 				code = int(e)
-			case *py.Exception:
+			case *dyn.Exception:
 				// An exception no command catches: report it and exit with status 1.
 				fmt.Fprintf(Stderr, "kb: unexpected %s: %s\n", e.Type, e.Msg)
 				code = 1

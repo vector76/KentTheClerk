@@ -1,4 +1,4 @@
-package py
+package dyn
 
 import (
 	"fmt"
@@ -146,33 +146,33 @@ func Raise(typ, format string, a ...any) {
 	panic(&Exception{typ, fmt.Sprintf(format, a...)})
 }
 
-// TypeName is the name messages give v's type: NoneType, bool, int, float, str, list or dict.
+// TypeName is the name messages give v's JSON type: null, boolean, integer, number, string, array or object.
 func TypeName(v any) string {
 	switch v.(type) {
 	case nil:
-		return "NoneType"
+		return "null"
 	case bool:
-		return "bool"
+		return "boolean"
 	case Int:
-		return "int"
+		return "integer"
 	case float64:
-		return "float"
+		return "number"
 	case string:
-		return "str"
+		return "string"
 	case []any:
-		return "list"
+		return "array"
 	case *Dict:
-		return "dict"
+		return "object"
 	}
 	return fmt.Sprintf("%T", v)
 }
 
-// AsDict is v as a dict, raising AttributeError (it has no attribute 'get') if it is not one.
+// AsDict is v as an object, raising TypeError if it is not one.
 func AsDict(v any) *Dict {
 	if d, ok := v.(*Dict); ok {
 		return d
 	}
-	Raise("AttributeError", "'%s' object has no attribute 'get'", TypeName(v))
+	Raise("TypeError", "expected an object, got %s", TypeName(v))
 	return nil
 }
 
@@ -197,7 +197,7 @@ func Iter(v any) []any {
 		}
 		return out
 	}
-	Raise("TypeError", "'%s' object is not iterable", TypeName(v))
+	Raise("TypeError", "expected an array, string or object, got %s", TypeName(v))
 	return nil
 }
 
@@ -206,7 +206,7 @@ func AsStr(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	Raise("TypeError", "expected str, got %s", TypeName(v))
+	Raise("TypeError", "expected a string, got %s", TypeName(v))
 	return ""
 }
 
