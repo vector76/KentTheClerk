@@ -97,7 +97,9 @@ func toolCallSummary(block *py.Dict, profile string) *py.Dict {
 	in := py.AsDict(inp)
 	desc := in.Get("description")
 	if !py.Truthy(desc) {
-		for _, k := range []string{"file_path", "pattern", "query", "prompt", "command", "url"} {
+		// Never a command or a prompt: the human usually sees only the description, and either can
+		// carry what the human never saw, such as a token on a command line.
+		for _, k := range []string{"file_path", "pattern", "query", "url"} {
 			if s, ok := in.Get(k).(string); ok {
 				desc = py.Head(s, 160)
 				break
