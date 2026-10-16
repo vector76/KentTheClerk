@@ -74,7 +74,7 @@ kb attest <draft> --turn <ptr> [--proposed <ptr>] [--form proposed-and-agreed|ag
 kb record <draft> --turn <ptr>
 kb seen A-#### --turn <ptr>
 kb withdraw A-#### --turn <ptr> --reason <text>
-kb override rename|merge|reassign|scrub <args> [--confirm --turn <ptr> --reason <text>]
+kb override merge|reassign|scrub|user <args> [--confirm --turn <ptr> --reason <text>]
 kb override revise S-#### <draft> --proposed <ptr> --turn <ptr> --reason <text> [--form ...]
 kb links <S-####|A-####> ... [--depth N]
 kb check

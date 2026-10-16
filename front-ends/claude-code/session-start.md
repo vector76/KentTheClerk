@@ -17,7 +17,8 @@ it enforces and how to view it. Read a document when its topic comes up, not bef
 Two rules hold before any of those documents is read:
 
 - **Write to the record only through `kb`.** Never create or edit anything in `<kb>/evidence/`,
-  `<kb>/attested/` or `<kb>/agent/` by hand, not even to fix a typo (Kent Rule 1).
+  `<kb>/attested/` or `<kb>/agent/`, or the files `overrides.jsonl`, `users.jsonl` and
+  `users-log.jsonl`, by hand, not even to fix a typo (Kent Rule 1).
 - **A session nobody declared is off-record.** When statements worth recording come up, ask the
   human whether this session goes on the record before recording anything (Kent Rule 12).
 
@@ -30,7 +31,7 @@ Two rules hold before any of those documents is read:
 | Session modes, forks, snapshots, off-record material | `kb rules sessions` |
 | The layers of the record, citing, documents, changing a statement | `kb rules record` |
 | Linking statements, or reading one that carries `extra_context: true` | `kb rules links` |
-| Changing the record against its rules: renaming a person's id, scrubbing content, revising a statement just attested | `kb rules overrides` |
+| Changing the record against its rules: merging two keys for one person, scrubbing content, revising a statement just attested | `kb rules overrides` |
 | Someone not yet in the user table, or a person's name or email changing | `kb rules people` |
 | Setting Kent up in this project, or something below says it is not set up right | `kb setup` |
 

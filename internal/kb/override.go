@@ -31,7 +31,7 @@ func overrideLogPath(root string) string { return filepath.Join(root, overrideLo
 
 // The kinds of entry in the log. Removing a whole session (S-0135) is a scrub at session scale.
 const (
-	ovRename         = "rename"
+	ovRename         = "rename" // no longer made (S-0148), but read in a log that holds one
 	ovMerge          = "merge"
 	ovReassign       = "reassign"
 	ovScrubTurn      = "scrub-turn"
@@ -377,14 +377,17 @@ func refreshIndex(root string) {
 	}
 }
 
-// ---------------------------------------------------------------- rename, merge, reassign
+// ---------------------------------------------------------------- merge, reassign
 
-func runOverrideIDs(ns argparse.Namespace, kind string, args []string) int {
+// runOverrideMerge records every act by one key as by another that belongs to the same person. It is also
+// how a key wrong from the start is put right, renaming a key being no override of its own (S-0148): the
+// right key needs a row in the user table, not acts of its own.
+func runOverrideMerge(ns argparse.Namespace, args []string) int {
+	kind := ovMerge
 	root := repoRoot()
 	requirePin(root)
 	if len(args) != 2 {
-		die(fmt.Sprintf("kb override %s takes two ids: kb override %s <%s> <%s>", kind, kind,
-			map[string]string{ovRename: "old", ovMerge: "from"}[kind], map[string]string{ovRename: "new", ovMerge: "into"}[kind]))
+		die("kb override merge takes two keys: kb override merge <from> <into>")
 	}
 	from, to := py.Strip(args[0]), py.Strip(args[1])
 	if from == "" || to == "" || from == to {
@@ -403,14 +406,12 @@ func runOverrideIDs(ns argparse.Namespace, kind string, args []string) int {
 	if fromTurns+fromAtts == 0 {
 		die(fmt.Sprintf("nothing is recorded as by %s", py.StrRepr(from)))
 	}
-	if kind == ovRename && toTurns+toAtts > 0 {
-		die(fmt.Sprintf("%s already has acts (%d turns, %d attestations), so this would make two people's records "+
-			"one: that is a merge, kb override merge, and it is checked as one (%s)", py.StrRepr(to), toTurns, toAtts, rule("override-list")))
+	users := mustLoadUsers(root)
+	if !users.has(to) && toTurns+toAtts == 0 {
+		die(fmt.Sprintf("%s is not in the user table and has no acts; add the right person first with kb user add, "+
+			"choosing that key, then merge into it (%s)", py.StrRepr(to), rule("override-list")))
 	}
-	if kind == ovMerge {
-		if toTurns+toAtts == 0 {
-			die(fmt.Sprintf("nothing is recorded as by %s, so this is a rename: kb override rename (%s)", py.StrRepr(to), rule("override-list")))
-		}
+	{
 		var both []string
 		for _, st := range loadAllStatements(root) {
 			var a, b bool
@@ -429,7 +430,7 @@ func runOverrideIDs(ns argparse.Namespace, kind string, args []string) int {
 				"(%s)", from, to, strings.Join(both, ", "), rule("attest-once")))
 		}
 	}
-	verb := map[string]string{ovRename: "rename", ovMerge: "merge"}[kind]
+	verb := "merge"
 	check := []string{"override", kind, from, to}
 	if !ns.Bool("confirm") {
 		plan := []string{
@@ -437,11 +438,13 @@ func runOverrideIDs(ns argparse.Namespace, kind string, args []string) int {
 				"in every file that names them", verb, py.StrRepr(from), py.StrRepr(to), fromTurns, fromAtts, from, to),
 			fmt.Sprintf("refuse any later act under %s, which would then be retired here", py.StrRepr(from)),
 		}
-		if kind == ovMerge {
+		if toTurns+toAtts > 0 {
 			plan = append(plan, fmt.Sprintf("say that %s and %s are one person: %s already has %d turn(s) and %d attestation(s)",
 				from, to, to, toTurns, toAtts))
+		} else {
+			plan = append(plan, fmt.Sprintf("put right a key wrong from the start: %s has a row but no acts yet", to))
 		}
-		if users := mustLoadUsers(root); users.has(from) {
+		if users.has(from) {
 			if users.has(to) {
 				plan = append(plan, fmt.Sprintf("remove the user table's row for %s, since %s has one: %s", users.who(from), to, users.who(to)))
 			} else {
@@ -1005,7 +1008,7 @@ func contextKey(meta *py.Dict) string {
 // ---------------------------------------------------------------- a row of the user table
 
 // runOverrideUser changes the name or email in a person's row of the user table (S-0141). Their key stays
-// as it is: renaming a key is kb override rename.
+// as it is: a key wrong from the start is merged into the right one (S-0148).
 func runOverrideUser(ns argparse.Namespace, args []string) int {
 	root := repoRoot()
 	requirePin(root)
@@ -1219,8 +1222,12 @@ func runOverride(ns argparse.Namespace) int {
 	kind, _ := ns.Str("kind")
 	args := ns.List("args")
 	switch kind {
-	case ovRename, ovMerge:
-		return runOverrideIDs(ns, kind, args)
+	case ovMerge:
+		return runOverrideMerge(ns, args)
+	case ovRename:
+		die(fmt.Sprintf("renaming a key is no longer an override: a change of name or email is kb override user, and a key "+
+			"wrong from the start is put right by adding the right person with kb user add and then kb override merge "+
+			"<wrong> <right> (%s)", rule("override-list")))
 	case ovReassign:
 		return runOverrideReassign(ns, args)
 	case "scrub":
@@ -1230,14 +1237,14 @@ func runOverride(ns argparse.Namespace) int {
 	case ovUser:
 		return runOverrideUser(ns, args)
 	}
-	die(fmt.Sprintf("there is no override %s; the list is closed: rename, merge, reassign, scrub, revise, user (%s)", py.StrRepr(kind), rule("override-list")))
+	die(fmt.Sprintf("there is no override %s; the list is closed: merge, reassign, scrub, revise, user (%s)", py.StrRepr(kind), rule("override-list")))
 	return 1
 }
 
 func addOverrideParser(sub *argparse.Parser) {
 	p := sub.AddParser("override", "make one of the closed list of overrides, a last resort (kb rules overrides)")
-	p.Positional("kind", argparse.Single, "rename | merge | reassign | scrub | revise | user")
-	p.Positional("args", argparse.ZeroMore, "rename <old> <new> | merge <from> <into> | reassign <session>#<uuid> <id> | "+
+	p.Positional("kind", argparse.Single, "merge | reassign | scrub | revise | user")
+	p.Positional("args", argparse.ZeroMore, "merge <from> <into> | reassign <session>#<uuid> <id> | "+
 		"scrub <session>#<uuid>|<session>|S-#### | revise S-#### <draft> | user <key> --name <name> --email <email>")
 	p.Flag("--confirm", "make the override, after the human confirmed the check in a turn of their own")
 	p.Option("--turn", "<session>#<uuid> of the human's on-record turn confirming it (for revise: agreeing to the new text)", nil, false)

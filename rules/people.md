@@ -11,7 +11,7 @@ to read and search; wherever `kb` shows an author, it shows the name beside the 
 | See who is in the table | `kb user` |
 | Add a person | `kb user add <name> --email <email>`, then again with `--key <key>` |
 | Change a person's name or email | `kb override user <key> --name <name> --email <email>` |
-| Rename a key | `kb override rename <old> <new>` |
+| Put right a key wrong from the start | add the right person with `kb user add`, then `kb override merge <wrong> <right>` |
 
 **Kent Rule 55.** The user table holds each person's key, name and email, and nothing else: no
 nicknames, roles or notes. It is treated as fact, not testimony, so a row carries no evidential
@@ -37,5 +37,5 @@ is asserted, and every act records it as asserted.
 
 **Kent Rule 58.** Changing the name or email in someone's row is an override (Kent Rules 50 to 52):
 logged in the override log, made from an on-record session and checked twice. The key stays as it
-was; renaming a key is the separate override `kb override rename`, which carries the row to the new
-key.
+was. Renaming a key is no override of its own: a key wrong from the start is put right by adding the
+person again under the right key and merging the wrong one into it.

@@ -54,52 +54,61 @@ func checkFails(t *testing.T, want string) {
 func TestOverrideNeedsTheCheckFirst(t *testing.T) {
 	root := newTestKB(t)
 	attestOne(t, root)
-	mustRefuse(t, "Kent Rule 52", "override", "rename", "alice", "carol", "--confirm", "--turn", turnPtr(5), "--reason", "x", "--user", "alice")
+	mustRefuse(t, "Kent Rule 52", "override", "merge", "alice", "bob", "--confirm", "--turn", turnPtr(5), "--reason", "x", "--user", "alice")
 
 	// a confirmation made before kb showed the check does not count
 	old := overrideNow
 	overrideNow = func() time.Time { return time.Date(2026, 10, 14, 11, 0, 0, 0, time.UTC) }
 	defer func() { overrideNow = old }()
-	out := mustRun(t, "override", "rename", "alice", "carol", "--user", "alice")
+	out := mustRun(t, "override", "merge", "alice", "bob", "--user", "alice")
 	if !strings.Contains(out, "this is the check") || !strings.Contains(out, "last resort") {
 		t.Fatalf("the check did not show the warning:\n%s", out)
 	}
-	mustRefuse(t, "before kb showed the check", "override", "rename", "alice", "carol", "--confirm", "--turn", turnPtr(5), "--reason", "x", "--user", "alice")
+	mustRefuse(t, "before kb showed the check", "override", "merge", "alice", "bob", "--confirm", "--turn", turnPtr(5), "--reason", "x", "--user", "alice")
 }
 
-func TestOverrideRename(t *testing.T) {
+// TestOverrideMergePutsRightAWrongKey checks that a key wrong from the start is put right by adding the
+// person under the right key and merging into it, renaming a key being no override of its own (S-0148).
+func TestOverrideMergePutsRightAWrongKey(t *testing.T) {
 	root := newTestKB(t)
 	attestOne(t, root)
 	checkedBefore(t)
-	mustRun(t, "override", "rename", "alice", "carol", "--user", "alice")
+	mustRefuse(t, "kb override merge <wrong> <right>", "override", "rename", "alice", "carol", "--user", "alice")
+	mustRefuse(t, "add the right person first", "override", "merge", "alice", "carol", "--user", "alice")
+	mustRun(t, "user", "add", "Alice Adams", "--email", "adams@example.com", "--key", "carol", "--user", "alice")
+	out := mustRun(t, "override", "merge", "alice", "carol", "--user", "alice")
+	if !strings.Contains(out, "wrong from the start") {
+		t.Fatalf("the check did not say what the merge puts right:\n%s", out)
+	}
 	// the authorizing turn is the human's own, and a reason is required
-	mustRefuse(t, "Kent Rule 21", "override", "rename", "alice", "carol", "--confirm", "--turn", turnPtr(3), "--reason", "x", "--user", "alice")
-	mustRefuse(t, "--reason is required", "override", "rename", "alice", "carol", "--confirm", "--turn", turnPtr(5), "--user", "alice")
-	mustRun(t, "override", "rename", "alice", "carol", "--confirm", "--turn", turnPtr(5), "--reason", "wrong id", "--user", "alice")
+	mustRefuse(t, "Kent Rule 21", "override", "merge", "alice", "carol", "--confirm", "--turn", turnPtr(3), "--reason", "x", "--user", "alice")
+	mustRefuse(t, "--reason is required", "override", "merge", "alice", "carol", "--confirm", "--turn", turnPtr(5), "--user", "alice")
+	mustRun(t, "override", "merge", "alice", "carol", "--confirm", "--turn", turnPtr(5), "--reason", "wrong key", "--user", "alice")
 
 	if by := py.AsDict(listOf(statementMeta(t, root, "S-0001").Get("attestations"))[0]).Get("by"); !py.Equal(by, "carol") {
-		t.Fatalf("S-0001 attested by %v after the rename", by)
+		t.Fatalf("S-0001 attested by %v after the merge", by)
 	}
 	if a := turnAuthor(t, root, testTurns[1].uuid); !py.Equal(a, "carol") {
-		t.Fatalf("turn author %v after the rename", a)
+		t.Fatalf("turn author %v after the merge", a)
 	}
 	if a := turnAuthor(t, root, testTurns[3].uuid); !py.Equal(a, "bob") {
 		t.Fatalf("bob's turn was relabelled: %v", a)
 	}
+	if tbl := mustLoadUsers(root); tbl.has("alice") || !tbl.has("carol") {
+		t.Fatalf("table after the merge: %+v", tbl.rows)
+	}
 	checkClean(t)
 
-	// the old id acts no more, and a rename onto someone with acts is a merge
+	// the wrong key acts no more, and nothing merges into it
 	d := writeDraft(t, root, "two", fmt.Sprintf(front, "Two"), "Statement two text.")
 	mustRefuse(t, "moved to", "attest", d, "--proposed", turnPtr(2), "--turn", turnPtr(3), "--user", "alice")
-	mustRefuse(t, "that is a merge", "override", "rename", "carol", "bob", "--user", "carol")
-	mustRefuse(t, "retired", "override", "rename", "bob", "alice", "--user", "bob")
+	mustRefuse(t, "retired", "override", "merge", "bob", "alice", "--user", "bob")
 }
 
 func TestOverrideMerge(t *testing.T) {
 	root := newTestKB(t)
 	attestOne(t, root)
 	checkedBefore(t)
-	mustRefuse(t, "this is a rename", "override", "merge", "alice", "carol", "--user", "alice")
 	override(t, "alice", 5, "merge", "alice", "bob")
 	if by := py.AsDict(listOf(statementMeta(t, root, "S-0001").Get("attestations"))[0]).Get("by"); !py.Equal(by, "bob") {
 		t.Fatalf("S-0001 attested by %v after the merge", by)
@@ -147,8 +156,8 @@ func TestOverrideOnlyFromOnRecord(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(off, "2026-10-14-cccccccc.jsonl"), append(append(append(hdr, '\n'), turn...), '\n'), 0o666); err != nil {
 		t.Fatal(err)
 	}
-	mustRun(t, "override", "rename", "alice", "carol", "--user", "alice")
-	mustRefuse(t, "Kent Rule 51", "override", "rename", "alice", "carol", "--confirm",
+	mustRun(t, "override", "merge", "alice", "bob", "--user", "alice")
+	mustRefuse(t, "Kent Rule 51", "override", "merge", "alice", "bob", "--confirm",
 		"--turn", "cccccccc-0000-4000-8000-000000000001#33333333-0000-4000-8000-000000000001", "--reason", "x", "--user", "alice")
 }
 
@@ -271,7 +280,7 @@ func TestOverrideUnknownKind(t *testing.T) {
 }
 
 // TestSnapshotKeepsOverrides checks that a re-snapshot neither restores a scrubbed turn nor relabels a
-// renamed one.
+// merged one.
 func TestSnapshotKeepsOverrides(t *testing.T) {
 	root := newTestKB(t)
 	checkedBefore(t)
@@ -311,15 +320,16 @@ func TestSnapshotKeepsOverrides(t *testing.T) {
 		t.Fatalf("the re-snapshot restored the scrubbed turn: %q", turnText(s.Turn(uuid(1))))
 	}
 
-	mustRun(t, "override", "rename", "alice", "carol", "--user", "alice")
-	mustRun(t, "override", "rename", "alice", "carol", "--confirm", "--turn", ptr(3), "--reason", "new id", "--user", "alice")
+	mustRun(t, "user", "add", "Alice Adams", "--email", "adams@example.com", "--key", "carol", "--user", "alice")
+	mustRun(t, "override", "merge", "alice", "carol", "--user", "alice")
+	mustRun(t, "override", "merge", "alice", "carol", "--confirm", "--turn", ptr(3), "--reason", "wrong key", "--user", "alice")
 	mustRefuse(t, "moved to", "snapshot", src, "--user", "alice")
 	add(5, "user", "Thanks.")
 	mustRun(t, "snapshot", src, "--user", "carol")
 	s = findSession(root, sid)
 	for _, n := range []int{1, 3, 5} {
 		if a := s.Turn(uuid(n)).Get("author"); !py.Equal(a, "carol") {
-			t.Fatalf("turn %d is by %v after the rename and a re-snapshot", n, a)
+			t.Fatalf("turn %d is by %v after the merge and a re-snapshot", n, a)
 		}
 	}
 	if strings.Contains(turnText(s.Turn(uuid(1))), "secret that") {

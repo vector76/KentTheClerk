@@ -185,7 +185,11 @@ func describeUsers(root string) (lines []string, problem string) {
 	if u == "" {
 		problem = "no user id is set, so kb cannot record anything the human does"
 	} else if key, msg := actingKeyIn(root, t, u, source); msg == "" {
-		lines = append(lines, fmt.Sprintf("The human is recorded as %s (%s).", t.who(key), source))
+		name := key
+		if p, ok := t.get(key); ok && p.name != "" {
+			name = key + ", " + p.name
+		}
+		lines = append(lines, fmt.Sprintf("The human is recorded as %s (%s).", name, source))
 	} else {
 		lines = append(lines, fmt.Sprintf("The human's id is %s (%s).", u, source))
 		problem = fmt.Sprintf("%s is not in the knowledge base's user table, so kb cannot record anything the human does "+
@@ -383,7 +387,7 @@ func replayUsers(adds, overrides []*py.Dict) []person {
 	return rows
 }
 
-// moveRow is what a rename or merge does to the table: the row of from becomes to's, or, when to has a row
+// moveRow is what a merge (or a rename, as kb made them before S-0148) does to the table: the row of from becomes to's, or, when to has a row
 // already, goes, since the two are one person.
 func moveRow(root, from, to string) string {
 	t := mustLoadUsers(root)

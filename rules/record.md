@@ -37,8 +37,8 @@ conversation is recorded under a filter. Citations point into the projection.
 
 **Kent Rule 1.** Write to the record only through `kb`. Never create, edit, rename or delete a
 file in `evidence/`, `attested/` or `agent/`, the override log, or the user table or its log, by
-hand. Nothing mechanical stops you; this rule does. Where the record must change against its rules, `kb override` offers a closed
-list of ways to do it (Kent Rules 50 to 54).
+hand. Nothing mechanical stops you; this rule does. Where the record must change against its rules,
+`kb override` offers a closed list of ways to do it (Kent Rules 50 to 54).
 
 **Kent Rule 2.** Evidence is append-only. A recorded turn is never dropped or altered, except
 by an override (Kent Rule 50); a re-snapshot of a session only adds turns. Do not pass `kb snapshot --force` without the human's

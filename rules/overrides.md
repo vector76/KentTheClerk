@@ -1,7 +1,7 @@
 # Overrides
 
-Some situations call for changing the record against its own rules: a person recorded under an id
-they should never have had, content that cannot stay for legal reasons or because it is a secret or
+Some situations call for changing the record against its own rules: a person recorded under a key
+that was wrong from the start, content that cannot stay for legal reasons or because it is a secret or
 someone's personal data, a session that should never have been recorded, a statement attested
 backwards and caught before anything relied on it. Rather than leave people to edit files by hand,
 export and re-import, or rewind the files, `kb` offers a closed list of overrides. Each is entered
@@ -10,9 +10,8 @@ to and `kb check` verifies, so the record is as it was written except where the 
 
 | Override | Command | What it changes |
 |---|---|---|
-| Rename an id | `kb override rename <old> <new>` | every act by `<old>` is recorded as by `<new>`, an id with no acts yet, and its row in the user table goes with it |
-| Merge two ids | `kb override merge <from> <into>` | every act by `<from>` is recorded as by `<into>`, which already has acts |
-| Reassign an act | `kb override reassign <session>#<uuid> <id>` | one human turn, and the attestations made through it |
+| Merge two keys | `kb override merge <from> <into>` | every act by `<from>` is recorded as by `<into>`, which has a row in the user table; it also puts right a key wrong from the start |
+| Reassign an act | `kb override reassign <session>#<uuid> <key>` | one human turn, and the attestations made through it |
 | Scrub | `kb override scrub <session>#<uuid>`, `<session>` or `S-####` | the content of a turn, a whole session or document, or a statement, leaving a tombstone |
 | Revise | `kb override revise S-#### <draft> ...` | a statement nothing relies on yet, attested anew |
 | Change a person's row | `kb override user <key> --name <name> --email <email>` | their name or email in the user table, never their key (Kent Rule 58) |

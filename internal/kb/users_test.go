@@ -106,18 +106,18 @@ func TestOverrideUser(t *testing.T) {
 	}
 }
 
-// TestRenameCarriesTheRow checks that renaming a key carries its row to the new key.
-func TestRenameCarriesTheRow(t *testing.T) {
+// TestMergeDropsTheRow checks that merging a key into another person's removes the merged key's row, since
+// the two are one person.
+func TestMergeDropsTheRow(t *testing.T) {
 	root := newTestKB(t)
 	attestOne(t, root)
 	checkedBefore(t)
-	out := override(t, "alice", 5, "rename", "alice", "carol")
-	if !strings.Contains(out, "row for alice becomes carol's") {
-		t.Fatalf("rename said:\n%s", out)
+	out := override(t, "alice", 5, "merge", "alice", "bob")
+	if !strings.Contains(out, "row for alice is removed") {
+		t.Fatalf("merge said:\n%s", out)
 	}
-	tbl := mustLoadUsers(root)
-	if p, ok := tbl.get("carol"); !ok || p.name != "Alice Adams" || tbl.has("alice") {
-		t.Fatalf("table after the rename: %+v", tbl.rows)
+	if tbl := mustLoadUsers(root); tbl.has("alice") || !tbl.has("bob") {
+		t.Fatalf("table after the merge: %+v", tbl.rows)
 	}
 	checkClean(t)
 }
@@ -168,7 +168,7 @@ func TestSessionStartListsTheTable(t *testing.T) {
 	isolateHome(t)
 	t.Setenv("KB_USER", "alice")
 	out := mustRun(t, "session-start")
-	for _, want := range []string{"The human is recorded as alice (Alice Adams) (from KB_USER).", "  - bob: Bob Brown <bob@example.com>"} {
+	for _, want := range []string{"The human is recorded as alice, Alice Adams (from KB_USER).", "  - bob: Bob Brown <bob@example.com>"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("session-start lacks %q:\n%s", want, out)
 		}
