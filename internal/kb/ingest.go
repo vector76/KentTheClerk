@@ -1,7 +1,7 @@
 package kb
 
 // kb ingest — bring an external document into evidence/ (or off-record/documents/) as a frozen
-// projection beside its original (S-0004, S-0038, S-0039). See kb/ingest.py.
+// projection beside its original (S-0004, S-0038, S-0039).
 
 import (
 	"bytes"

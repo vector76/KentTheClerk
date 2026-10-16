@@ -8,10 +8,10 @@ import (
 	"strings"
 )
 
-// Values mirror what json.loads produces and what the Python code builds:
-//   nil (None), bool, Int (an int, kept exactly), float64, string, []any (list), *Dict (dict, ordered).
+// A value is one of: nil (null), bool, Int (an integer, kept exactly), float64, string, []any (a
+// list), *Dict (a dict, with its keys in order).
 
-// Int is a Python int, held as its canonical decimal text so any size survives a round trip.
+// Int is an integer of any size, held as its canonical decimal text so it survives a round trip.
 type Int string
 
 // IntOf makes an Int from a Go int.
@@ -23,7 +23,8 @@ func (i Int) Int64() (int64, bool) {
 	return n, err == nil
 }
 
-// Dict is an insertion-ordered dict with str keys, as Python dicts loaded from JSON are.
+// Dict maps string keys to values and keeps the keys in insertion order, which for a dict decoded from
+// JSON is the order in the text.
 type Dict struct {
 	keys []string
 	m    map[string]any
@@ -41,7 +42,7 @@ func D(kv ...any) *Dict {
 	return d
 }
 
-// Get is d.get(k): the value, or nil (None) if absent.
+// Get is the value for k, or nil if absent.
 func (d *Dict) Get(k string) any {
 	if d == nil {
 		return nil
@@ -58,10 +59,10 @@ func (d *Dict) Lookup(k string) (any, bool) {
 	return v, ok
 }
 
-// Has is `k in d`.
+// Has reports whether k is present.
 func (d *Dict) Has(k string) bool { _, ok := d.Lookup(k); return ok }
 
-// Set is d[k] = v: an existing key keeps its position.
+// Set sets k to v: a new key goes last, an existing key keeps its position.
 func (d *Dict) Set(k string, v any) {
 	if _, ok := d.m[k]; !ok {
 		d.keys = append(d.keys, k)
@@ -69,7 +70,7 @@ func (d *Dict) Set(k string, v any) {
 	d.m[k] = v
 }
 
-// SetDefault is d.setdefault(k, v).
+// SetDefault is the value for k, after setting it to v if k is absent.
 func (d *Dict) SetDefault(k string, v any) any {
 	if old, ok := d.m[k]; ok {
 		return old
@@ -86,7 +87,7 @@ func (d *Dict) Keys() []string {
 	return d.keys
 }
 
-// Len is len(d).
+// Len is the number of keys.
 func (d *Dict) Len() int {
 	if d == nil {
 		return 0
@@ -94,7 +95,7 @@ func (d *Dict) Len() int {
 	return len(d.keys)
 }
 
-// Copy is dict(d), a shallow copy.
+// Copy is a shallow copy.
 func (d *Dict) Copy() *Dict {
 	c := NewDict()
 	for _, k := range d.Keys() {
@@ -103,7 +104,7 @@ func (d *Dict) Copy() *Dict {
 	return c
 }
 
-// Truthy is bool(v).
+// Truthy is false for nil, false, zero, the empty string and an empty list or dict, and true otherwise.
 func Truthy(v any) bool {
 	switch x := v.(type) {
 	case nil:
@@ -124,7 +125,7 @@ func Truthy(v any) bool {
 	return true
 }
 
-// Or is `a or b`.
+// Or is a if it is truthy, else b.
 func Or(a, b any) any {
 	if Truthy(a) {
 		return a
@@ -132,8 +133,8 @@ func Or(a, b any) any {
 	return b
 }
 
-// Exception is a Python exception the Python version would have raised and not caught. The Go port
-// stops with it (exit status 1, as an uncaught exception does) instead of carrying on.
+// Exception is an error the recorder does not recover from: the command stops with it (exit status 1)
+// instead of carrying on. Type names its kind, such as TypeError or ValueError.
 type Exception struct {
 	Type, Msg string
 }
@@ -145,7 +146,7 @@ func Raise(typ, format string, a ...any) {
 	panic(&Exception{typ, fmt.Sprintf(format, a...)})
 }
 
-// TypeName is type(v).__name__.
+// TypeName is the name messages give v's type: NoneType, bool, int, float, str, list or dict.
 func TypeName(v any) string {
 	switch v.(type) {
 	case nil:
@@ -166,7 +167,7 @@ func TypeName(v any) string {
 	return fmt.Sprintf("%T", v)
 }
 
-// AsDict is v as a dict, raising AttributeError (as calling .get on it would) if it is not one.
+// AsDict is v as a dict, raising AttributeError (it has no attribute 'get') if it is not one.
 func AsDict(v any) *Dict {
 	if d, ok := v.(*Dict); ok {
 		return d
@@ -175,7 +176,8 @@ func AsDict(v any) *Dict {
 	return nil
 }
 
-// Iter is iterating v in a for loop: a list's items, a str's characters, a dict's keys.
+// Iter is the items of v: a list's items, a string's code points, a dict's keys. Anything else raises
+// TypeError.
 func Iter(v any) []any {
 	switch x := v.(type) {
 	case []any:
@@ -199,7 +201,7 @@ func Iter(v any) []any {
 	return nil
 }
 
-// AsStr is v as a str, raising TypeError where Python would fail on a str operation.
+// AsStr is v as a string, raising TypeError if it is not one.
 func AsStr(v any) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -208,7 +210,8 @@ func AsStr(v any) string {
 	return ""
 }
 
-// Equal is a == b for these values.
+// Equal compares two values: bools and numbers by numeric value (a NaN or infinity equals nothing),
+// strings exactly, lists item by item, dicts by their keys and values in any order.
 func Equal(a, b any) bool {
 	switch x := a.(type) {
 	case nil:
@@ -269,7 +272,7 @@ func number(v any) (*big.Float, bool) {
 	return nil, false
 }
 
-// Str is str(v).
+// Str is v as text: a string itself, anything else its Repr.
 func Str(v any) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -277,7 +280,8 @@ func Str(v any) string {
 	return Repr(v)
 }
 
-// Repr is repr(v).
+// Repr is v written as a literal: None, True, False, numbers, quoted strings (StrRepr), [a, b] for a
+// list and {'k': v} for a dict.
 func Repr(v any) string {
 	var b strings.Builder
 	writeRepr(&b, v)
@@ -348,7 +352,9 @@ func writeRepr(b *strings.Builder, v any) {
 	}
 }
 
-// StrRepr is repr() of a str.
+// StrRepr is s as a quoted literal: in single quotes, or in double quotes when s contains ' and no ".
+// The quote and backslash are escaped, as are \t, \n and \r; other control characters, lone surrogates
+// and code points that are not printable (IsPrintable) are written as \x, \u or \U escapes.
 func StrRepr(s string) string {
 	quote := '\''
 	if strings.ContainsRune(s, '\'') && !strings.ContainsRune(s, '"') {
@@ -389,8 +395,9 @@ func StrRepr(s string) string {
 	return b.String()
 }
 
-// FloatRepr is repr(float): the shortest round-tripping digits, in exponent form when the decimal
-// exponent is below -4 or at least 16.
+// FloatRepr is f as the shortest decimal text that reads back as f: in exponent form when the decimal
+// exponent is below -4 or at least 16, otherwise with at least one digit after the point; "nan",
+// "inf" or "-inf" if not finite.
 func FloatRepr(f float64) string {
 	switch {
 	case math.IsNaN(f):
@@ -428,10 +435,10 @@ func FloatRepr(f float64) string {
 	return sign + digits[:exp+1] + "." + digits[exp+1:]
 }
 
-// ParseInt is int(s) for a str: surrounding whitespace, a sign, Unicode decimal digits and single
-// underscores between digits are accepted.
+// ParseInt reads an integer from s: surrounding whitespace, a sign, Unicode decimal digits and single
+// underscores between digits are accepted, up to 4300 digits.
 func ParseInt(s string) (*big.Int, bool) {
-	// int() strips ASCII whitespace and non-ASCII Unicode whitespace, but not -
+	// surrounding whitespace is what IsSpace reports, except \x1c-\x1f
 	s = strings.TrimFunc(s, func(r rune) bool { return IsSpace(r) && !(r >= 0x1c && r <= 0x1f) })
 	neg := false
 	if s != "" && (s[0] == '+' || s[0] == '-') {
@@ -460,7 +467,7 @@ func ParseInt(s string) (*big.Int, bool) {
 	if prevUnderscore {
 		return nil, false
 	}
-	if digits.Len() > 4300 { // sys.get_int_max_str_digits()
+	if digits.Len() > 4300 { // the limit on decimal digits
 		return nil, false
 	}
 	n, ok := new(big.Int).SetString(digits.String(), 10)

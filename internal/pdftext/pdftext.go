@@ -1,57 +1,52 @@
-// Package pdftext extracts the text of PDF pages the way pypdf 6.x does.
+// Package pdftext extracts the text of PDF pages and the document title.
 //
-// It is a port of pypdf's PdfReader (non-strict) plus PageObject.extract_text
-// in its default "plain" mode, written to give character-for-character the
-// same output. pypdf is Copyright (c) 2006-2008 Mathieu Fenniak, 2007 Ashish
-// Kulkarni and contributors, and is distributed under the BSD-3-Clause
-// license; the port follows its algorithms and tables (see tables_gen.go).
+// It reads the file structure leniently (non-strict: a damaged xref table
+// is realigned or rebuilt, a lost /Root is searched for) and extracts each
+// page's text in a plain layout mode, character for character the same
+// for the same file. Its algorithms and tables derive from work Copyright
+// (c) 2006-2008 Mathieu Fenniak, 2007 Ashish Kulkarni and contributors,
+// distributed under the BSD-3-Clause license (see tables_gen.go).
 //
-// The port mirrors pypdf down to its quirks (e.g. text dropped when a line
-// switches to right-to-left script, Python dict ordering, which exceptions
-// are swallowed and which abort the extraction), because the goal is
-// identical output, not better output. Python exceptions are modelled as
-// *pyError values carrying the Python class name, raised with panic/recover
-// where pypdf relies on try/except.
+// The extraction keeps its quirks (e.g. text dropped when a line switches
+// to right-to-left script, dictionaries kept in insertion order, which
+// errors are swallowed and which abort the extraction), because the goal
+// is stable output, not better output. Errors are *pyError values carrying
+// an exception class name, raised with panic/recover where a failure has
+// to unwind to an enclosing handler.
 //
-// pypdf's resource limits are ported (75 MB per decoded filter output,
-// 4 MB predictor rows, 250,000 predictor columns, 10,000 /Contents entries
-// and 75 MB of joined content, 75 MB declared stream lengths, 100,000
-// /ToUnicode entries, the 10,000-object /Root recovery limit, token length
-// limits); where pypdf raises LimitReachedError, Extract returns an error
-// with that class.
+// Resource limits: 75 MB per decoded filter output, 4 MB predictor rows,
+// 250,000 predictor columns, 10,000 /Contents entries and 75 MB of joined
+// content, 75 MB declared stream lengths, 100,000 /ToUnicode entries, the
+// 10,000-object /Root recovery limit, token length limits; past one,
+// Extract returns a LimitReachedError.
 //
-// Deliberate deviations (pypdf would hang or exhaust memory):
+// Hostile input cannot hang the extraction or exhaust memory:
 //   - An xref table whose entry realignment stops making progress near the
-//     end of the file is an error; pypdf loops forever.
+//     end of the file is an error rather than an endless loop.
 //   - Work budget: more than 250,000 form XObject executions, 50 million
 //     content operations or 50 million characters of text per document is
-//     an error (frames.go). pypdf has no such limit.
+//     an error (frames.go).
 //
-// Other known differences from pypdf 6.14.2:
-//   - Encrypted files (an /Encrypt entry) always fail. pypdf decrypts RC4
-//     files that have an empty user password (and AES ones when the
-//     "cryptography" package is installed).
-//   - Recursion depth: pypdf's RecursionError is modelled by counting the
-//     Python frames it would use (frames.go), calibrated for a fresh kb.py
-//     process. Inputs nested to within a few levels of the limits (about
-//     490 form XObjects, 496 nested arrays, 983 page-tree levels) can
-//     differ; pypdf itself shifts by a few levels when lazy imports have
-//     already run in a long-lived process.
+// Known limitations:
+//   - Encrypted files (an /Encrypt entry) always fail, even RC4 or AES
+//     files with an empty user password.
+//   - Recursion depth is bounded by a model of a 1000-frame call stack
+//     (frames.go): about 490 form XObjects, 496 nested arrays and 983
+//     page-tree levels. Near those limits the model is approximate.
 //   - Inline images: settings keys that are not names are ignored and an
-//     indirect reference inside the settings fails (pypdf would accept it).
+//     indirect reference inside the settings fails.
 //   - The CJK codecs (gbk, gb2312, gb18030, cp950, cp932) come from
-//     golang.org/x/text and disagree with Python's codecs on some rare or
-//     invalid byte sequences. They matter only for non-UTF-8 names, byte
+//     golang.org/x/text, and their handling of some rare or invalid byte
+//     sequences is its own. They matter only for non-UTF-8 names, byte
 //     string titles and fonts using predefined CJK CMaps.
-//   - Recovery from corrupt Flate data: both keep the bytes decoded before
-//     the corruption, but the amount can differ.
-//   - str() of a title that is an array or dictionary: pypdf's text
-//     contains Python memory addresses; Go writes "..." there.
-//   - Integers beyond int64 (Python's are unbounded) are rejected where
-//     pypdf would accept them, e.g. huge /ToUnicode codes.
+//   - Recovery from corrupt Flate data keeps the bytes decoded before the
+//     corruption, though not necessarily all of them.
+//   - A title that is an array or dictionary is written as its contents,
+//     with "..." where an object's identity would appear.
+//   - Integers beyond int64 are rejected, e.g. huge /ToUnicode codes.
 //   - The average glyph width (used for spacing when a font has no space
-//     width) is summed in pypdf's order; floating-point corner cases of
-//     Python's sum() for exact floats are not reproduced.
+//     width) is a plain left-to-right sum in float64, without compensated
+//     summation.
 package pdftext
 
 import (
@@ -62,10 +57,10 @@ import (
 	"strings"
 )
 
-// Extract reproduces pypdf's PdfReader(path): the text of every page as page.extract_text() returns it
-// (default "plain" mode), and the document title as (reader.metadata or {}).get("/Title"), converted the
-// way Python's str() would convert it. hasTitle is false where Python's value would be None or falsy.
-// err is non-nil where pypdf would raise (the Python caller then crashes).
+// Extract reads the PDF at path: the text of every page (plain mode), and the /Title of the document
+// information dictionary converted to text (see strOf). hasTitle is false where there is no title, the
+// information dictionary cannot be read, or the title is empty, zero, false or null.
+// err is non-nil where the file cannot be extracted at all.
 func Extract(path string) (pages []string, title string, hasTitle bool, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -95,7 +90,7 @@ func ExtractBytes(data []byte) (pages []string, title string, hasTitle bool, err
 	if d.trailer.Has("/Encrypt") {
 		return nil, "", false, pyErr("NotImplemented", "encrypted PDF files are not supported")
 	}
-	// title = (reader.metadata or {}).get("/Title") or None  (errors -> None)
+	// The title object; an error reading it means no title.
 	var titleObj Object
 	_ = catch(func() error {
 		d.frame = frameMetadata
@@ -108,7 +103,7 @@ func ExtractBytes(data []byte) (pages []string, title string, hasTitle bool, err
 			d.spend(0, 0, len(text))
 			pages = append(pages, text.goString())
 		}
-		// str(title) runs after the pages, outside any try
+		// The title is converted after the pages, and its errors abort.
 		if titleObj != nil {
 			d.frame = frameTitleStr
 			title, hasTitle = d.pyStrObj(titleObj).goString(), true
@@ -124,8 +119,8 @@ func ExtractBytes(data []byte) (pages []string, title string, hasTitle bool, err
 	return pages, title, hasTitle, nil
 }
 
-// titleObject evaluates (reader.metadata or {}).get("/Title") or None; nil
-// stands for None.
+// titleObject returns the /Title of the document information dictionary,
+// or nil where there is none or it is falsy.
 func (d *Document) titleObject() Object {
 	info, ok := d.trailer.Get("/Info")
 	if !ok || isNullOrNone(d, info) {
@@ -145,7 +140,7 @@ func (d *Document) titleObject() Object {
 	return t
 }
 
-// pyStrObj is str() of a pypdf object.
+// pyStrObj converts an object to text the way a title is written.
 func (d *Document) pyStrObj(o Object) pstr {
 	return pstr([]rune(d.strOf(o, 0)))
 }

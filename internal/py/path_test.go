@@ -1,31 +1,37 @@
 package py
 
-import (
-	"os"
-	"os/exec"
-	"strings"
-	"testing"
-)
+import "testing"
 
-// TestPathStrAgainstPython compares PathStr with str(Path(s)) on this platform. Skipped without python.
-func TestPathStrAgainstPython(t *testing.T) {
-	py, err := exec.LookPath("python")
-	if err != nil {
-		t.Skip("python not available")
+// TestPathStr checks PathStr under Windows path rules: drives, UNC anchors, separators and "." parts.
+func TestPathStr(t *testing.T) {
+	if !Windows {
+		t.Skip("the expected results are those of Windows path rules")
 	}
-	cases := []string{"a", "a/b", "a//b/", "./a", ".", "", "a/./b", "a/../b", "/a", "//a", "//a/", "//srv/share/x",
-		"//srv/share", "C:", "C:/", "C:a", "./c:x", "a/./c:x", "c:/x/../y", `a\b`, "x.jsonl"}
-	cmd := exec.Command(py, "-I", "-c", "import sys,pathlib\nfor a in sys.argv[1:]: print(str(pathlib.Path(a)) if a else '.')")
-	cmd.Args = append(cmd.Args, cases...)
-	cmd.Env = append(os.Environ(), "PYTHONIOENCODING=utf-8")
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := strings.Split(strings.ReplaceAll(strings.TrimRight(string(out), "\r\n"), "\r\n", "\n"), "\n")
-	for i, c := range cases {
-		if got := PathStr(c); got != want[i] {
-			t.Errorf("%q: got %q, Python %q", c, got, want[i])
+	for _, c := range [][2]string{
+		{"a", "a"},
+		{"a/b", `a\b`},
+		{"a//b/", `a\b`},
+		{"./a", "a"},
+		{".", "."},
+		{"", "."},
+		{"a/./b", `a\b`},
+		{"a/../b", `a\..\b`},
+		{"/a", `\a`},
+		{"//a", `\\a`},
+		{"//a/", `\\a\`},
+		{"//srv/share/x", `\\srv\share\x`},
+		{"//srv/share", `\\srv\share\`},
+		{"C:", "C:"},
+		{"C:/", `C:\`},
+		{"C:a", "C:a"},
+		{"./c:x", `.\c:x`},
+		{"a/./c:x", `a\c:x`},
+		{"c:/x/../y", `c:\x\..\y`},
+		{`a\b`, `a\b`},
+		{"x.jsonl", "x.jsonl"},
+	} {
+		if got := PathStr(c[0]); got != c[1] {
+			t.Errorf("%q: got %q, want %q", c[0], got, c[1])
 		}
 	}
 }

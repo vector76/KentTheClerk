@@ -6,8 +6,8 @@ import (
 	"sync"
 )
 
-// pstr is a Python str: a sequence of code points, where surrogate halves are
-// allowed (as Python keeps them after a "surrogatepass" decode).
+// pstr is text: a sequence of code points, where surrogate halves are
+// allowed (a UTF-16 decode keeps lone surrogates).
 type pstr []rune
 
 // key turns a pstr into a map key that keeps surrogates distinct.
@@ -39,8 +39,7 @@ func (s pstr) eq(t pstr) bool {
 	return true
 }
 
-// goString converts to UTF-8; surrogate halves become U+FFFD, which is what
-// a JSON round trip of Python's output gives too.
+// goString converts to UTF-8; surrogate halves become U+FFFD.
 func (s pstr) goString() string {
 	var b strings.Builder
 	for _, r := range s {

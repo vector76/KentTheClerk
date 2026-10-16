@@ -21,8 +21,7 @@ can only nod at.
 
 - **Source.** The recorder is in `internal/kb/`, the launcher in `cmd/launcher/`. The rules are
   numbered in `rules/` and readable through `kb rules`; `<kb>/render-notes/kent-the-clerk.md` maps each
-  rule to the statements it rests on, and is updated when a rule changes. The former Python recorder
-  was retired at 0.8.0 and is gone.
+  rule to the statements it rests on, and is updated when a rule changes.
 - **Building.** After changing the source, rebuild and install with `./build-dev.ps1 -Install`. It
   installs a development build named after the version being worked on, such as `0.10.0-dev`, whose
   acts record the commit they were made under; a plain `go build` would stamp acts as if made under a

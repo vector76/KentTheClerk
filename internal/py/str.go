@@ -1,6 +1,8 @@
-// Package py holds the few pieces of Python semantics the recorder depends on, so that the Go port
-// produces what the Python version produced: str methods (Unicode whitespace, code-point lengths and
-// slices, full case mapping), repr(), json.loads/json.dumps, int(), and pathlib-style paths and globs.
+// Package py holds the recorder's dynamic values and the text and file handling around them: JSON
+// values with insertion-ordered dicts and integers of any size, string helpers with code-point
+// semantics (Unicode whitespace, lengths and slices in code points, full case mapping, quoted
+// literals, integer parsing), the recorder's exact JSON decoding and encoding, path normalisation and
+// globbing, reading and writing UTF-8 text files, and the exceptions that stop a command.
 package py
 
 import (
@@ -12,7 +14,7 @@ import (
 	"golang.org/x/text/language"
 )
 
-// IsSpace is str.isspace() for one code point: bidirectional class WS, B or S, or category Zs.
+// IsSpace reports whether r is whitespace: bidirectional class WS, B or S, or category Zs.
 func IsSpace(r rune) bool {
 	switch {
 	case r >= 9 && r <= 13, r >= 0x1c && r <= 0x20, r == 0x85, r == 0xa0, r == 0x1680,
@@ -22,25 +24,25 @@ func IsSpace(r rune) bool {
 	return false
 }
 
-// SpaceClass is a regexp character-class body matching what Python's \s matches in str patterns.
+// SpaceClass is a regexp character-class body matching the whitespace IsSpace reports.
 const SpaceClass = `\t\n\x0b\x0c\r\x1c-\x20\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
 
-// Strip is str.strip() with no argument.
+// Strip removes leading and trailing whitespace (IsSpace).
 func Strip(s string) string { return strings.TrimFunc(s, IsSpace) }
 
-// LStrip is str.lstrip() with no argument.
+// LStrip removes leading whitespace (IsSpace).
 func LStrip(s string) string { return strings.TrimLeftFunc(s, IsSpace) }
 
-// RStrip is str.rstrip() with no argument.
+// RStrip removes trailing whitespace (IsSpace).
 func RStrip(s string) string { return strings.TrimRightFunc(s, IsSpace) }
 
-// StripChars is str.strip(chars).
+// StripChars removes leading and trailing characters that are in chars.
 func StripChars(s, chars string) string { return strings.Trim(s, chars) }
 
-// Fields is str.split() with no argument.
+// Fields splits s at runs of whitespace (IsSpace), with no empty fields.
 func Fields(s string) []string { return strings.FieldsFunc(s, IsSpace) }
 
-// Len is len(s) for a str: the number of code points.
+// Len is the number of code points in s.
 func Len(s string) int {
 	n := 0
 	for i := 0; i < len(s); n++ {
@@ -50,7 +52,7 @@ func Len(s string) int {
 	return n
 }
 
-// Head is s[:n] in code points (n >= 0).
+// Head is the first n code points of s (n >= 0).
 func Head(s string, n int) string {
 	if n <= 0 {
 		return ""
@@ -68,7 +70,7 @@ func byteOffset(s string, n int) int {
 	return i
 }
 
-// Tail is s[n:] in code points (n >= 0).
+// Tail is s after its first n code points (n >= 0).
 func Tail(s string, n int) string { return s[byteOffset(s, n):] }
 
 var (
@@ -76,13 +78,14 @@ var (
 	upper = cases.Upper(language.Und)
 )
 
-// Lower is str.lower(): full Unicode case mapping, language-independent.
+// Lower is s lower-cased: full Unicode case mapping, language-independent.
 func Lower(s string) string { return lower.String(s) }
 
-// Upper is str.upper().
+// Upper is s upper-cased: full Unicode case mapping, language-independent.
 func Upper(s string) string { return upper.String(s) }
 
-// Splitlines is str.splitlines(): it breaks at \n, \r, \r\n, \v, \f, \x1c-\x1e, \x85, U+2028, U+2029.
+// Splitlines splits s into lines at \n, \r, \r\n, \v, \f, \x1c-\x1e, \x85, U+2028 and U+2029. The
+// line breaks are dropped, and a break at the end does not start another line.
 func Splitlines(s string) []string {
 	var out []string
 	start := 0
@@ -111,7 +114,8 @@ func Splitlines(s string) []string {
 	return out
 }
 
-// Partition is str.partition(sep).
+// Partition splits s at the first sep into what comes before, sep and what comes after; without sep
+// it is s, "", "".
 func Partition(s, sep string) (string, string, string) {
 	if i := strings.Index(s, sep); i >= 0 {
 		return s[:i], sep, s[i+len(sep):]
@@ -119,7 +123,8 @@ func Partition(s, sep string) (string, string, string) {
 	return s, "", ""
 }
 
-// IsWord is what \w matches in a Python str pattern: alphanumeric (str.isalnum) or underscore.
+// IsWord reports whether r is a word character: a letter or number (categories L and N, Unicode 15.1
+// included) or an underscore.
 func IsWord(r rune) bool {
 	if _, letter := unicode151(r); letter {
 		return true
@@ -127,7 +132,7 @@ func IsWord(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsNumber(r)
 }
 
-// IsDecimal is what \d matches in a Python str pattern (category Nd).
+// IsDecimal reports whether r is a decimal digit (category Nd).
 func IsDecimal(r rune) bool { return unicode.Is(unicode.Nd, r) }
 
 // DecimalValue is the digit value of a code point for which IsDecimal is true.
@@ -146,8 +151,8 @@ func DecimalValue(r rune) int {
 	return 0
 }
 
-// unicode151 is true for the code points Unicode 15.1 (Python 3.13's version) assigned beyond Go's
-// Unicode 15.0 tables: CJK Extension I (letters) and a few ideographic description characters.
+// unicode151 is true for the code points Unicode 15.1 assigned beyond Go's Unicode 15.0 tables: CJK
+// Extension I (letters) and a few ideographic description characters.
 func unicode151(r rune) (assigned, letter bool) {
 	switch {
 	case r >= 0x2EBF0 && r <= 0x2EE5D:
@@ -158,7 +163,8 @@ func unicode151(r rune) (assigned, letter bool) {
 	return false, false
 }
 
-// IsPrintable is str.isprintable() for one code point.
+// IsPrintable reports whether r is shown as itself in a quoted literal (StrRepr): the space, and any
+// assigned code point outside the control, format, surrogate, private-use and separator categories.
 func IsPrintable(r rune) bool {
 	if r == ' ' {
 		return true
@@ -173,7 +179,7 @@ func IsPrintable(r rune) bool {
 	return unicode.In(r, unicode.L, unicode.M, unicode.N, unicode.P, unicode.S)
 }
 
-// Ljust is format(s, "N"): pad a str on the right with spaces to N code points.
+// Ljust pads s on the right with spaces to n code points.
 func Ljust(s string, n int) string {
 	if l := Len(s); l < n {
 		return s + strings.Repeat(" ", n-l)

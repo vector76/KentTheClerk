@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Port of pypdf/_cmap.py.
+// Font encodings and /ToUnicode CMaps.
 
 var predefinedCMap = map[string]string{
 	"/Identity-H":     "utf-16-be",
@@ -56,7 +56,7 @@ func encodingFromList(lst []pstr) *encoding {
 	return e
 }
 
-// ordMap is a Python dict from str to str, in insertion order.
+// ordMap maps text to text, keeping insertion order.
 type ordMap struct {
 	keys []string
 	m    map[string]pstr
@@ -314,7 +314,7 @@ func fields(line []byte) [][]byte {
 	return out
 }
 
-// pyBigHex is int(b, 16) with Python's unbounded integers.
+// pyBigHex is pyIntHex without a size limit.
 func pyBigHex(b []byte) (*big.Int, error) {
 	s := strings.TrimSpace(string(b))
 	neg := false
@@ -336,7 +336,8 @@ func pyBigHex(b []byte) (*big.Int, error) {
 	return v, nil
 }
 
-// pyIntHex is int(b, 16).
+// pyIntHex parses a hex number; surrounding whitespace, a sign, a 0x prefix
+// and underscores are allowed.
 func pyIntHex(b []byte) (int64, error) {
 	s := strings.TrimSpace(string(b))
 	neg := false
@@ -479,8 +480,8 @@ func (s *cmState) parseBfrange(line []byte) error {
 	if err != nil {
 		return err
 	}
-	// Python ints are unbounded; codes beyond int64 are only accepted here
-	// as far as the range check (see the package doc).
+	// Codes beyond int64 are only accepted here as far as the range check
+	// (see the package doc).
 	a, b := bigA.Int64(), bigB.Int64()
 	fits := bigA.IsInt64() && bigB.IsInt64()
 	nbi := len(lst[0])
@@ -553,8 +554,8 @@ func (s *cmState) parseBfrange(line []byte) error {
 }
 
 // decodeValueAfterKey adds one list-form bfrange entry: key from a, value
-// from the hex token sq (the key expression is evaluated after the value in
-// pypdf's dict assignment, so value errors win).
+// from the hex token sq (the value is decoded before the key, so value errors
+// win).
 func decodeValueAfterKey(s *cmState, a int64, sq []byte) (pstr, error) {
 	v, err := decodeValue(sq)
 	if err != nil {

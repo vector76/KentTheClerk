@@ -7,11 +7,10 @@ import (
 	"strings"
 )
 
-// Port of pypdf's plain-mode text extraction: PageObject._extract_text,
-// pypdf/_text_extraction/__init__.py and _text_extractor.py.
+// Plain-mode text extraction of a page.
 //
-// Arithmetic is written so Go evaluates exactly what CPython evaluates
-// (float64, same operation order, explicit float64() conversions so no
+// Arithmetic is written so the result does not depend on the compiler
+// (float64, a fixed operation order, explicit float64() conversions so no
 // fused multiply-add is emitted).
 
 type matrix [6]float64
@@ -83,7 +82,7 @@ func newExtractor(d *Document) *extractor {
 	}
 }
 
-// tjOperand is what a Tj receives: Python str (isText) or bytes.
+// tjOperand is what a Tj receives: text (isText) or bytes.
 type tjOperand struct {
 	isText bool
 	text   pstr
@@ -91,7 +90,8 @@ type tjOperand struct {
 	other  Object // neither str nor bytes (decided by the font's encoding)
 }
 
-// pyFloat is float(obj) for a pypdf object.
+// pyFloat converts an object to a float: numbers as they are, strings by
+// parsing (surrounding whitespace and underscores allowed).
 func pyFloat(o Object) (float64, error) {
 	switch v := o.(type) {
 	case Int:
@@ -332,7 +332,7 @@ func (e *extractor) processOperation(op string, operands []Object, tj []tjOperan
 	}
 }
 
-// hashKey gives the dict key Python would use for an object (equal objects
+// hashKey gives the dictionary key for an object (equal objects
 // get equal keys: a NameObject equals the str with the same text, a float
 // equals the int with the same value); ok is false for unhashable objects.
 func hashKey(o Object) (string, bool) {
@@ -415,7 +415,8 @@ func (e *extractor) handleTj(ops []tjOperand) {
 	e.strHeight = e.fontSize
 }
 
-// decodeWith is tt.decode(encoding, "surrogatepass") with pypdf's fallback.
+// decodeWith decodes b with the named encoding, keeping lone surrogates,
+// and falls back to latin-1 where that fails.
 func decodeWith(b []byte, enc string) pstr {
 	switch enc {
 	case "charmap", "latin1", "latin-1":
@@ -426,8 +427,8 @@ func decodeWith(b []byte, enc string) pstr {
 		}
 		return decodeLatin1(b)
 	}
-	// CJK codecs; anything else is an unknown codec name (LookupError),
-	// and pypdf falls back to "charmap".
+	// CJK codecs; anything else is an unknown codec name and falls back
+	// to latin-1.
 	if s, ok := decodeCJK(b, enc); ok {
 		return s
 	}
@@ -486,7 +487,8 @@ func toTjOperand(o Object) (tjOperand, bool) {
 	return tjOperand{}, false
 }
 
-// tjOperands converts Tj operands; non-string operands make pypdf raise.
+// tjOperands converts Tj operands; a non-string operand is kept in other
+// for the font's encoding to decide on (see codesFromObject).
 func tjOperands(operands []Object) []tjOperand {
 	if len(operands) == 0 {
 		return nil
@@ -790,8 +792,8 @@ func (d *Document) extractText(obj *Dict, self *Stream, contentKey bool, known m
 				if known[xs] {
 					text = pstr{}
 				} else {
-					// pypdf's RecursionError deep down a chain of forms is
-					// caught by this handler (see frames.go)
+					// a RecursionError deep down a chain of forms is caught
+					// by this handler (see frames.go)
 					if extractFrame(level+1)+frameFormWork > pyRecursionLimit {
 						return recursionError()
 					}
@@ -833,7 +835,9 @@ type tjElement struct {
 	num   float64
 }
 
-// tjElements iterates a TJ operand the way Python iterates it.
+// tjElements iterates a TJ operand: arrays give their strings and numbers,
+// byte strings their byte values, names their characters, dictionaries
+// their keys; anything else is a TypeError.
 func tjElements(o Object) []tjElement {
 	var out []tjElement
 	switch v := o.(type) {

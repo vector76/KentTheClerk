@@ -1,7 +1,6 @@
 package kb
 
 // kb snapshot — copy a Claude Code session JSONL into evidence/ (or off-record/sessions/) with a filter.
-// See kb/snapshot.py for the filter profiles; this is a line-for-line port.
 
 import (
 	"fmt"
@@ -232,8 +231,8 @@ func filterAssistant(rec *py.Dict, profile string) *py.Dict {
 		"timestamp", rec.Get("timestamp"), "role", "assistant", "author", "agent:"+py.Str(model), "content", blocks)
 }
 
-// droppedCounts is info["dropped"]: a dict whose keys may be any hashable JSON value; json.dumps turns
-// them into strings.
+// droppedCounts is info["dropped"]: counts whose keys may be any scalar JSON value; written as JSON,
+// they become strings.
 type droppedCounts struct {
 	order  []string
 	jsonKy map[string]string
@@ -329,7 +328,8 @@ func project(records []*py.Dict, profile, humanUser string) ([]*py.Dict, *projec
 	return turns, info
 }
 
-// hashKey makes a dict key for a JSON scalar the way Python hashes them (1 == 1.0 == True).
+// hashKey makes a map key for a JSON scalar under which equal numbers and booleans meet (1, 1.0 and
+// true are one key).
 func hashKey(v any) (string, bool) {
 	switch x := v.(type) {
 	case string:
@@ -407,7 +407,7 @@ func writeJSONL(dest string, header *py.Dict, records []*py.Dict) {
 	for _, rec := range append([]*py.Dict{header}, records...) {
 		line := py.Dumps(rec) + "\n"
 		if py.SurrogateIndex(line) >= 0 {
-			// Python writes the lines before this one to the .tmp file, then fails to encode it;
+			// The lines before this one go to the .tmp file, then encoding this one fails;
 			// the record itself is left untouched.
 			if err := os.WriteFile(tmp, []byte(b.String()), 0o666); err != nil {
 				py.RaiseOS(err)
@@ -526,7 +526,7 @@ func runSnapshot(ns argparse.Namespace) int {
 		for _, line := range py.TextLines(dest) {
 			v, err := py.Loads(line)
 			if err != nil {
-				py.Raise("json.decoder.JSONDecodeError", "%s", err.Error())
+				py.Raise("JSON error", "%s", err.Error())
 			}
 			rec := py.AsDict(v)
 			switch t := rec.Get("type"); {

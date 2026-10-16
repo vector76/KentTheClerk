@@ -8,8 +8,8 @@ import (
 	"unicode/utf8"
 )
 
-// The object model mirrors pypdf's generic objects closely enough to reproduce
-// the decisions pypdf's text extraction takes on them.
+// The object model keeps the details text extraction decides on: key
+// order, integers apart from reals, a string's raw bytes.
 
 // Object is one PDF object: Name, *String, Int, Real, Bool, Null, Array,
 // *Dict, Ref or *Stream.
@@ -40,14 +40,14 @@ type Array []Object
 // Ref is an indirect reference.
 type Ref struct{ Num, Gen int }
 
-// Dict is a PDF dictionary preserving key order (like a Python dict).
+// Dict is a PDF dictionary preserving key order.
 type Dict struct {
 	keys []Name
 	m    map[Name]Object
 }
 
-// Stream is a stream object: its dictionary (without /Length, as pypdf drops
-// it) and the raw, still-encoded bytes.
+// Stream is a stream object: its dictionary (without /Length, which is
+// dropped once the data is read) and the raw, still-encoded bytes.
 type Stream struct {
 	Dict    *Dict
 	Raw     []byte
@@ -122,7 +122,8 @@ func (d *Dict) copyDict() *Dict {
 	return n
 }
 
-// truthy is Python's bool() of the pypdf object.
+// truthy reports whether an object counts as true: numbers when non-zero,
+// strings, names, arrays and dictionaries when non-empty.
 func truthy(o Object) bool {
 	switch v := o.(type) {
 	case nil:
@@ -142,13 +143,13 @@ func truthy(o Object) bool {
 	case *Stream:
 		return v.Dict.Len() > 0
 	}
-	return true // Null, Bool, Ref: no __bool__/__len__ in pypdf
+	return true // Null, Bool, Ref: always true, even null and false
 }
 
 // errors -------------------------------------------------------------------
 
-// pyError is an exception pypdf would raise, tagged with its Python class so
-// callers can mimic which except clauses catch it.
+// pyError is an extraction error tagged with an exception class, so callers
+// can decide which handlers catch it.
 type pyError struct {
 	Class string // "PdfReadError", "TypeError", "AttributeError", "KeyError", ...
 	Msg   string
@@ -180,7 +181,7 @@ func errClass(err error) string {
 // lexer --------------------------------------------------------------------
 
 const (
-	whitespaceChars = "\x00\t\n\f\r " // pypdf WHITESPACES
+	whitespaceChars = "\x00\t\n\f\r " // PDF white-space characters
 )
 
 func isPdfWhite(c byte) bool {
@@ -222,7 +223,7 @@ type parser struct {
 	data  []byte
 	pos   int
 	doc   *Document // nil inside content streams
-	frame int       // Python frame number of a top-level read_object call
+	frame int       // stack frame of a top-level readObject call (frames.go)
 }
 
 // slice returns data[s:e] clamped to the data (positions past the end are
@@ -271,8 +272,7 @@ func (p *parser) back(n int) {
 	}
 }
 
-// readNonWhitespace is pypdf's read_non_whitespace: returns the first
-// non-whitespace byte (consumed) or -1.
+// readNonWhitespace returns the first non-whitespace byte (consumed) or -1.
 func (p *parser) readNonWhitespace() int {
 	for {
 		c := p.read1()
@@ -335,24 +335,22 @@ func (p *parser) readUntilDelim() []byte {
 	return p.slice(s, p.pos)
 }
 
-// readObject is pypdf's read_object.
+// readObject reads the object at the current position.
 func (p *parser) readObject() (Object, error) {
 	return p.readObjectDepth(p.frame)
 }
 
-// pyRecursionLimit is Python's default sys.getrecursionlimit(). Parsers
-// track the Python stack depth pypdf would be at (see frames.go) so that
-// deeply nested input fails where pypdf's RecursionError would hit; this
-// also bounds the Go recursion.
+// pyRecursionLimit is the depth of the modelled call stack. Parsers track
+// their frame depth (see frames.go) so that deeply nested input fails with
+// RecursionError at fixed depths; this also bounds the Go recursion.
 const pyRecursionLimit = 1000
 
 func recursionError() error {
 	return pyErr("RecursionError", "maximum recursion depth exceeded")
 }
 
-// readObjectDepth is read_object running in Python frame number depth;
-// the terminal readers need two more frames (X.read_from_stream and a
-// helper such as read_until_regex).
+// readObjectDepth is readObject running at frame depth; the terminal
+// readers need two more frames (the reader of the type and a token helper).
 func (p *parser) readObjectDepth(depth int) (Object, error) {
 	if depth > pyRecursionLimit {
 		return nil, recursionError()
@@ -509,7 +507,7 @@ func (p *parser) readIndirect() (Object, error) {
 	return Ref{Num: int(n), Gen: int(g)}, nil
 }
 
-// pyInt is Python's int(bytes) for the digit strings we see.
+// pyInt parses a decimal digit string.
 func pyInt(b []byte) (int64, error) {
 	s := string(b)
 	v, err := strconv.ParseInt(s, 10, 64)
@@ -586,7 +584,8 @@ func (p *parser) readNumber() (Object, error) {
 	return Int(v), nil
 }
 
-// pyFloatBytes is Python float() on a token made of number characters.
+// pyFloatBytes parses a token made of number characters as a float; a comma
+// makes it invalid, an out-of-range value becomes infinite.
 func pyFloatBytes(b []byte) (float64, bool) {
 	s := string(b)
 	for _, c := range s {
@@ -635,9 +634,8 @@ func unnumber(b []byte) []byte {
 	return out
 }
 
-// hexByte is bytearray.append(int(x, 16)) for the (up to) two bytes after a
-// "#": Python's int() also takes one digit or a "+" sign; negative values
-// fail on append.
+// hexByte parses the (up to) two hex digits after a "#" in a name; one
+// digit or a leading "+" is accepted too.
 func hexByte(x []byte) (byte, bool) {
 	if len(x) > 0 && x[0] == '+' {
 		x = x[1:]
@@ -784,7 +782,7 @@ func (p *parser) readHexString() (Object, error) {
 }
 
 // readArray is ArrayObject.read_from_stream.
-// readArray is ArrayObject.read_from_stream running in Python frame depth.
+// It runs at frame depth (see frames.go).
 func (p *parser) readArray(depth int) (Object, error) {
 	if depth > pyRecursionLimit {
 		return nil, recursionError()
@@ -820,7 +818,7 @@ func (p *parser) readArray(depth int) (Object, error) {
 }
 
 // readDict is DictionaryObject.read_from_stream, including streams.
-// readDict is DictionaryObject.read_from_stream running in Python frame depth.
+// It runs at frame depth (see frames.go).
 func (p *parser) readDict(depth int) (Object, error) {
 	if depth > pyRecursionLimit {
 		return nil, recursionError()
@@ -911,7 +909,7 @@ func (p *parser) readDict(depth int) (Object, error) {
 		case Int:
 			length = int64(l)
 		case Real:
-			// stream.read(float) raises TypeError in Python
+			// a real /Length is a TypeError
 			return nil, pyErr("TypeError", "length must be int")
 		case nil:
 			length = -1

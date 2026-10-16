@@ -6,14 +6,15 @@ import (
 	"kenttheclerk/internal/py"
 )
 
-// A port of CPython 3.13.1 html.parser.HTMLParser (with the parts of _markupbase.ParserBase
-// it reaches) for convert_charrefs=True, fed once and never closed: everything goahead(0)
-// holds back at the end of the input is dropped, as it is in kb/ingest.py extract_html.
-// Position bookkeeping (updatepos, lineno, offset) has no visible effect and is omitted, as
-// are handlers the _HTMLText subclass leaves as no-ops (comments, declarations, PIs).
+// The tokenizer: a tolerant HTML tokenizer that unescapes character references in text and
+// runs over the whole input once. Whatever it holds back at the end of the input is dropped:
+// an incomplete tag, comment or declaration, or the final run of text when a '&' among its
+// last 34 characters is followed by no whitespace or ';'. Comments, declarations and
+// processing instructions are skipped without output.
 
-// AssertionError is what Python raises out of feed() for markup _markupbase cannot scan,
-// e.g. "<![" not followed by a name, or an unknown marked-section keyword like "<![foo[".
+// AssertionError is the error extraction stops with for markup the declaration scanner
+// cannot scan, e.g. "<![" not followed by a name, or an unknown marked-section keyword like
+// "<![foo[".
 type AssertionError struct{ Msg string }
 
 func (e *AssertionError) Error() string { return "AssertionError: " + e.Msg }
@@ -26,7 +27,7 @@ type sink interface {
 
 type parser struct {
 	raw   []rune
-	cdata string // cdata_elem; "" is None
+	cdata string // the open script or style element whose content is raw text; "" if none
 	h     sink
 	sc    scanner // over raw
 }
@@ -35,7 +36,7 @@ func (p *parser) fail(format string, a ...any) {
 	panic(&AssertionError{Msg: fmt.Sprintf(format, a...)})
 }
 
-// goahead is HTMLParser.goahead(0).
+// goahead tokenizes the whole input, passing tags and text to the sink.
 func (p *parser) goahead() {
 	raw := p.raw
 	n := len(raw)
@@ -54,7 +55,7 @@ func (p *parser) goahead() {
 					}
 				}
 				if amppos >= 0 && !hasSpaceOrSemi(raw[amppos:]) {
-					break // wait till we get all the text (which never comes)
+					break // the reference may be incomplete: hold the text back (dropped)
 				}
 				j = n
 			}
@@ -75,8 +76,8 @@ func (p *parser) goahead() {
 		if i == n {
 			break
 		}
-		// raw[i] is always '<' here: with convert_charrefs=True the '&' branches of
-		// goahead are unreachable.
+		// raw[i] is always '<' here: character references are unescaped with the text, never
+		// handled on their own.
 		var k int
 		switch {
 		case i+1 < n && isASCIILetter(raw[i+1]):
@@ -129,8 +130,8 @@ func (p *parser) parseHTMLDeclaration(i int) int {
 	}
 }
 
-// isDoctype is rawdata[i:i+9].lower() == '<!doctype'. No non-ASCII character lowercases to
-// any of these letters, so an ASCII case fold is exact.
+// isDoctype reports whether the 9 characters at i lowercase to "<!doctype". No non-ASCII
+// character lowercases to any of these letters, so an ASCII case fold is exact.
 func isDoctype(raw []rune, i int) bool {
 	const want = "<!doctype"
 	if i+len(want) > len(raw) {
@@ -169,7 +170,7 @@ func (p *parser) parseComment(i int) int {
 	return end // -1 when not terminated
 }
 
-// parseMarkedSection is _markupbase.ParserBase.parse_marked_section.
+// parseMarkedSection skips a marked section "<![name ...", failing on an unknown name.
 func (p *parser) parseMarkedSection(i int) int {
 	name, j := p.scanName(i+3, i)
 	if j < 0 {
@@ -187,7 +188,9 @@ func (p *parser) parseMarkedSection(i int) int {
 	return end
 }
 
-// scanName is _markupbase.ParserBase._scan_name.
+// scanName reads a declaration name at i and the whitespace after it, returning the name
+// lowercased and the position after the whitespace, or -1 at the end of the input. A
+// character other than an ASCII letter at i fails.
 func (p *parser) scanName(i, declstartpos int) (string, int) {
 	raw := p.raw
 	n := len(raw)
@@ -216,7 +219,8 @@ func (p *parser) scanName(i, declstartpos int) (string, int) {
 	return tagLower(raw[i:nameEnd]), q
 }
 
-// parseStarttag is HTMLParser.parse_starttag.
+// parseStarttag handles a start tag at i and returns the position after it, or -1 when it
+// is incomplete.
 func (p *parser) parseStarttag(i int) int {
 	endpos := p.checkForWholeStartTag(i)
 	if endpos < 0 {
@@ -231,11 +235,11 @@ func (p *parser) parseStarttag(i int) int {
 			break
 		}
 		if hasValue {
-			// The attribute values are unused, but Python unescapes them, and unescape can
-			// raise ValueError (a decimal charref over 4300 digits).
+			// The attribute values are unused, but they are still unescaped, since unescape
+			// can fail with a ValueError (a decimal charref over 4300 digits).
 			v := raw[vs:ve]
 			if len(v) > 0 && (v[0] == '\'' || v[0] == '"') && v[len(v)-1] == v[0] {
-				v = slice(v, 1, len(v)-1) // Python's attrvalue[1:-1]
+				v = slice(v, 1, len(v)-1) // drop the quotes; a lone quote gives empty
 			}
 			if len(v) > 0 {
 				unescape(v)
@@ -243,13 +247,13 @@ func (p *parser) parseStarttag(i int) int {
 		}
 		k = e
 	}
-	end := string(pyStrip(slice(raw, k, endpos)))
+	end := string(stripSpace(slice(raw, k, endpos)))
 	if end != ">" && end != "/>" {
 		p.h.handleData(raw[i:endpos])
 		return endpos
 	}
 	if end == "/>" {
-		// handle_startendtag, which _HTMLText does not override
+		// a self-closing tag is a start tag followed by its end tag
 		p.h.handleStarttag(tag)
 		p.h.handleEndtag(tag)
 	} else {
@@ -261,7 +265,8 @@ func (p *parser) parseStarttag(i int) int {
 	return endpos
 }
 
-// checkForWholeStartTag is HTMLParser.check_for_whole_start_tag.
+// checkForWholeStartTag returns the end of the start tag at i, or -1 when the tag cannot be
+// completed (it is then held back).
 func (p *parser) checkForWholeStartTag(i int) int {
 	raw := p.raw
 	j := p.sc.locateStarttagEnd(i) // always matches after "<" + letter
@@ -286,7 +291,8 @@ func (p *parser) checkForWholeStartTag(i int) int {
 	return i + 1
 }
 
-// parseEndtag is HTMLParser.parse_endtag.
+// parseEndtag handles an end tag at i and returns the position after it, or -1 when it is
+// incomplete.
 func (p *parser) parseEndtag(i int) int {
 	raw := p.raw
 	gt := indexRune(raw, '>', i+1)

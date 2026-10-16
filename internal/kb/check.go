@@ -1,6 +1,6 @@
 package kb
 
-// kb check — mechanical invariants over evidence/, attested/ and agent/. See kb/check.py.
+// kb check — mechanical invariants over evidence/, attested/ and agent/.
 
 import (
 	"fmt"
@@ -572,7 +572,8 @@ func madeFrom(st *Statement, v []int64) bool {
 	return tupleGE(versionTuple(d.Get("system_version")), v)
 }
 
-// containsValue is `x in v` for a list (or a str, as a substring).
+// containsValue says whether the list v has an element equal to x (or, for a string v, whether x is a
+// substring of it).
 func containsValue(v any, x any) bool {
 	if s, ok := v.(string); ok {
 		return strings.Contains(s, py.AsStr(x))

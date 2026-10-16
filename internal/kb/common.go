@@ -1,7 +1,6 @@
-// Package kb is the recorder of Kent the Clerk. It began as a port of the Python recorder (kb.py and
-// kb/*.py, retired after commit d1333a5, where they can still be read); each command lives in the file
-// named after the Python module it was ported from, and comments that cite kb/<module>.py refer to that
-// version. This file was kb/common.py.
+// Package kb is the recorder of Kent the Clerk, the kb command. Each command lives in a file named
+// after it; this file holds what they share: output and exits, finding the knowledge base, the system's
+// and the user's identity, evidence pointers, and reading evidence and statements.
 package kb
 
 import (
@@ -97,10 +96,10 @@ var (
 
 func outf(format string, a ...any) { fmt.Fprintf(Stdout, format, a...) }
 
-// println is print(...) to stdout.
+// println prints s and a newline to stdout.
 func println(s string) { io.WriteString(Stdout, s+"\n") }
 
-// exitCode is sys.exit(code), carried by panic to Main.
+// exitCode is an exit with that status, carried by panic to Main.
 type exitCode int
 
 // die prints "error: msg" to stderr and exits with status 1.
@@ -111,10 +110,10 @@ func die(msg string) {
 
 func warn(msg string) { io.WriteString(Stderr, "warning: "+msg+"\n") }
 
-// now is datetime.now(timezone.utc).
+// now is the current time in UTC.
 var now = func() time.Time { return time.Now().UTC() }
 
-// isoSeconds is datetime.isoformat(timespec="seconds") for a UTC time.
+// isoSeconds is a UTC time in ISO 8601 to the second, with "+00:00" for the zone.
 func isoSeconds(t time.Time) string { return t.Format("2006-01-02T15:04:05") + "+00:00" }
 
 // ---------------------------------------------------------------- knowledge base location
@@ -167,7 +166,7 @@ func repoRoot() string {
 	return root
 }
 
-// rel is str(p.relative_to(root)).
+// rel is p relative to root (p itself when it cannot be made relative).
 func rel(p, root string) string {
 	r, err := filepath.Rel(root, p)
 	if err != nil {
@@ -316,7 +315,8 @@ type Pointer struct{ Session, UUID string }
 
 func (p Pointer) String() string { return p.Session + "#" + p.UUID }
 
-// parsePointer is Pointer.parse; ok is false (after printing the error, as die does) where Python dies.
+// tryParsePointer parses "<session-id>#<turn-uuid>", ignoring surrounding whitespace; ok is false (after
+// printing the error, as die does) where parsePointer exits.
 func tryParsePointer(s string) (Pointer, bool) {
 	m := pointerRE.FindStringSubmatch(py.Strip(s))
 	if m == nil {
@@ -334,12 +334,12 @@ func parsePointer(s string) Pointer {
 	return p
 }
 
-// parsePointerValue is Pointer.parse(v) for a value read from a file, which Python would call .strip() on.
+// parsePointerValue is parsePointer for a value read from a file, which must be a string.
 func parsePointerValue(v any) Pointer {
 	return parsePointer(strArg(v))
 }
 
-// strArg is v where Python calls a str method on it: anything else raises AttributeError.
+// strArg is v where a string is needed to strip it: anything else raises AttributeError.
 func strArg(v any) string {
 	s, ok := v.(string)
 	if !ok {
@@ -386,7 +386,7 @@ func (s *Session) Kind() string {
 	return "session"
 }
 
-// ModeValue is header.get("mode", "on-record").
+// ModeValue is the header's mode, "on-record" when it has none.
 func (s *Session) ModeValue() any {
 	if v, ok := s.Header.Lookup("mode"); ok {
 		return v
@@ -394,7 +394,7 @@ func (s *Session) ModeValue() any {
 	return "on-record"
 }
 
-// Mode is the mode as a str (non-str modes compare unequal to every mode name, as in Python).
+// Mode is the mode as a string (a mode that is not a string compares unequal to every mode name).
 func (s *Session) Mode() string {
 	if m, ok := s.ModeValue().(string); ok {
 		return m
@@ -452,7 +452,7 @@ func loadSession(path string) *Session {
 		}
 		v, err := py.Loads(line)
 		if err != nil {
-			py.Raise("json.decoder.JSONDecodeError", "%s", err.Error())
+			py.Raise("JSON error", "%s", err.Error())
 		}
 		rec := py.AsDict(v)
 		if t := rec.Get("type"); py.Equal(t, "kb-snapshot") || py.Equal(t, "kb-document") {
@@ -503,7 +503,7 @@ func sha256File(path string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// Sessions is the dict load_all_sessions returns: insertion-ordered by id.
+// Sessions is what loadAllSessions returns: the sessions by id, in the order they were added.
 type Sessions struct {
 	order []string
 	m     map[string]*Session
@@ -658,7 +658,7 @@ type Statement struct {
 	Body string
 }
 
-// ID is meta.get("id").
+// ID is the frontmatter's id (nil when it has none).
 func (st *Statement) ID() any { return st.Meta.Get("id") }
 
 func parseScalar(v string) any {
@@ -995,7 +995,7 @@ func tupleGE(a, b []int64) bool {
 	return len(a) >= len(b)
 }
 
-// normalizeWS is re.sub(r"\s+", " ", s).strip().
+// normalizeWS collapses each run of whitespace in s to one space and trims both ends.
 func normalizeWS(s string) string { return strings.Join(py.Fields(s), " ") }
 
 // textContained is the whitespace-insensitive substring test used for verified copies.

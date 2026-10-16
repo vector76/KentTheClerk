@@ -13,12 +13,12 @@ import (
 	"unicode/utf8"
 )
 
-// Windows is true where pathlib uses Windows path rules (case-insensitive globbing and sorting,
-// backslash separators) and where text written in text mode gets CRLF line endings.
+// Windows is true where Windows path rules apply (case-insensitive globbing and sorting, backslash
+// separators) and where text files are written with CRLF line endings.
 var Windows = runtime.GOOS == "windows"
 
-// PathStr is str(Path(s)): separators normalised, repeated separators and "." parts dropped, a
-// trailing separator removed. ".." is kept, as pathlib keeps it.
+// PathStr is s as a normalised path: separators normalised, repeated separators and "." parts
+// dropped, a trailing separator removed. ".." is kept. An empty path is ".".
 func PathStr(s string) string {
 	if s == "" {
 		return "."
@@ -75,7 +75,7 @@ func PathStr(s string) string {
 		}
 	}
 	if Windows && prefix == "" && len(parts) > 0 && len(parts[0]) >= 2 && parts[0][1] == ':' {
-		// a first part that looks like a drive keeps a leading "." part, as pathlib does
+		// a first part that looks like a drive keeps a leading "." part, so it is not read as one
 		parts = append([]string{"."}, parts...)
 	}
 	out := prefix + strings.Join(parts, sep)
@@ -85,8 +85,9 @@ func PathStr(s string) string {
 	return out
 }
 
-// Resolve is Path(s).expanduser().resolve(): absolute, with symlinks resolved and, on Windows, the
-// case of each existing component as stored on disk. A missing tail is appended as given.
+// Resolve is s as an absolute path, after a leading ~ is expanded to the home directory: symlinks
+// resolved and, on Windows, the case of each existing component as stored on disk. A missing tail is
+// appended as given.
 func Resolve(s string) string {
 	if s == "~" || strings.HasPrefix(s, "~/") || (Windows && strings.HasPrefix(s, `~\`)) {
 		if h, err := os.UserHomeDir(); err == nil {
@@ -115,7 +116,7 @@ func resolveAbs(abs string) string {
 	return filepath.Join(resolveAbs(dir), base)
 }
 
-// Name is Path(p).name.
+// Name is the last component of p.
 func Name(p string) string {
 	p = strings.TrimRight(p, `/`+sepIf())
 	if i := strings.LastIndexAny(p, `/`+sepIf()); i >= 0 {
@@ -134,7 +135,8 @@ func sepIf() string {
 	return "/"
 }
 
-// Suffix is Path(p).suffix.
+// Suffix is the extension of p's last component, from its last dot: "" when that dot is the first or
+// the last character.
 func Suffix(p string) string {
 	name := Name(p)
 	i := strings.LastIndexByte(name, '.')
@@ -144,7 +146,7 @@ func Suffix(p string) string {
 	return ""
 }
 
-// Stem is Path(p).stem.
+// Stem is the last component of p without its Suffix.
 func Stem(p string) string {
 	name := Name(p)
 	if suf := Suffix(p); suf != "" {
@@ -153,7 +155,8 @@ func Stem(p string) string {
 	return name
 }
 
-// Splitext is os.path.splitext(p): leading dots of the last component do not start an extension.
+// Splitext splits p before the extension of its last component, from its last dot; leading dots of
+// the last component do not start an extension.
 func Splitext(p string) (string, string) {
 	seps := "/"
 	if Windows {
@@ -171,8 +174,8 @@ func Splitext(p string) (string, string) {
 	return p, ""
 }
 
-// ReadText is Path.read_text(encoding="utf-8"): strict UTF-8, with universal newlines (\r\n and \r
-// read as \n). Invalid UTF-8 raises UnicodeDecodeError, as Python does.
+// ReadText reads a file as strict UTF-8 text with universal newlines (\r\n and \r read as \n).
+// Invalid UTF-8 raises UnicodeDecodeError, and a file that cannot be read an OSError (RaiseOS).
 func ReadText(path string) string {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -181,7 +184,7 @@ func ReadText(path string) string {
 	return Universal(DecodeUTF8(b))
 }
 
-// DecodeUTF8 is bytes.decode("utf-8") (strict).
+// DecodeUTF8 is b as strict UTF-8; at the first invalid byte it raises UnicodeDecodeError.
 func DecodeUTF8(b []byte) string {
 	if !utf8.Valid(b) {
 		pos := 0
@@ -206,8 +209,8 @@ func Universal(s string) string {
 	return strings.ReplaceAll(s, "\r", "\n")
 }
 
-// TextLines is iterating a file opened in text mode: lines split at \n, \r\n or \r, each without its
-// line ending.
+// TextLines is the lines of a text file (ReadText): split at \n, \r\n or \r, each without its line
+// ending.
 func TextLines(path string) []string {
 	s := ReadText(path)
 	if s == "" {
@@ -220,10 +223,9 @@ func TextLines(path string) []string {
 	return lines
 }
 
-// WriteText is Path.write_text(s, encoding="utf-8"): in text mode, so on Windows "\n" is written as
-// "\r\n".
+// WriteText writes s to a file as UTF-8 text, so on Windows "\n" is written as "\r\n".
 func WriteText(path, s string) {
-	// Python would truncate the file and then fail to encode; refusing before opening keeps the file.
+	// text that cannot be encoded is refused before the file is opened, so the file is kept as it was
 	CheckEncodable(s)
 	if Windows {
 		s = strings.ReplaceAll(s, "\n", "\r\n")
@@ -233,9 +235,10 @@ func WriteText(path, s string) {
 	}
 }
 
-// RaiseOS raises the OSError Python would raise for err.
+// RaiseOS raises err as an OSError: FileNotFoundError or PermissionError, with the error number in
+// the message, for a missing file or a denied one.
 func RaiseOS(err error) {
-	// str(OSError) for a file: "[Errno 2] No such file or directory: 'path'"
+	// for a file: "[Errno 2] No such file or directory: 'path'"
 	typ, errno, text := "OSError", 0, ""
 	switch {
 	case os.IsNotExist(err):
@@ -250,27 +253,27 @@ func RaiseOS(err error) {
 	Raise(typ, "%v", err)
 }
 
-// IsDir is Path.is_dir().
+// IsDir reports whether p is a directory, following symlinks.
 func IsDir(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && st.IsDir()
 }
 
-// IsFile is Path.is_file().
+// IsFile reports whether p is a regular file, following symlinks.
 func IsFile(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && st.Mode().IsRegular()
 }
 
-// Exists is Path.exists().
+// Exists reports whether p exists, following symlinks.
 func Exists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
 }
 
-// Scandir lists a directory in the order os.scandir yields it. On Windows (NTFS) that is the order of
-// the names compared by their upper-cased UTF-16 code units; elsewhere the order is up to the file
-// system, and sorted names are used. A missing directory gives nothing.
+// Scandir lists a directory in the file system's order. On Windows (NTFS) that is the order of the
+// names compared by their upper-cased UTF-16 code units; elsewhere the order is up to the file system,
+// and sorted names are used. A missing directory gives nothing.
 func Scandir(dir string) []os.DirEntry {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -301,8 +304,8 @@ func ntfsLess(a, b string) bool {
 	return len(ua) < len(ub)
 }
 
-// Glob is Path(dir).glob(pattern) in pathlib's order (scandir order per directory). Matching is
-// fnmatch-style per path component, case-insensitive on Windows, and "*" matches hidden names.
+// Glob lists the paths under dir that match pattern, in Scandir order per directory. Matching is per
+// path component (FnMatch), case-insensitive on Windows, and "*" matches hidden names.
 func Glob(dir, pattern string) []string {
 	seps := "/"
 	if Windows {
@@ -313,7 +316,7 @@ func Glob(dir, pattern string) []string {
 	for i, part := range parts {
 		last := i == len(parts)-1
 		var next []string
-		if part == ".." { // followed literally, as pathlib's glob does
+		if part == ".." { // followed literally
 			for _, d := range paths {
 				next = append(next, d+string(filepath.Separator)+"..")
 			}
@@ -340,7 +343,7 @@ func Glob(dir, pattern string) []string {
 	return paths
 }
 
-// SortPaths is sorted(paths) for Path objects: on Windows by their lower-cased parts.
+// SortPaths sorts paths component by component; on Windows the components are compared lower-cased.
 func SortPaths(paths []string) {
 	key := func(p string) []string {
 		if Windows {
@@ -359,8 +362,8 @@ func SortPaths(paths []string) {
 	})
 }
 
-// FnMatch matches a name against one fnmatch pattern component (*, ?, [seq], [!seq]), as pathlib's
-// glob does: case-insensitively on Windows.
+// FnMatch matches a name against one shell-style pattern component (*, ?, [seq], [!seq]),
+// case-insensitively on Windows.
 func FnMatch(name, pat string) bool {
 	toks := compileFn(pat)
 	n := []rune(name)
@@ -444,7 +447,7 @@ func foldEq(a, b rune) bool {
 	if !Windows {
 		return false
 	}
-	// re.IGNORECASE: equal under case folding, including the irregular folds (ſ, ı, µ, ς, K)
+	// equal under case folding, including the irregular folds (ſ, ı, µ, ς, K)
 	for f := unicode.SimpleFold(a); f != a; f = unicode.SimpleFold(f) {
 		if f == b {
 			return true

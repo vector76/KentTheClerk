@@ -1,43 +1,63 @@
 package py
 
-import (
-	"encoding/json"
-	"os"
-	"os/exec"
-	"strings"
-	"testing"
-)
+import "testing"
 
-// TestJSONAgainstPython compares Loads/Dumps with json.loads/json.dumps(ensure_ascii=False) on cases that
-// include each decode error. Skipped when python is not available.
-func TestJSONAgainstPython(t *testing.T) {
-	py, err := exec.LookPath("python")
-	if err != nil {
-		t.Skip("python not available")
-	}
-	if v, _ := exec.Command(py, "-I", "-c", "import sys; print(sys.version_info[:2] == (3, 13))").Output(); !strings.HasPrefix(string(v), "True") {
-		t.Skip("python is not 3.13; its JSON error messages (trailing commas) are 3.13 behaviour")
-	}
-	cmd := exec.Command(py, "-I", "testdata/jsoncases.py")
-	cmd.Env = append(os.Environ(), "PYTHONIOENCODING=utf-8")
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cases [][3]string
-	if err := json.Unmarshal(out, &cases); err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range cases {
-		v, err := Loads(c[0])
-		var got [2]string
+// TestJSON checks Loads and Dumps on cases that include each decode error: for a valid document the
+// re-encoded text, for an invalid one the error message.
+func TestJSON(t *testing.T) {
+	for _, c := range []struct {
+		in, want string
+		isErr    bool
+	}{
+		{"\"\\u", "Invalid \\uXXXX escape: line 1 column 3 (char 2)", true},
+		{"\"\\u1", "Invalid \\uXXXX escape: line 1 column 3 (char 2)", true},
+		{"\"\\u123", "Invalid \\uXXXX escape: line 1 column 3 (char 2)", true},
+		{"\"\\ud800\\u12", "Invalid \\uXXXX escape: line 1 column 9 (char 8)", true},
+		{"\"\\ud800\\u", "Invalid \\uXXXX escape: line 1 column 9 (char 8)", true},
+		{"{\"a\":1,}", "Illegal trailing comma before end of object: line 1 column 7 (char 6)", true},
+		{"[1,]", "Illegal trailing comma before end of array: line 1 column 3 (char 2)", true},
+		{"{\"a\" 1}", "Expecting ':' delimiter: line 1 column 6 (char 5)", true},
+		{"{\"a\":1 \"b\"}", "Expecting ',' delimiter: line 1 column 8 (char 7)", true},
+		{"[1 2]", "Expecting ',' delimiter: line 1 column 4 (char 3)", true},
+		{"\"abc", "Unterminated string starting at: line 1 column 1 (char 0)", true},
+		{"\"a\\x\"", "Invalid \\escape: line 1 column 3 (char 2)", true},
+		{"\"\\u12\"", "Invalid \\uXXXX escape: line 1 column 3 (char 2)", true},
+		{"\"\\u12zz\"", "Invalid \\uXXXX escape: line 1 column 3 (char 2)", true},
+		{"\"a\x01\"", "Invalid control character at: line 1 column 3 (char 2)", true},
+		{"", "Expecting value: line 1 column 1 (char 0)", true},
+		{" ", "Expecting value: line 1 column 2 (char 1)", true},
+		{"{", "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)", true},
+		{"[", "Expecting value: line 1 column 2 (char 1)", true},
+		{"{\"a\":", "Expecting value: line 1 column 6 (char 5)", true},
+		{"tru", "Expecting value: line 1 column 1 (char 0)", true},
+		{"1 2", "Extra data: line 1 column 3 (char 2)", true},
+		{"-", "Expecting value: line 1 column 1 (char 0)", true},
+		{"01", "Extra data: line 1 column 2 (char 1)", true},
+		{"1.", "Extra data: line 1 column 2 (char 1)", true},
+		{"1e", "Extra data: line 1 column 2 (char 1)", true},
+		{"{\"a\":1}\n{\"b\":2}", "Extra data: line 2 column 1 (char 8)", true},
+		{"\ufeff{}", "Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)", true},
+		{"{\"a\":1,\"a\":2}", "{\"a\": 2}", false},
+		{"-0", "0", false},
+		{"1E400", "Infinity", false},
+		{"[1.5e-7, 1e16, 2.0, 1e22, 12345678901234567890, 0.1, 100.0, -0.0, 1e-5, 0.0001]", "[1.5e-07, 1e+16, 2.0, 1e+22, 12345678901234567890, 0.1, 100.0, -0.0, 1e-05, 0.0001]", false},
+		{"{\"é\": \"\\u00e9\\n\\u001b\\u007f\\u2028<>&\"}", "{\"é\": \"é\\n\\u001b\x7f\u2028<>&\"}", false},
+		{"[]", "[]", false},
+		{"{}", "{}", false},
+		{"{\"a\": [], \"b\": {}}", "{\"a\": [], \"b\": {}}", false},
+		{"\n\n  {\"x\" : 1 , }", "Illegal trailing comma before end of object: line 3 column 12 (char 13)", true},
+		{"\"\\ud83d\\ude00\"", "\"😀\"", false},
+		{"[1,\n2,\n,3]", "Expecting value: line 3 column 1 (char 7)", true},
+	} {
+		v, err := Loads(c.in)
+		var got string
 		if err != nil {
-			got = [2]string{"ERR", err.Error()}
+			got = err.Error()
 		} else {
-			got = [2]string{"OK", Dumps(v)}
+			got = Dumps(v)
 		}
-		if got[0] != c[1] || got[1] != c[2] {
-			t.Errorf("%q: got %v, Python %v %q", c[0], got, c[1], c[2])
+		if (err != nil) != c.isErr || got != c.want {
+			t.Errorf("%q: got %q (error %v), want %q (error %v)", c.in, got, err != nil, c.want, c.isErr)
 		}
 	}
 }

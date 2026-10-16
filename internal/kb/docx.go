@@ -1,10 +1,9 @@
 package kb
 
-// docx-v1 (kb/ingest.py extract_docx): Python reads word/document.xml with zipfile and builds an
-// ElementTree with expat. This reproduces both with archive/zip and a small namespace-aware tree builder
-// over encoding/xml's raw tokens, as strict as expat where Python fails (unbound prefixes, duplicate
-// attributes, mismatched tags, anything after the root element) and as lenient where it does not
-// (declared single-byte encodings, UTF-16, XML 1.1, internal entities).
+// docx-v1: word/document.xml is read from the zip with archive/zip and parsed by a small namespace-aware
+// tree builder over encoding/xml's raw tokens. The parser follows expat: as strict where expat fails
+// (unbound prefixes, duplicate attributes, mismatched tags, anything after the root element) and as
+// lenient where it does not (declared single-byte encodings, UTF-16, XML 1.1, internal entities).
 
 import (
 	"archive/zip"
@@ -24,7 +23,7 @@ import (
 	"kenttheclerk/internal/py"
 )
 
-// xmlElem is the part of an ElementTree element extract_docx uses.
+// xmlElem is an element of the parsed tree, with what extractDocx uses.
 type xmlElem struct {
 	tag      string // "{namespace}local"
 	attr     map[string]string
@@ -40,13 +39,13 @@ var (
 	entityDeclRE = regexp.MustCompile(`<!ENTITY[ \t\r\n]+([A-Za-z_:][-A-Za-z0-9_:.]*)[ \t\r\n]+(?:"([^"%&<]*)"|'([^'%&<]*)')[ \t\r\n]*>`)
 )
 
-// parseError raises ParseError as expat reports it: at the line and 0-based column where the offending
+// parseError raises an XML error as expat reports it: at the line and 0-based column where the offending
 // token starts.
 func parseError(data []byte, offset int64, msg string) {
 	before := data[:min(int(offset), len(data))]
 	line := bytes.Count(before, []byte{'\n'}) + 1
 	col := len(before) - (bytes.LastIndexByte(before, '\n') + 1)
-	py.Raise("xml.etree.ElementTree.ParseError", "%s: line %d, column %d", msg, line, col)
+	py.Raise("XML error", "%s: line %d, column %d", msg, line, col)
 }
 
 // attrOffset is where the name of attribute k of the start tag at offset start begins.
@@ -81,7 +80,7 @@ func attrOffset(data []byte, start int64, k int) int64 {
 	return start
 }
 
-// parseXML is xml.etree.ElementTree.fromstring(data).
+// parseXML parses an XML document into its root element.
 func parseXML(data []byte) *xmlElem {
 	transcoded := false
 	switch {
@@ -95,7 +94,7 @@ func parseXML(data []byte) *xmlElem {
 		}
 		out, err := unicode.UTF16(order, unicode.UseBOM).NewDecoder().Bytes(data)
 		if err != nil {
-			py.Raise("xml.etree.ElementTree.ParseError", "not well-formed (invalid token): line 1, column 0")
+			py.Raise("XML error", "not well-formed (invalid token): line 1, column 0")
 		}
 		data, transcoded = out, true
 	}
@@ -118,7 +117,7 @@ func parseXML(data []byte) *xmlElem {
 			return nil, fmt.Errorf("unknown encoding")
 		}
 		if _, single := enc.(*charmap.Charmap); !single {
-			return nil, fmt.Errorf("unknown encoding") // pyexpat decodes only single-byte encodings itself
+			return nil, fmt.Errorf("unknown encoding") // expat decodes only single-byte encodings itself
 		}
 		return enc.NewDecoder().Reader(input), nil
 	}
@@ -279,8 +278,8 @@ func (e *xmlElem) findPath(a, b string) *xmlElem {
 	return nil
 }
 
-// headingLevel is re.match(r"(?i)heading(\d)", style): the digit after "heading" in any case. Python's
-// IGNORECASE also lets 'i' match the dotted and dotless I.
+// headingLevel is the digit after a leading "heading" in any case, where 'i' also matches the dotted and
+// dotless I.
 func headingLevel(style string) (int, bool) {
 	rs := []rune(style)
 	word := []rune("heading")
@@ -303,8 +302,8 @@ func headingLevel(style string) (int, bool) {
 	return 0, false
 }
 
-// readDocumentXML is zipfile.ZipFile(path).read("word/document.xml"), with Python's failures: a
-// BadZipFile (not a zip, member missing, bad CRC) is reported by extract_docx; other errors propagate.
+// readDocumentXML reads word/document.xml from the zip at path. A file that is not a usable zip (not a
+// zip, member missing, bad CRC) is reported as not a Word document; other errors propagate.
 func readDocumentXML(path string) []byte {
 	notWord := func(msg string) { die(py.Name(path) + " is not a Word document: " + msg) }
 	zr, err := zip.OpenReader(path)
@@ -323,7 +322,7 @@ func readDocumentXML(path string) []byte {
 			n = strings.ReplaceAll(n, `\`, "/")
 		}
 		if n == "word/document.xml" {
-			member = f // the last entry of a name wins, as in ZipFile.NameToInfo
+			member = f // the last entry of a name wins
 		}
 	}
 	if member == nil {
@@ -350,7 +349,7 @@ func readDocumentXML(path string) []byte {
 		notWord("Bad CRC-32 for file " + py.StrRepr("word/document.xml"))
 	}
 	if err != nil {
-		py.Raise("zlib.error", "Error -3 while decompressing data: %v", err)
+		py.Raise("zlib error", "Error -3 while decompressing data: %v", err)
 	}
 	return data
 }

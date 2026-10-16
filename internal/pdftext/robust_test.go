@@ -9,9 +9,7 @@ import (
 	"time"
 )
 
-// Regression tests for adversarial input. Expected results were checked
-// against pypdf 6.14.2 (run in a fresh process with the stack depth of
-// kb.py) except where a test says the behaviour is a deliberate deviation.
+// Regression tests for adversarial input.
 
 type pdfObj struct {
 	num  int
@@ -142,7 +140,7 @@ func TestContentsArrayLimit(t *testing.T) {
 	}
 }
 
-// Deliberate deviation: pypdf loops forever on this file.
+// A file whose xref realignment makes no progress must still terminate.
 func TestXrefRealignmentNoProgress(t *testing.T) {
 	data := []byte("%PDF-1.4\nxref\n0 999999\n0000000000 65535 f \nstartxref\n9\n%%EOF" + strings.Repeat("\n", 40))
 	_, err := extractTimed(t, data, 2*time.Second)
@@ -176,7 +174,7 @@ func TestFormXObjectDepth(t *testing.T) {
 	}
 }
 
-// Deliberate deviation: pypdf runs 2^30 forms (it never finishes).
+// A form fan-out of 2^30 runs never finishes; the work budget stops it.
 func TestFormXObjectFanoutBudget(t *testing.T) {
 	_, err := extractTimed(t, formChain(30, true), 30*time.Second)
 	wantErrClass(t, err, "LimitReachedError")
@@ -214,7 +212,7 @@ func TestNestedArrays(t *testing.T) {
 			t.Errorf("%d nested arrays: %v, want %s", n, err, class)
 		}
 	}
-	// 500 comment lines in front of a dictionary value are fine in pypdf
+	// 500 comment lines in front of a dictionary value are fine
 	res := "<< /Font " + strings.Repeat("% c\n", 500) + "<< /F1 5 0 R >> >>"
 	data := buildPDF([]pdfObj{objCatalog, objPages, pageObj("", res), {4, streamObj(textA, "")}, objFont}, 1, "")
 	pages, err := extractTimed(t, data, 5*time.Second)
@@ -224,7 +222,7 @@ func TestNestedArrays(t *testing.T) {
 }
 
 func TestReferenceBodies(t *testing.T) {
-	// An object whose body is "N 0 R": pypdf's first get_object of it raises
+	// An object whose body is "N 0 R": the first lookup of it raises
 	// AttributeError (caught around /Contents and fonts).
 	contentsHop := buildPDF([]pdfObj{objCatalog, objPages, pageObj("7 0 R", ""), {7, []byte("4 0 R")},
 		{4, streamObj(textA, "")}, objFont}, 1, "")
@@ -261,7 +259,7 @@ func TestManyObjectsAndMissingReferences(t *testing.T) {
 }
 
 func TestRootRecoveryLimit(t *testing.T) {
-	// no /Catalog anywhere and a /Size above pypdf's recovery limit
+	// no /Catalog anywhere and a /Size above the /Root recovery limit
 	objs := []pdfObj{{1, []byte("<< /Type /NotACatalog >>")}, {2, []byte("<< /K 1 >>")}}
 	data := buildPDF(objs, 1, "")
 	data = bytes.Replace(data, []byte("/Size 3"), []byte("/Size 20000"), 1)

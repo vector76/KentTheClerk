@@ -1,8 +1,8 @@
 package kb
 
 // kb index / kb search — rebuildable SQLite index over evidence/, attested/ and agent/ (gitignored).
-// The schema and queries began as those of kb/index.py; made_at, when a statement was made, was added
-// for S-0149, since ids no longer give the order. kb serve and kb search rebuild the index before use.
+// made_at, when a statement was made, is in the schema for S-0149, since ids no longer give the order.
+// kb serve and kb search rebuild the index before use.
 
 import (
 	"database/sql"
@@ -48,7 +48,8 @@ CREATE TABLE users (key TEXT PRIMARY KEY, name TEXT, email TEXT);
 
 func dbPath(root string) string { return filepath.Join(root, "index.db") }
 
-// sqlArg converts a value the way Python's sqlite3 binds it; a list or dict cannot be bound.
+// sqlArg converts a value to a SQLite parameter: booleans bind as 0 and 1, integers must fit in 64 bits,
+// and a list or dict cannot be bound.
 func sqlArg(v any) any {
 	switch x := v.(type) {
 	case nil:
@@ -62,16 +63,16 @@ func sqlArg(v any) any {
 		if n, ok := x.Int64(); ok {
 			return n
 		}
-		py.Raise("OverflowError", "Python int too large to convert to SQLite INTEGER")
+		py.Raise("OverflowError", "integer too large to convert to SQLite INTEGER")
 	case int:
 		return int64(x)
 	case float64:
 		return x
 	case string:
-		py.CheckEncodable(x) // sqlite3 encodes str as UTF-8: a lone surrogate raises
+		py.CheckEncodable(x) // strings bind as UTF-8: a lone surrogate raises
 		return x
 	}
-	py.Raise("sqlite3.ProgrammingError", "Error binding parameter - probably unsupported type.")
+	py.Raise("SQLite error", "Error binding parameter - probably unsupported type.")
 	return nil
 }
 
@@ -83,7 +84,7 @@ func sqlArgs(vs ...any) []any {
 	return out
 }
 
-// joinStrs is ",".join(v) for a list of str.
+// joinStrs joins a list of strings with commas.
 func joinStrs(v any) string {
 	var parts []string
 	for _, x := range py.Iter(v) {
@@ -95,7 +96,7 @@ func joinStrs(v any) string {
 func openDB(p string) *sql.DB {
 	db, err := sql.Open("sqlite", p)
 	if err != nil {
-		py.Raise("sqlite3.OperationalError", "%v", err)
+		py.Raise("SQLite error", "%v", err)
 	}
 	db.SetMaxOpenConns(1)
 	return db
@@ -103,7 +104,7 @@ func openDB(p string) *sql.DB {
 
 func must(err error) {
 	if err != nil {
-		py.Raise("sqlite3.OperationalError", "%s", sqliteMsg(err))
+		py.Raise("SQLite error", "%s", sqliteMsg(err))
 	}
 }
 
@@ -291,7 +292,7 @@ func query(db *sql.DB, q string, args ...any) []row {
 	return out
 }
 
-// sqlStr is str(value) for a value read from SQLite.
+// sqlStr is the text shown for a value read from SQLite ("None" for NULL, a quoted literal for a BLOB).
 func sqlStr(v any) string {
 	switch x := v.(type) {
 	case nil:
@@ -349,7 +350,7 @@ func runSearch(ns argparse.Namespace) int {
 	q := ftsQuery(ns.List("query"))
 	limit := ns["limit"].(*big.Int)
 	if !limit.IsInt64() {
-		py.Raise("OverflowError", "Python int too large to convert to SQLite INTEGER")
+		py.Raise("OverflowError", "integer too large to convert to SQLite INTEGER")
 	}
 	println("== statements")
 	flushStdout()
@@ -373,7 +374,8 @@ func runSearch(ns argparse.Namespace) int {
 	return 0
 }
 
-// sqlTruthy maps a SQLite value to the Python value whose truth it has.
+// sqlTruthy maps a SQLite value to a value with the same truth: a nonzero integer or a non-empty BLOB is
+// true.
 func sqlTruthy(v any) any {
 	switch x := v.(type) {
 	case int64:

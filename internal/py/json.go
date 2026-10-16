@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-// JSONError is json.JSONDecodeError; Error() is its str().
+// JSONError is a JSON decoding error; Error() gives the message with its line, column and position.
 type JSONError struct {
 	Msg       string
 	Pos       int // in code points
@@ -20,7 +20,8 @@ func (e *JSONError) Error() string {
 	return fmt.Sprintf("%s: line %d column %d (char %d)", e.Msg, e.Line, e.Col, e.Pos)
 }
 
-// Loads is json.loads(s) for a str s (strict, with NaN/Infinity accepted as Python accepts them).
+// Loads decodes the JSON document s: strict, except that NaN, Infinity and -Infinity are accepted.
+// Objects become *Dict (a repeated key keeps the last value), integers Int and other numbers float64.
 // Lone surrogates from \u escapes are kept, encoded as WTF-8.
 func Loads(s string) (v any, err error) {
 	d := &decoder{s: s}
@@ -132,7 +133,7 @@ func (d *decoder) value(i int) (any, int) {
 		n, _ := new(big.Int).SetString(s[i:intEnd], 10)
 		return Int(n.String()), intEnd
 	}
-	f, _ := strconv.ParseFloat(s[i:j], 64) // out of range gives ±Inf, as float() does
+	f, _ := strconv.ParseFloat(s[i:j], 64) // out of range gives ±Inf
 	return f, j
 }
 
@@ -267,8 +268,8 @@ func (d *decoder) str(i int) (any, int) {
 	}
 }
 
-// CheckEncodable raises UnicodeEncodeError where Python's strict UTF-8 encoder would: at a lone
-// surrogate (kept by Loads from an escape in the JSON).
+// CheckEncodable raises UnicodeEncodeError if s cannot be written as UTF-8: at a lone surrogate (kept
+// by Loads from an escape in the JSON).
 func CheckEncodable(s string) {
 	if i := SurrogateIndex(s); i >= 0 {
 		r, _ := decodeWTF8(s[i:])
@@ -302,14 +303,15 @@ func decodeWTF8(s string) (rune, int) {
 	return utf8.DecodeRuneInString(s)
 }
 
-// Dumps is json.dumps(v, ensure_ascii=False) with the default separators.
+// Dumps writes v as JSON with ", " and ": " separators and non-ASCII characters unescaped. Floats are
+// written as FloatRepr writes them, and NaN and infinities as NaN, Infinity and -Infinity.
 func Dumps(v any) string {
 	var b strings.Builder
 	writeJSON(&b, v)
 	return b.String()
 }
 
-// JSONStr is json.dumps(s, ensure_ascii=False) for a str.
+// JSONStr is s as a JSON string, non-ASCII characters unescaped.
 func JSONStr(s string) string {
 	var b strings.Builder
 	writeJSONStr(&b, s)

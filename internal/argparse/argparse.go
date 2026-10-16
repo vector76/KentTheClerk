@@ -1,7 +1,8 @@
-// Package argparse reproduces the parts of Python's argparse (3.13) that kb uses, so that the Go kb
-// accepts the same command lines and prints the same usage, help and error messages: long options
-// with abbreviation and "=value", store_true flags, positionals with nargs None, "?", "*", "+", a
-// required sub-command, type=int, and the HelpFormatter's layout and wrapping.
+// Package argparse parses kb's command lines and prints its usage, help and error messages, each in an
+// exact format: long options abbreviated to any unambiguous prefix and given as "--name value" or
+// "--name=value", flags, positionals taking one value, an optional one, any number or at least one,
+// a required sub-command, integer options, arguments that look like negative numbers taken as values,
+// and help laid out in columns and wrapped to the terminal's width.
 package argparse
 
 import (
@@ -15,7 +16,7 @@ import (
 	"kenttheclerk/internal/py"
 )
 
-// Nargs values, as in argparse.
+// Nargs values: how many command-line arguments an action takes.
 const (
 	Single   = ""
 	Optional = "?"
@@ -33,7 +34,7 @@ type Action struct {
 	Required      bool
 	Help          string
 	Metavar       string
-	Int           bool // type=int
+	Int           bool // the value is an integer
 	Default       any
 	isHelp        bool
 	storeTrue     bool
@@ -42,7 +43,7 @@ type Action struct {
 	choiceActions []*Action // help pseudo-actions of the sub-commands
 }
 
-// Parser is an ArgumentParser.
+// Parser is the parser of a command: its options, positionals and sub-commands.
 type Parser struct {
 	Prog        string
 	Description string
@@ -53,10 +54,10 @@ type Parser struct {
 }
 
 // Namespace holds parsed values: string or nil for single values, bool for flags, []string for
-// lists, *big.Int for type=int.
+// lists, *big.Int for integer options.
 type Namespace map[string]any
 
-// Str returns a single string value and whether it was given (not None).
+// Str returns a single string value and whether it was given (not nil).
 func (ns Namespace) Str(k string) (string, bool) {
 	s, ok := ns[k].(string)
 	return s, ok
@@ -93,13 +94,13 @@ func (p *Parser) Option(name, help string, def any, required bool) *Action {
 	return a
 }
 
-// IntOption adds "--name N" with type=int.
+// IntOption adds "--name N", taking an integer.
 func (p *Parser) IntOption(name, help string, def int) {
 	a := p.Option(name, help, big.NewInt(int64(def)), false)
 	a.Int = true
 }
 
-// Flag adds a store_true "--name".
+// Flag adds "--name", which sets its dest to true.
 func (p *Parser) Flag(name, help string) {
 	p.actions = append(p.actions, &Action{Dest: strings.ReplaceAll(strings.TrimLeft(name, "-"), "-", "_"),
 		OptionStrings: []string{name}, Nargs: Zero, Help: help, Default: false, storeTrue: true})
@@ -123,8 +124,8 @@ func (p *Parser) AddParser(name, help string) *Parser {
 // Exit carries the status a parse ended with when it did not produce a namespace.
 type Exit struct{ Code int }
 
-// Parse is parse_args: on an error it prints usage and the message to stderr and returns Exit{2};
-// for -h it prints help to stdout and returns Exit{0}.
+// Parse parses args: on an error it prints usage and the message to stderr and returns Exit{2}; for
+// -h it prints help to stdout and returns Exit{0}.
 func (p *Parser) Parse(args []string, stdout, stderr io.Writer) (ns Namespace, sub *Parser, exit *Exit) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -159,7 +160,7 @@ type helpExit struct{ parser *Parser }
 
 func (p *Parser) error(msg string) { panic(&parseError{p, msg}) }
 
-// argError is ArgumentError: the message with the argument's name.
+// argError is an error message about an argument, prefixed with the argument's name.
 func argError(a *Action, msg string) string {
 	if a == nil {
 		return msg
@@ -190,7 +191,9 @@ type optTuple struct {
 	hasExplicit  bool
 }
 
-// '^-\d+$|^-\d*\.\d+$' in Python: Unicode digits, and $ also before a final newline.
+// negativeNumber matches an argument that looks like a negative number, which is taken as a value
+// rather than an option: "-" and decimal digits (any Unicode decimal digits), with or without a
+// fraction, optionally followed by a final newline.
 var negativeNumber = regexp.MustCompile(`^-\p{Nd}+\n?$|^-\p{Nd}*\.\p{Nd}+\n?$`)
 
 func (p *Parser) optionMap() map[string]*Action {
@@ -599,7 +602,7 @@ func contains(l []string, s string) bool {
 // ---------------------------------------------------------------- help formatting
 
 func termWidth() int {
-	// shutil.get_terminal_size: int(os.environ["COLUMNS"]) when that parses and is positive
+	// COLUMNS when it parses as a positive integer, else the terminal's width, else 80
 	if n, ok := py.ParseInt(os.Getenv("COLUMNS")); ok && n.Sign() > 0 {
 		if !n.IsInt64() || n.Int64() > 1<<30 {
 			return 1 << 30
@@ -806,12 +809,12 @@ func (f *formatter) action(a *Action) string {
 	return strings.Join(parts, "")
 }
 
-// FormatUsage is format_usage().
+// FormatUsage is the usage text, as an error prints it.
 func (p *Parser) FormatUsage() string {
 	return strings.Trim(newFormatter(p.Prog).usage(p.actions), "\n") + "\n"
 }
 
-// FormatHelp is format_help().
+// FormatHelp is the help text -h prints: usage, description, positional arguments and options.
 func (p *Parser) FormatHelp() string {
 	f := newFormatter(p.Prog)
 	var pos, opts []*Action
@@ -822,7 +825,7 @@ func (p *Parser) FormatHelp() string {
 			opts = append(opts, a)
 		}
 	}
-	// add_argument pass: the widest invocation, at the section's indent (2) or a sub-action's (4)
+	// the widest invocation, at the section's indent (2) or a sub-action's (4), sets where help starts
 	for _, a := range p.actions {
 		l := py.Len(invocation(a)) + 2
 		for _, sa := range a.choiceActions {

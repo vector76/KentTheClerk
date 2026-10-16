@@ -1,7 +1,6 @@
-// Package mimetypes reproduces mimetypes.guess_type(name)[0] from CPython 3.13: the built-in table,
-// then on Windows the "Content Type" values of the registry's file-extension keys, then any of the
-// mime.types files Python knows about that exist. So the Go kb reports the media type the Python kb
-// reported on the same machine.
+// Package mimetypes guesses a file's media type from its name. The types come from a built-in table,
+// then on Windows the "Content Type" values of the registry's file-extension keys, then whichever of
+// the usual mime.types files exist; a later source overrides an earlier one for the same extension.
 package mimetypes
 
 import (
@@ -33,7 +32,8 @@ func load() {
 	}
 }
 
-// readFile is MimeTypes.read(filename): a mime.types file.
+// readFile adds the types in a mime.types file: on each line a type and its extensions, with "#"
+// starting a comment.
 func readFile(name string) {
 	f, err := os.Open(name)
 	if err != nil {
@@ -59,7 +59,9 @@ func readFile(name string) {
 	}
 }
 
-// GuessType is mimetypes.guess_type(name)[0] for a file name; "" stands for None.
+// GuessType is the media type for a file name or URL, or "" when there is none. Suffixes like .tgz
+// stand for two (.tar.gz), a compression suffix (.gz, .Z, .bz2, .xz, .br) is skipped, the extension
+// is looked up case-insensitively, and a data: URL gives its own type.
 func GuessType(name string) string {
 	once.Do(load)
 	path := name
@@ -98,7 +100,8 @@ func GuessType(name string) string {
 	return types[py.Lower(ext)]
 }
 
-// urlScheme is the scheme urllib.parse.urlparse finds, and the path part after it.
+// urlScheme splits a URL into its scheme, lower-cased, and its path, without the authority, query and
+// fragment.
 func urlScheme(url string) (string, string, bool) {
 	i := strings.Index(url, ":")
 	if i <= 0 {

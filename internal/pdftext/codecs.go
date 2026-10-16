@@ -9,7 +9,7 @@ import (
 	"golang.org/x/text/encoding/traditionalchinese"
 )
 
-// Python codec equivalents used by pypdf's text extraction.
+// Text decoders used by the extraction.
 
 // decodeLatin1 is bytes.decode("charmap") / "latin1".
 func decodeLatin1(b []byte) pstr {
@@ -74,8 +74,7 @@ func decodeUTF16Strict(b []byte, bigEndian bool) (pstr, bool) {
 }
 
 // decodeUTF16Auto is bytes.decode("utf-16"): a BOM selects the byte order
-// and is dropped; without one, little endian (native order on the machines
-// pypdf runs on here).
+// and is dropped; without one, little endian.
 func decodeUTF16Auto(b []byte) (pstr, bool) {
 	if len(b) >= 2 && b[0] == 0xFE && b[1] == 0xFF {
 		return decodeUTF16Strict(b[2:], true)
@@ -94,7 +93,8 @@ func decodeUTF8Strict(b []byte) (pstr, bool) {
 	return pstr([]rune(string(b))), true
 }
 
-// decodePDFDoc is pypdf's decode_pdfdocencoding.
+// decodePDFDoc decodes PDFDocEncoding; ok is false for a byte that has no
+// character in it.
 func decodePDFDoc(b []byte) (pstr, bool) {
 	loadTables()
 	tab := charsets["/PDFDocEncoding"]
@@ -109,8 +109,9 @@ func decodePDFDoc(b []byte) (pstr, bool) {
 	return out, true
 }
 
-// textString is pypdf's create_string_object(bytes) without a forced
-// encoding. ok is false where pypdf makes a ByteStringObject.
+// textString decodes a string from the file as a text string: UTF-16 when
+// it starts with a byte order mark or has a zero in its first two bytes,
+// PDFDocEncoding otherwise. ok is false where it stays a byte string.
 func textString(b []byte) (pstr, bool) {
 	if len(b) >= 2 && ((b[0] == 0xFE && b[1] == 0xFF) || (b[0] == 0xFF && b[1] == 0xFE)) {
 		return decodeUTF16Auto(b)
@@ -138,7 +139,8 @@ func byteStringStr(b []byte) pstr {
 	return decodeLatin1(b)
 }
 
-// pyStr is str() of a pypdf string object read from the file.
+// pyStr is the text of a string object read from the file: a text string
+// where it decodes as one, otherwise a byte string (byteStringStr).
 func pyStr(s *String) pstr {
 	if t, ok := textString(s.Raw); ok {
 		return t
@@ -148,10 +150,10 @@ func pyStr(s *String) pstr {
 
 func utf8Valid(b []byte) bool { return utf8.Valid(b) }
 
-// decodeCJK is bytes.decode(codec) (strict) for the multi-byte codecs pypdf
-// uses: gbk, gb2312, gb18030, cp950 and cp932. golang.org/x/text decoders
+// decodeCJK strictly decodes the multi-byte codecs gbk, gb2312, gb18030,
+// cp950 and cp932; ok is false for invalid input. golang.org/x/text decoders
 // replace invalid input with U+FFFD; since none of these charsets map
-// anything to U+FFFD, a U+FFFD in the result means Python would raise.
+// anything to U+FFFD, a U+FFFD in the result means the input is invalid.
 func decodeCJK(b []byte, codec string) (pstr, bool) {
 	var dec *xenc.Decoder
 	switch codec {
@@ -167,7 +169,7 @@ func decodeCJK(b []byte, codec string) (pstr, bool) {
 		return nil, false
 	}
 	if codec == "gbk" || codec == "gb2312" {
-		// Python's gbk has no single-byte 0x80 (x/text maps it to the euro
+		// gbk has no single-byte 0x80 here (x/text maps it to the euro
 		// sign) and gb2312 is limited to EUC-CN byte pairs.
 		for i := 0; i < len(b); i++ {
 			c := b[i]

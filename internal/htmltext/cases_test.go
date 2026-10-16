@@ -1,7 +1,7 @@
 package htmltext
 
-// Hand-written inputs for the differential and golden tests. Each targets a feature of
-// html.parser or of _HTMLText / extract_html.
+// Hand-written inputs for the golden test. Each targets a feature of the tokenizer or of
+// the text extraction.
 var handCases = []struct {
 	name string
 	src  string

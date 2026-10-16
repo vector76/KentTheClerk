@@ -10,8 +10,7 @@ import (
 	"kenttheclerk/internal/py"
 )
 
-// terminalColumns is os.get_terminal_size(sys.__stdout__.fileno()).columns, or 0 when stdout is not a
-// terminal.
+// terminalColumns is the width of the terminal on stdout, or 0 when stdout is not a terminal.
 func terminalColumns() int {
 	w, _, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil {
@@ -20,11 +19,11 @@ func terminalColumns() int {
 	return w
 }
 
-// wrap is textwrap.wrap(text, width) with the defaults argparse relies on: whitespace already
-// collapsed, words broken after hyphens, long words broken, whitespace dropped at line edges.
+// wrap breaks text into lines of at most width code points: whitespace already collapsed, words broken
+// after hyphens, words longer than a line broken, whitespace dropped at line edges.
 func wrap(text string, width int) []string {
 	chunks := splitChunks([]rune(text))
-	// reversed stack, as textwrap keeps it
+	// a stack, with the next chunk last
 	for i, j := 0, len(chunks)-1; i < j; i, j = i+1, j-1 {
 		chunks[i], chunks[j] = chunks[j], chunks[i]
 	}
@@ -46,7 +45,7 @@ func wrap(text string, width int) []string {
 			}
 		}
 		if len(chunks) > 0 && len(chunks[len(chunks)-1]) > width {
-			// _handle_long_word
+			// a chunk longer than a line: break it to fill the line, after a hyphen if one fits
 			spaceLeft := width - curLen
 			if width < 1 {
 				spaceLeft = 1
@@ -96,7 +95,8 @@ func letter(r rune) bool { return py.IsWord(r) && !py.IsDecimal(r) }
 // wordPunct is [\w!"'&.,?].
 func wordPunct(r rune) bool { return py.IsWord(r) || strings.ContainsRune(`!"'&.,?`, r) }
 
-// splitChunks is TextWrapper._split with break_on_hyphens: textwrap's wordsep_re, by hand.
+// splitChunks splits text into the chunks wrap places: runs of whitespace, runs of dashes between
+// words, and words, a hyphenated word split after each hyphen.
 func splitChunks(s []rune) [][]rune {
 	var out [][]rune
 	n := len(s)

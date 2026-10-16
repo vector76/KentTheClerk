@@ -1,6 +1,6 @@
 package kb
 
-// kb version and kb where (kb/version.py, kb/where.py).
+// kb version and kb where.
 
 import (
 	"fmt"

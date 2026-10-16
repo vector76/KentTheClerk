@@ -6,13 +6,13 @@ import (
 )
 
 // The continuation-passing reference matcher the production scanner (match.go) replaced.
-// It mirrors sre backtracking literally and recurses per repetition, so it is kept only as a
-// test oracle: TestScannerMatchesReference compares the iterative scanner against it.
+// It backtracks literally and recurses per repetition, so it is kept only as a test oracle:
+// TestScannerMatchesReference compares the iterative scanner against it.
 
-// html.parser patterns that need lookbehind/lookahead and whose match end depends on
-// backtracking order: locatestarttagend_tolerant and attrfind_tolerant. Nodes are written
-// in continuation-passing style, so alternatives and greedy repeats are tried in the same
-// order sre tries them, and the first complete match wins, as in sre.
+// The tokenizer's patterns that need lookbehind/lookahead and whose match end depends on
+// backtracking order: the start-tag pattern and the attribute pattern. Nodes are written in
+// continuation-passing style, so alternatives are tried left to right and greedy repeats
+// longest first, and the first complete match wins.
 
 type cont func(int) bool
 
@@ -71,8 +71,8 @@ func opt(n node) node {
 	return func(s []rune, p int, k cont) bool { return n(s, p, k) || k(p) }
 }
 
-// star is a greedy (?:X)* over a group. Like sre's MAX_UNTIL, an iteration that matched
-// the empty string is not followed by another iteration.
+// star is a greedy (?:X)* over a group. An iteration that matched the empty string is not
+// followed by another iteration.
 func star(n node) node {
 	var self node
 	self = func(s []rune, p int, k cont) bool {
@@ -112,7 +112,7 @@ func matchEnd(n node, s []rune, p int) int {
 }
 
 // capture records the span n matched on the successful path into *g (group 3 of
-// attrfind_tolerant); a failed attempt restores the previous value.
+// the attribute pattern); a failed attempt restores the previous value.
 func capture(n node, g *[2]int) node {
 	return func(s []rune, p int, k cont) bool {
 		return n(s, p, func(q int) bool {
@@ -147,7 +147,7 @@ var (
 	// (?<=['"\s/])[^\s/>][^\s/=>]*
 	refAttrName = seq(behind(isQuoteSpaceSl), charIf(notSpaceSlGT), repeatChar(notSpaceSlEqGT, 0))
 
-	// attrfind_tolerant:
+	// the attribute pattern:
 	// ((?<=['"\s/])[^\s/>][^\s/=>]*)(\s*=+\s*('[^']*'|"[^"]*"|(?![\'"])[^>\s]*))?(?:\s|/(?!>))*
 	refAttrfind = seq(
 		refAttrName,
@@ -155,7 +155,7 @@ var (
 		refSpaceOrSlashNoGT,
 	)
 
-	// locatestarttagend_tolerant (re.VERBOSE):
+	// the start-tag pattern (whitespace is layout only):
 	//   <[a-zA-Z][^\t\n\r\f />\x00]*
 	//   (?:[\s/]*
 	//     (?:(?<=['"\s/])[^\s/>][^\s/=>]*
@@ -177,7 +177,7 @@ var (
 	)
 )
 
-// TestScannerMatchesReference checks the iterative scanner against the literal sre-order
+// TestScannerMatchesReference checks the iterative scanner against the literal backtracking
 // reference on random short strings over the characters that matter to the two patterns.
 func TestScannerMatchesReference(t *testing.T) {
 	alphabet := []rune("ab'\"=/> \t\n >x=='/")
@@ -195,7 +195,7 @@ func TestScannerMatchesReference(t *testing.T) {
 		sc := &scanner{s: s}
 		if len(s) >= 2 && isASCIILetter(s[1]) {
 			if got, want := sc.locateStarttagEnd(0), matchEnd(refLocateStarttagEnd, s, 0); got != want {
-				t.Fatalf("locatestarttagend_tolerant on %q: got %d, want %d", string(s), got, want)
+				t.Fatalf("locateStarttagEnd on %q: got %d, want %d", string(s), got, want)
 			}
 		}
 		for k := 0; k <= len(s); k++ {
@@ -204,7 +204,7 @@ func TestScannerMatchesReference(t *testing.T) {
 			wantHas := wantEnd >= 0 && refG3[0] >= 0
 			gotEnd, vs, ve, gotHas := sc.attrfind(k)
 			if gotEnd != wantEnd || gotHas != wantHas || gotHas && (vs != refG3[0] || ve != refG3[1]) {
-				t.Fatalf("attrfind_tolerant on %q at %d: got end %d value %v [%d:%d], want end %d value %v %v",
+				t.Fatalf("attrfind on %q at %d: got end %d value %v [%d:%d], want end %d value %v %v",
 					string(s), k, gotEnd, gotHas, vs, ve, wantEnd, wantHas, refG3)
 			}
 		}

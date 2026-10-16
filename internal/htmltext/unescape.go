@@ -1,24 +1,22 @@
 package htmltext
 
-//go:generate python -I gen/gen_entities.py -o entities_gen.go
-
 import "fmt"
 
-// maxStrDigits is CPython's default sys.get_int_max_str_digits(). int() of a decimal string
-// with more digits raises ValueError (hexadecimal, a power-of-two base, is not limited).
+// maxStrDigits is the 4300-digit limit on decimal character references: converting one
+// with more digits fails with a ValueError (hexadecimal references are not limited).
 const maxStrDigits = 4300
 
-// ValueError is what Python raises out of feed() when html.unescape meets a decimal
-// character reference of more than 4300 digits (in text or in an attribute value).
+// ValueError is the error extraction stops with when unescape meets a decimal character
+// reference of more than 4300 digits (in text or in an attribute value).
 type ValueError struct{ Msg string }
 
 func (e *ValueError) Error() string { return "ValueError: " + e.Msg }
 
-// unescape is html.unescape from CPython 3.13 (html/__init__.py): every match of
+// unescape replaces character references: every match of
 //
 //	&(#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[^\t\n\f <&#;]{1,32};?)
 //
-// is replaced by _replace_charref, scanning left to right without overlap.
+// is replaced by its numeric or named expansion, scanning left to right without overlap.
 func unescape(s []rune) []rune {
 	if indexRune(s, '&', 0) < 0 {
 		return s
@@ -41,7 +39,7 @@ func unescape(s []rune) []rune {
 			}
 			if nd := q - (p + 1); nd > maxStrDigits {
 				panic(&ValueError{Msg: fmt.Sprintf("Exceeds the limit (%d digits) for integer string conversion: "+
-					"value has %d digits; use sys.set_int_max_str_digits() to increase the limit", maxStrDigits, nd)})
+					"value has %d digits", maxStrDigits, nd)})
 			}
 			num := parseNum(s[p+1:q], 10)
 			if q < n && s[q] == ';' {
@@ -66,7 +64,7 @@ func unescape(s []rune) []rune {
 				q++
 			}
 			if q == p {
-				// no match at this '&'; sub() moves on by one character
+				// no match at this '&'; the scan moves on by one character
 				out = append(out, '&')
 				i++
 				continue
@@ -85,8 +83,8 @@ func isRefStop(r rune) bool {
 	return r == '\t' || r == '\n' || r == '\f' || r == ' ' || r == '<' || r == '&' || r == '#' || r == ';'
 }
 
-// parseNum is int(digits, base), saturated just above 0x10FFFF: every larger value takes
-// the same branch of _replace_charref.
+// parseNum is the value of digits in base, saturated just above 0x10FFFF: every larger
+// value expands the same way in numericCharref.
 func parseNum(digits []rune, base int) int {
 	const limit = 0x110000
 	v := 0
@@ -142,7 +140,9 @@ func numericCharref(num int) []rune {
 	return []rune{rune(num)}
 }
 
-// namedCharref is the named branch of _replace_charref; s is the matched text after '&'.
+// namedCharref expands a named reference; s is the matched text after '&'. An exact name
+// wins; otherwise the longest name that is a prefix of s (at least two characters) is
+// expanded and the rest kept; otherwise s is kept with its '&'.
 func namedCharref(s []rune) []rune {
 	if v, ok := html5[string(s)]; ok {
 		return []rune(v)

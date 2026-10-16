@@ -1,7 +1,6 @@
 package pdftext
 
-// Port of ContentStream._parse_content_stream (with forced_encoding "bytes",
-// so every string operand stays a byte string).
+// Content stream parsing. Every string operand stays a byte string.
 
 type operation struct {
 	operands []Object
@@ -10,8 +9,8 @@ type operation struct {
 
 func isASCIIAlpha(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
 
-// parseContent parses a content stream; frame is the Python frame of its
-// read_object calls.
+// parseContent parses a content stream; frame is the stack frame of its
+// object reads (see frames.go).
 func parseContent(data []byte, frame int) ([]operation, error) {
 	p := &parser{data: data, frame: frame}
 	var ops []operation

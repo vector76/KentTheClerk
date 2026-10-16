@@ -7,11 +7,11 @@ import (
 	"kenttheclerk/internal/py"
 )
 
-// extractPDF is the pdf-v1 extractor: one chunk per page, as pypdf extracts it.
+// extractPDF is the pdf-v1 extractor: one chunk per page, as pdftext extracts it.
 func extractPDF(path string) ([]chunk, any) {
 	pages, title, hasTitle, err := pdftext.Extract(path)
 	if err != nil {
-		py.Raise("pypdf error", "%s", err.Error())
+		py.Raise("PDF error", "%s", err.Error())
 	}
 	var chunks []chunk
 	for n, txt := range pages {

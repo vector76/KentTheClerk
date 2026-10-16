@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Port of the parts of pypdf/_font.py that text extraction uses.
+// Font dictionaries as text extraction uses them: name, encoding, widths.
 
 const fixedPitch = 1 // FontFlags.FIXED_PITCH
 
@@ -75,8 +75,8 @@ func unknownFont() *font {
 	}
 }
 
-// pyNum converts a numeric object as int()/float() would see it; ok=false
-// where Python would raise TypeError.
+// num converts a numeric object (resolving references) to a float, saying
+// whether it was an integer; ok=false where it is not a number.
 func (d *Document) num(o Object) (float64, bool, bool) {
 	switch v := o.(type) {
 	case Int:
@@ -344,13 +344,13 @@ func (d *Document) parseFontDescriptor(desc *Dict) (int64, bool, error) {
 	return flags, isFloat, nil
 }
 
-// badWidth marks a width that is not a number (pypdf stores the object and
-// fails with TypeError only when it does arithmetic or comparisons on it).
+// badWidth marks a width that is not a number (it is stored as it is and
+// fails with TypeError only when arithmetic or a comparison uses it).
 var badWidth = math.NaN()
 
 func isBad(v float64) bool { return math.IsNaN(v) }
 
-// rawWidth is a /W list element as stored by pypdf (unresolved).
+// rawWidth is a /W list element as stored (unresolved).
 func rawWidth(o Object) wval {
 	switch v := o.(type) {
 	case Int:
@@ -366,8 +366,9 @@ type wval struct {
 	isFloat bool
 }
 
-// sequenceWidths returns the elements of a /W entry that pypdf treats as a
-// width list (any Sequence), or ok=false.
+// sequenceWidths returns the elements of a /W entry that counts as a width
+// list (an array, or a name or string taken as a sequence of characters
+// or bytes), or ok=false.
 func sequenceWidths(o Object) ([]wval, bool) {
 	switch v := o.(type) {
 	case Array:
@@ -498,9 +499,8 @@ func addDefaultWidth(widths *wtab, flags int64, spaceChar pstr) {
 		widths.set("default", math.Trunc(2*w), false)
 		return
 	}
-	// sum(w for w in values() if w > 0) // len(...), in insertion order:
-	// ints add exactly, floats one by one (pypdf's numbers are int/float
-	// subclasses, which sum() adds without compensation).
+	// The floored mean of the positive widths, summed in insertion order:
+	// integers add exactly, floats one by one without compensation.
 	sum := 0.0
 	anyFloat := false
 	n := 0
@@ -526,7 +526,8 @@ func addDefaultWidth(widths *wtab, flags int64, spaceChar pstr) {
 	widths.set("default", math.Floor(sum/float64(n)), false)
 }
 
-// pyFloorDiv is float // float as CPython computes it.
+// pyFloorDiv is floor division of floats, computed through the remainder
+// so that results next to an integer round consistently.
 func pyFloorDiv(vx, wx float64) float64 {
 	mod := math.Mod(vx, wx)
 	div := (vx - mod) / wx
@@ -624,7 +625,8 @@ func removePrefixable(o Object) (string, error) {
 	return "", pyErr("AttributeError", "object has no attribute 'removeprefix'")
 }
 
-// pyIntObj is int(obj) for a pypdf object (resolving references).
+// pyIntObj converts an object to an integer (resolving references): reals
+// truncate, strings are parsed, names and other objects fail.
 func (d *Document) pyIntObj(o Object) (float64, error) {
 	switch v := d.resolve(o).(type) {
 	case Int:
@@ -647,7 +649,7 @@ func (d *Document) pyIntObj(o Object) (float64, error) {
 	return 0, pyErr("TypeError", "int() argument must be a string or a real number")
 }
 
-// pyIter is iter(obj) for a resolved pypdf object: arrays give their items,
+// pyIter iterates a resolved object: arrays give their items,
 // dictionaries their keys, text strings and names their characters (as
 // one-character text strings), byte strings their byte values.
 func pyIter(o Object) ([]Object, error) {

@@ -8,7 +8,8 @@ import (
 	"strconv"
 )
 
-// Port of the file-structure parts of pypdf/_reader.py (non-strict mode).
+// The file structure, read in non-strict mode: xref tables and streams,
+// trailers, object lookup.
 
 // Document is an opened PDF.
 type Document struct {
@@ -23,8 +24,8 @@ type Document struct {
 	cache        map[[2]int]Object
 	known        map[[2]int]bool
 	root         *Dict
-	// frame is the Python frame number of the code that would call
-	// get_object right now (see frames.go)
+	// frame is the stack frame of the code that would look up an object
+	// right now (see frames.go)
 	frame int
 	// work done so far (see frames.go)
 	formRuns, operations, outputRunes int
@@ -33,8 +34,8 @@ type Document struct {
 	searchCache map[[2]int][]int
 }
 
-// raised carries a Python-style exception through panics so that the code
-// can mirror pypdf's try/except structure.
+// raised carries an error through panics, so that it unwinds to the
+// enclosing handler (catch).
 type raised struct{ err error }
 
 func raise(err error) { panic(raised{err}) }
@@ -60,9 +61,8 @@ func must(o Object, err error) Object {
 	return o
 }
 
-// resolve is get_object(): a reference is followed once (errors are
-// raised). Like pypdf, an object whose body is itself a reference resolves
-// to that reference, not to its target.
+// resolve follows a reference once (errors are raised). An object whose
+// body is itself a reference resolves to that reference, not to its target.
 func (d *Document) resolve(o Object) Object {
 	r, ok := o.(Ref)
 	if !ok {
@@ -128,7 +128,9 @@ func pyIntLoose(b []byte) (int64, error) {
 	return v, nil
 }
 
-// readPreviousLine is pypdf's read_previous_line.
+// readPreviousLine returns the line that ends at the current position and
+// moves back to the end of the text of the line before it (before its line
+// break).
 func (p *parser) readPreviousLine() ([]byte, error) {
 	if p.pos == 0 {
 		return nil, pyErr("PdfStreamError", "Stream has ended unexpectedly")
@@ -187,8 +189,8 @@ func (d *Document) read() error {
 		return err
 	}
 	if d.xrefIndex != 0 || d.xrefIndexBad {
-		// pypdf iterates the dict it started with even if a rebuild
-		// replaces self.xref; writes then go to the new dict.
+		// This iterates the table it started with even if a rebuild
+		// replaces d.xref; writes then go to the new table.
 		old, order := d.xref, append([]int(nil), d.xrefOrder...)
 		for _, gen := range order {
 			entries := old[gen]
@@ -232,7 +234,7 @@ func (d *Document) read() error {
 			}
 		}
 	}
-	for _, gen := range append([]int(nil), d.xrefOrder...) { // insertion order, like the Python dict
+	for _, gen := range append([]int(nil), d.xrefOrder...) { // insertion order
 		entries, ok := d.xref[gen]
 		if !ok {
 			continue
@@ -533,7 +535,7 @@ func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 		}
 		num, isInt := numObj.(Int)
 		if r, isReal := numObj.(Real); isReal && float64(r) == float64(int64(r)) {
-			// a float key equals the int key in a Python dict
+			// a whole real number is the same key as the integer
 			num, isInt = Int(int64(r)), true
 		}
 		if firstTime && !(isInt && num == 0) {
@@ -574,8 +576,8 @@ func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 				p.back(19)
 				line = p.read(20)
 				if p.pos <= before {
-					// Near the end of the file this realignment stops moving
-					// and pypdf loops forever; fail instead (deliberate).
+					// Near the end of the file this realignment can stop
+					// moving; fail rather than loop forever.
 					return false, pyErr("PdfReadError", "xref table entry realignment makes no progress")
 				}
 			}
@@ -608,8 +610,8 @@ func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 					recovery = loadRecoveryCache(d.data)
 				}
 				if rc, ok := recovery[n]; ok {
-					// pypdf unpacks (object_start, generation) as
-					// (generation, offset): mirror the swap.
+					// a recovered (object start, generation) pair is used
+					// as (generation, offset); the output depends on the swap.
 					generation, offset, typ = rc[0], rc[1], "n"
 				} else {
 					generation, offset, typ = 65535, -1, "f"
@@ -646,7 +648,7 @@ func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 			p.readNonWhitespace()
 			p.back(1)
 		}
-		// pypdf: stream.seek(-1, 1) after the loop's read, then read(7)
+		// step back over the loop's last read, then read 7 bytes
 		p.back(1)
 		tag := p.read(7)
 		if string(tag) != "trailer" {
@@ -800,8 +802,8 @@ func isDigits(b []byte) bool {
 	return true
 }
 
-// readXrefStream is _read_pdf15_xref_stream; p is positioned one byte
-// after the start of the object (pypdf seeks back one).
+// readXrefStream reads a cross-reference stream; p is positioned one byte
+// after the start of the object (it steps back one).
 func (d *Document) readXrefStream(p *parser) (*Stream, error) {
 	p.back(1)
 	num, gen, err := d.readObjectHeader(p)
@@ -1028,8 +1030,8 @@ func (d *Document) getObject(r Ref) (Object, error) {
 		d.known[key] = true
 		o, err := p.readObject()
 		if err != nil {
-			// pypdf has no finally here: the marker stays, and the next
-			// access reports a self-reference loop.
+			// No cleanup here: the marker stays, and the next access
+			// reports a self-reference loop.
 			return nil, err
 		}
 		delete(d.known, key)

@@ -1,8 +1,8 @@
 package kb
 
-// Tiny Markdown-to-HTML for the renderer (kb/md.py): paragraphs, headings, lists, fenced code,
-// blockquotes, tables, inline code/bold/italic/links, and statement ids as links. The regexes that
-// need look-around in Python are matched by hand here with the same results.
+// Tiny Markdown-to-HTML for the renderer: paragraphs, headings, lists, fenced code, blockquotes,
+// tables, inline code/bold/italic/links, and statement ids as links. Patterns that need look-around,
+// which Go's regexp lacks, are matched by hand.
 
 import (
 	"regexp"
@@ -12,7 +12,7 @@ import (
 	"kenttheclerk/internal/py"
 )
 
-// htmlEscape is html.escape(s, quote).
+// htmlEscape escapes &, < and > in s, and with quote also " and '.
 func htmlEscape(s string, quote bool) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, "<", "&lt;")
@@ -53,7 +53,7 @@ func runeAt(s string, i int) (rune, bool) {
 	return r, true
 }
 
-// italic is re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"<i>\1</i>", s).
+// italic replaces each match of (?<![\w*])\*([^*\n]+)\*(?![\w*]) in s with <i>\1</i>.
 func italic(s string) string {
 	var b strings.Builder
 	last := 0

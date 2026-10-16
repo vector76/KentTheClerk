@@ -1,5 +1,3 @@
-__pycache__/
-*.pyc
 # kb built from source in the top folder, beside the rules
 /kb
 /kb.exe

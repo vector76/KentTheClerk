@@ -1,110 +1,33 @@
 package pdftext
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 )
 
-// The corpus in testdata/corpus is generated (Python stdlib only) by
+// testdata/corpus holds fixed test PDFs: hand-built files for single
+// features (filters, xref layouts, encodings, titles) and randomly
+// generated ones (rand_*.pdf). testdata/corpus/expected.json holds the
+// pages, title or error expected for each; TestGolden checks Extract
+// against it on any machine.
 //
-//	python -I testdata/gen_corpus.py               (hand-built feature files)
-//	python -I testdata/gen_random.py testdata/corpus 25 2026   (rand_*.pdf)
-//
-// testdata/corpus/expected.json holds what pypdf (version recorded in the
-// file) returned for each PDF; TestGolden checks Extract against it on any
-// machine, TestDifferentialPypdf re-runs pypdf live when python and pypdf
-// are available (and skips otherwise). Regenerate the golden file with:
-//
-//	PDFTEXT_UPDATE_GOLDEN=1 go test ./internal/pdftext/ -run TestDifferentialPypdf
-//
-// TestCorpusExtra compares every PDF in the directory named by PDFTEXT_EXTRA,
-// e.g. the output of gen_random.py with a large count, or real documents.
+// TestCorpusExtra runs every PDF in the directory named by PDFTEXT_EXTRA,
+// e.g. real documents, through Extract.
 
-// pinnedPypdf is the pypdf release the port reproduces.
-const pinnedPypdf = "6.14.2"
-
-type pyResult struct {
+type extraction struct {
 	File  string   `json:"file"`
 	Pages []string `json:"pages"`
 	Title *string  `json:"title"`
 	Error *string  `json:"error"`
-	Pypdf string   `json:"pypdf,omitempty"`
 }
 
-func corpusFiles(t *testing.T) []string {
-	t.Helper()
-	files, err := filepath.Glob(filepath.Join("testdata", "corpus", "*.pdf"))
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no corpus files: %v", err)
-	}
-	sort.Strings(files)
-	return files
-}
-
-func findPython(t *testing.T) string {
-	t.Helper()
-	for _, c := range []string{os.Getenv("PDFTEXT_PYTHON"), "python", "python3", "py"} {
-		if c == "" {
-			continue
-		}
-		if p, err := exec.LookPath(c); err == nil {
-			return p
-		}
-	}
-	return ""
-}
-
-func runPypdf(t *testing.T, files []string) []pyResult {
-	t.Helper()
-	py := findPython(t)
-	if py == "" {
-		t.Skip("python not found (set PDFTEXT_PYTHON); skipping pypdf differential test")
-	}
-	var all []pyResult
-	for len(files) > 0 {
-		n := len(files)
-		if n > 40 {
-			n = 40
-		}
-		all = append(all, runPypdfBatch(t, py, files[:n])...)
-		files = files[n:]
-	}
-	return all
-}
-
-func runPypdfBatch(t *testing.T, py string, files []string) []pyResult {
-	t.Helper()
-	args := append([]string{"-I", filepath.Join("testdata", "pypdf_dump.py")}, files...)
-	cmd := exec.Command(py, args...)
-	cmd.Env = append(os.Environ(), "PYTHONIOENCODING=utf-8")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 3 {
-			t.Skip("pypdf is not installed; skipping pypdf differential test")
-		}
-		t.Skipf("running python failed (%v): %s", err, stderr.String())
-	}
-	var res []pyResult
-	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
-		t.Fatalf("decoding pypdf output: %v\n%s", err, stdout.String())
-	}
-	if len(res) != len(files) {
-		t.Fatalf("pypdf returned %d results for %d files", len(res), len(files))
-	}
-	return res
-}
-
-func goResult(file string) pyResult {
+func goResult(file string) extraction {
 	pages, title, hasTitle, err := Extract(file)
-	r := pyResult{File: file}
+	r := extraction{File: file}
 	if err != nil {
 		s := err.Error()
 		r.Error = &s
@@ -119,36 +42,36 @@ func goResult(file string) pyResult {
 
 func show(s *string) string {
 	if s == nil {
-		return "None"
+		return "nil"
 	}
 	return fmt.Sprintf("%q", *s)
 }
 
-// diff lists the differences between pypdf's result and ours.
-func diff(want, got pyResult) []string {
+// diff lists the differences between the expected result and ours.
+func diff(want, got extraction) []string {
 	name := filepath.Base(want.File)
 	if (want.Error != nil) != (got.Error != nil) {
-		return []string{fmt.Sprintf("%s: pypdf error %s, Go error %s", name, show(want.Error), show(got.Error))}
+		return []string{fmt.Sprintf("%s: expected error %s, got error %s", name, show(want.Error), show(got.Error))}
 	}
 	if want.Error != nil {
 		return nil
 	}
 	var out []string
 	if show(want.Title) != show(got.Title) {
-		out = append(out, fmt.Sprintf("%s: title\n  pypdf: %s\n  go:    %s", name, show(want.Title), show(got.Title)))
+		out = append(out, fmt.Sprintf("%s: title\n  want: %s\n  got:  %s", name, show(want.Title), show(got.Title)))
 	}
 	if len(want.Pages) != len(got.Pages) {
-		return append(out, fmt.Sprintf("%s: pypdf has %d pages, Go %d", name, len(want.Pages), len(got.Pages)))
+		return append(out, fmt.Sprintf("%s: expected %d pages, got %d", name, len(want.Pages), len(got.Pages)))
 	}
 	for i := range want.Pages {
 		if want.Pages[i] != got.Pages[i] {
-			out = append(out, fmt.Sprintf("%s page %d differs\n  pypdf: %q\n  go:    %q", name, i+1, want.Pages[i], got.Pages[i]))
+			out = append(out, fmt.Sprintf("%s page %d differs\n  want: %q\n  got:  %q", name, i+1, want.Pages[i], got.Pages[i]))
 		}
 	}
 	return out
 }
 
-func compare(t *testing.T, want, got pyResult) {
+func compare(t *testing.T, want, got extraction) {
 	t.Helper()
 	for _, d := range diff(want, got) {
 		t.Error(d)
@@ -162,7 +85,7 @@ func TestGolden(t *testing.T) {
 	if err != nil {
 		t.Skipf("no golden file: %v", err)
 	}
-	var want []pyResult
+	var want []extraction
 	if err := json.Unmarshal(data, &want); err != nil {
 		t.Fatal(err)
 	}
@@ -172,37 +95,9 @@ func TestGolden(t *testing.T) {
 	}
 }
 
-func TestDifferentialPypdf(t *testing.T) {
-	files := corpusFiles(t)
-	res := runPypdf(t, files)
-	if v := res[0].Pypdf; v != pinnedPypdf {
-		// Parity is pinned to one pypdf release; other releases change the
-		// extraction now and then, so only report what differs.
-		n := 0
-		for i, f := range files {
-			n += len(diff(res[i], goResult(f)))
-		}
-		t.Skipf("pypdf %s installed (port follows %s): %d differences", v, pinnedPypdf, n)
-	}
-	for i, f := range files {
-		compare(t, res[i], goResult(f))
-	}
-	if os.Getenv("PDFTEXT_UPDATE_GOLDEN") != "" {
-		for i := range res {
-			res[i].File = filepath.Base(res[i].File)
-		}
-		out, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(goldenPath(), append(out, '\n'), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-// TestCorpusExtra runs any PDFs listed in PDFTEXT_EXTRA (a directory) through
-// both implementations; it is a tool for checking real-world files locally.
+// TestCorpusExtra runs any PDFs in PDFTEXT_EXTRA (a directory) through
+// Extract and fails on an internal error; it is a tool for checking
+// real-world files locally.
 func TestCorpusExtra(t *testing.T) {
 	dir := os.Getenv("PDFTEXT_EXTRA")
 	if dir == "" {
@@ -212,19 +107,22 @@ func TestCorpusExtra(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("no PDFs in PDFTEXT_EXTRA")
 	}
-	res := runPypdf(t, files)
-	same, total := 0, 0
-	for i, f := range files {
-		total++
-		if d := diff(res[i], goResult(f)); len(d) == 0 {
-			same++
-		} else {
-			for _, m := range d {
-				t.Error(m)
-			}
+	failed := 0
+	for _, f := range files {
+		r := goResult(f)
+		if r.Error != nil {
+			failed++
+		}
+		switch {
+		case r.Error != nil && strings.HasPrefix(*r.Error, "pdftext: internal error"):
+			t.Errorf("%s: %s", filepath.Base(f), *r.Error)
+		case r.Error != nil:
+			t.Logf("%s: %s", filepath.Base(f), *r.Error)
+		default:
+			t.Logf("%s: %d pages, title %s", filepath.Base(f), len(r.Pages), show(r.Title))
 		}
 	}
-	t.Logf("%d/%d files identical", same, total)
+	t.Logf("%d/%d files extracted", len(files)-failed, len(files))
 }
 
 func TestNoPanicOnGarbage(t *testing.T) {

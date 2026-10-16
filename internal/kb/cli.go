@@ -1,6 +1,6 @@
 package kb
 
-// kb/__main__.py: the argument parser and the command dispatch.
+// The argument parser and the command dispatch.
 
 import (
 	"bufio"
@@ -12,7 +12,7 @@ import (
 	"kenttheclerk/internal/py"
 )
 
-// textWriter writes as a Python text-mode stream does: on Windows "\n" goes out as "\r\n".
+// textWriter writes text-mode output: on Windows "\n" goes out as "\r\n".
 type textWriter struct{ w io.Writer }
 
 func (t textWriter) Write(p []byte) (int, error) {
@@ -92,12 +92,11 @@ func Main(args []string) (code int) {
 			case exitCode:
 				code = int(e)
 			case *py.Exception:
-				// An exception the Python version would not have caught: it would print a traceback
-				// and exit with status 1.
+				// An exception no command catches: report it and exit with status 1.
 				fmt.Fprintf(Stderr, "kb: unexpected %s: %s\n", e.Type, e.Msg)
 				code = 1
 			default:
-				// a fault in the port itself; exit as an uncaught exception would
+				// a fault in kb itself; exit as an uncaught exception would
 				fmt.Fprintf(Stderr, "kb: internal error: %v\n", r)
 				code = 1
 			}

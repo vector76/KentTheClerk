@@ -8,9 +8,9 @@
 // launcher in cmd/launcher, which is outside the system it dispatches to, nor the
 // generators or test data) and the shipped rule files (rules/*.md, procedure.md,
 // README.md, front-ends/*/*). identity_test.go fails if Go source is added where the patterns below do
-// not reach it. The hash is fixed when the binary is built, the same on every platform, and
-// computed the way the former Python recorder computed it (sha256 over "path\0content\0" for each file in
-// path order, CRLF normalised to LF). The version comes from the release tag, set at build time with
+// not reach it. The hash is fixed when the binary is built, the same on every platform, and is sha256
+// over "path\0content\0" for each file in path order, CRLF normalised to LF. The version comes from the
+// release tag, set at build time with
 //
 //	go build -ldflags "-X kenttheclerk.version=0.9.0" ./cmd/kb
 //

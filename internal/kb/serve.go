@@ -1,7 +1,7 @@
 package kb
 
-// kb serve — local HTML reading surface over index.db (kb/serve.py). The pages are byte-for-byte those
-// of the Python version; the HTTP framing is Go's (HTTP/1.1 and its own headers).
+// kb serve — local HTML reading surface over index.db. The HTTP framing is Go's (HTTP/1.1 and its own
+// headers).
 
 import (
 	"database/sql"
@@ -44,7 +44,7 @@ table.dense{font-size:.88rem;line-height:1.3}table.dense td,table.dense th{paddi
 table.dense td:nth-child(3){white-space:normal}table.dense td:first-child a{font:.85em var(--mono)}tr.old td{color:var(--muted)}
 `
 
-// esc is html.escape("" if s is None else str(s)).
+// esc is v as HTML-escaped text, quotes included ("" for nil).
 func esc(v any) string {
 	if v == nil {
 		return ""
@@ -62,7 +62,7 @@ func page(title, body string) []byte {
 <form action="/search"><input name="q" placeholder="search…"></form></header><main>` + body + `</main></body></html>`)
 }
 
-// sqlS is a TEXT column read as a Python str (None stays nil).
+// sqlS is a TEXT column read as a string ("" for NULL).
 func sqlS(v any) string {
 	if v == nil {
 		return ""
@@ -209,8 +209,7 @@ func (h *kbServer) html(w http.ResponseWriter, content []byte, status int) {
 	h.send(w, content, status, "text/html; charset=utf-8")
 }
 
-// ServeHTTP routes a request. URLs are parsed and unescaped by net/http in the usual Go way; the pages
-// are those of the Python version.
+// ServeHTTP routes a request. URLs are parsed and unescaped by net/http in the usual Go way.
 func (h *kbServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
@@ -493,7 +492,7 @@ func (h *kbServer) user(w http.ResponseWriter, db *sql.DB, uid string) {
 	h.html(w, page(uid, strings.Join(out, "")+"</ul>"), 200)
 }
 
-// tryQuery runs a query, returning the error the Python version's `except Exception` would catch.
+// tryQuery runs a query, returning a raised exception (a bad search, say) as an error.
 func tryQuery(db *sql.DB, q string, args ...any) (rows []row, err error) {
 	defer func() {
 		if r := recover(); r != nil {

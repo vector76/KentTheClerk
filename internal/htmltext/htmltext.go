@@ -1,6 +1,6 @@
-// Package htmltext is a byte-exact Go port of the html-v1 text extraction in kb/ingest.py
-// (class _HTMLText and extract_html up to chunk_units), including the CPython 3.13.1
-// html.parser behaviour it depends on.
+// Package htmltext is the html-v1 text extraction: it turns an HTML document into lines of
+// text and a title, with a tolerant tokenizer. Its output for every input, malformed markup
+// included, is fixed byte for byte, since ingested projections are frozen.
 package htmltext
 
 import (
@@ -8,12 +8,13 @@ import (
 	"unicode/utf8"
 )
 
-// Extract reproduces kb/ingest.py extract_html up to (not including) chunk_units:
-// raw bytes -> decode (utf-8-sig, else latin-1) -> _HTMLText feed -> post-processing -> lines.
-// title is p.title, and hasTitle is false when Python's `(p.title or None)` would be None.
+// Extract turns raw bytes into lines (before chunking):
+// raw bytes -> decode (UTF-8 with optional BOM, else Latin-1) -> tokenize -> post-processing
+// -> lines. title is the text inside title elements, each piece stripped of surrounding
+// whitespace and the pieces joined, and hasTitle is false when it is empty.
 //
-// For the inputs on which Python's feed() raises (see ExtractErr), Extract panics with the
-// *AssertionError or *ValueError, the counterpart of the uncaught Python exception.
+// For the inputs on which extraction fails (see ExtractErr), Extract panics with the
+// *AssertionError or *ValueError.
 func Extract(raw []byte) (lines []string, title string, hasTitle bool) {
 	lines, title, hasTitle, err := ExtractErr(raw)
 	if err != nil {
@@ -22,14 +23,13 @@ func Extract(raw []byte) (lines []string, title string, hasTitle bool) {
 	return lines, title, hasTitle
 }
 
-// ExtractErr is Extract, returning an error instead of panicking in exactly the cases where
-// CPython's feed() raises:
+// ExtractErr is Extract, returning an error instead of panicking in exactly these cases:
 //   - *AssertionError: a "<![" that is not followed by a name, or whose name is not one of
 //     temp/cdata/ignore/include/rcdata/if/else/endif, before the input ends;
-//   - *ValueError: a decimal character reference of more than 4300 digits that html.unescape
+//   - *ValueError: a decimal character reference of more than 4300 digits that unescape
 //     converts (in text, or in an attribute value of a complete start tag).
 //
-// Msg carries Python's exception message.
+// Msg carries the error message.
 func ExtractErr(raw []byte) (lines []string, title string, hasTitle bool, err error) {
 	h := &htmlText{}
 	src := decode(raw)
@@ -59,7 +59,8 @@ func run(p *parser) (err error) {
 	return nil
 }
 
-// decode is raw.decode("utf-8-sig"), falling back to raw.decode("latin-1").
+// decode reads raw as UTF-8 after dropping one leading BOM, or, when that is not valid
+// UTF-8, reads all of raw (BOM bytes included) as Latin-1.
 func decode(raw []byte) []rune {
 	b := raw
 	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
@@ -75,10 +76,10 @@ func decode(raw []byte) []rune {
 	return out
 }
 
-// htmlText is the _HTMLText subclass.
+// htmlText receives the tokenizer's tags and text and builds the output text and title.
 type htmlText struct {
 	out     []rune
-	title   []rune // None and "" both end as hasTitle == false
+	title   []rune // empty means no title
 	inTitle bool
 	skip    int
 	heading bool
@@ -139,14 +140,14 @@ func (h *htmlText) handleData(data []rune) {
 		return
 	}
 	if h.inTitle {
-		h.title = append(h.title, pyStrip(data)...)
+		h.title = append(h.title, stripSpace(data)...)
 		return
 	}
 	if h.heading {
-		h.out = append(h.out, pyStrip(data)...)
+		h.out = append(h.out, stripSpace(data)...)
 		return
 	}
-	// re.sub(r"\s+", " ", data)
+	// every run of whitespace becomes one space
 	for i := 0; i < len(data); {
 		if isSpace(data[i]) {
 			for i < len(data) && isSpace(data[i]) {
@@ -162,12 +163,9 @@ func (h *htmlText) handleData(data []rune) {
 
 func isSpTab(r rune) bool { return r == ' ' || r == '\t' }
 
-// postprocess is the tail of extract_html:
-//
-//	text = re.sub(r"[ \t]+\n", "\n", text)
-//	text = re.sub(r"\n[ \t]+", "\n", text)
-//	text = re.sub(r"\n{3,}", "\n\n", text).strip("\n")
-//	lines = [l.strip() for l in text.split("\n")]
+// postprocess turns the collected text into lines: spaces and tabs next to a newline are
+// dropped, runs of three or more newlines become two, leading and trailing newlines are
+// removed, and the text is split at newlines with each line stripped of whitespace.
 func postprocess(text []rune) []string {
 	// [ \t]+\n -> \n: drop every run of spaces/tabs that ends right before a newline.
 	a := make([]rune, 0, len(text))
@@ -208,7 +206,7 @@ func postprocess(text []rune) []string {
 		c = append(c, b[i])
 		i++
 	}
-	// .strip("\n")
+	// drop leading and trailing newlines
 	lo, hi := 0, len(c)
 	for lo < hi && c[lo] == '\n' {
 		lo++
@@ -217,12 +215,12 @@ func postprocess(text []rune) []string {
 		hi--
 	}
 	c = c[lo:hi]
-	// split("\n") and strip each line
+	// split at newlines and strip each line
 	var lines []string
 	start := 0
 	for i := 0; i <= len(c); i++ {
 		if i == len(c) || c[i] == '\n' {
-			lines = append(lines, string(pyStrip(c[start:i])))
+			lines = append(lines, string(stripSpace(c[start:i])))
 			start = i + 1
 		}
 	}

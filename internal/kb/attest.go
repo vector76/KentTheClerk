@@ -1,6 +1,6 @@
 package kb
 
-// kb attest — the only write path into attested/. See kb/attest.py for the forms.
+// kb attest — the only write path into attested/.
 
 import (
 	"fmt"
@@ -46,7 +46,8 @@ func checkCites(root string, cites any) {
 	}
 }
 
-// restsOn is [str(x) for x in (meta.get("rests_on") or [])], each checked to be an existing statement.
+// restsOn is the string form of each entry of meta's rests_on (none when it is missing or empty), each
+// checked to be an existing statement.
 func restsOn(root string, meta *py.Dict) []any {
 	var out []any
 	for _, x := range py.Iter(py.Or(meta.Get("rests_on"), []any{})) {
@@ -243,7 +244,7 @@ func agreedProposal(root, form, proposed string, sess *Session, agree *py.Dict, 
 	return item(prop, "author"), Pointer{psess.ID(), py.Str(item(prop, "uuid"))}.String(), modified
 }
 
-// getOr is d.get(k, default).
+// getOr is d's value for k, or def when d has no k.
 func getOr(d *py.Dict, k string, def any) any {
 	if v, ok := d.Lookup(k); ok {
 		return v
@@ -251,7 +252,7 @@ func getOr(d *py.Dict, k string, def any) any {
 	return def
 }
 
-// timestampOr is turn.get("timestamp", "") where it is compared as a str.
+// timestampOr is the turn's timestamp ("" when it has none), which must be a string to be compared.
 func timestampOr(t *py.Dict) string {
 	v, ok := t.Lookup("timestamp")
 	if !ok {

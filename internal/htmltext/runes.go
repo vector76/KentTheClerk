@@ -1,10 +1,11 @@
 package htmltext
 
-// Python str semantics the extractor relies on. Strings are handled as []rune so that
-// indexes and lengths are code points, as in Python.
+// Character helpers. Strings are handled as []rune so that indexes and lengths are code
+// points.
 
-// isSpace is str.isspace() for one character, which is also what `\s` matches in a
-// Python str pattern (CPython 3.13, Unicode 15.1).
+// isSpace is the whitespace test used throughout the extractor, both for `\s` in the
+// patterns quoted in comments and for stripping: \t through \r, the separators U+001C to
+// U+001F, space, and the non-ASCII Unicode 15.1 White_Space characters.
 func isSpace(r rune) bool {
 	switch {
 	case r >= 0x09 && r <= 0x0D, r >= 0x1C && r <= 0x20:
@@ -26,8 +27,8 @@ func isHexDigit(r rune) bool {
 	return r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F'
 }
 
-// pyStrip is str.strip() with no arguments.
-func pyStrip(s []rune) []rune {
+// stripSpace removes leading and trailing isSpace characters.
+func stripSpace(s []rune) []rune {
 	i, j := 0, len(s)
 	for i < j && isSpace(s[i]) {
 		i++
@@ -38,8 +39,8 @@ func pyStrip(s []rune) []rune {
 	return s[i:j]
 }
 
-// tagLower is str.lower() as far as it matters here: the result is only ever compared
-// with ASCII tag names. The only non-ASCII characters whose Python lowercase contains
+// tagLower is full Unicode lowercasing as far as it matters here: the result is only ever
+// compared with ASCII tag names. The only non-ASCII characters whose lowercase contains
 // ASCII are U+212A KELVIN SIGN ("k") and U+0130 ("i" + U+0307). Every other non-ASCII
 // character is kept as is, which can never compare equal to an ASCII name, exactly as
 // its true lowercase could not.
@@ -82,7 +83,7 @@ func hasPrefixAt(s []rune, i int, prefix string) bool {
 	return true
 }
 
-// slice is Python's s[i:j] for 0 <= i, j: out-of-range bounds clamp, i > j gives empty.
+// slice is s[i:j] on code points for 0 <= i, j: out-of-range bounds clamp, i > j gives empty.
 func slice(s []rune, i, j int) []rune {
 	if j > len(s) {
 		j = len(s)

@@ -7,8 +7,8 @@ import (
 	"io"
 )
 
-// Port of pypdf/filters.py decode_stream_data for the filters that matter
-// for text (images are never decoded by text extraction).
+// Stream decoding, for the filters that matter for text (images are never
+// decoded by text extraction).
 
 // streamData is StreamObject.get_data(): the decoded bytes, cached.
 func (d *Document) streamData(s *Stream) ([]byte, error) {
@@ -79,8 +79,7 @@ func (d *Document) decodeStream(s *Stream) ([]byte, error) {
 				err = pyErr("NotImplementedError", "/Crypt filter with /Name or /Type not supported yet")
 			}
 		case "/CCITTFaxDecode", "/CCF", "/DCTDecode", "/DCT", "/JPXDecode", "/JBIG2Decode":
-			// Image codecs: pypdf decodes them (or needs Pillow); text
-			// extraction never needs the result.
+			// Image codecs: text extraction never needs the result.
 			err = pyErr("NotImplementedError", "image filter %s not supported here", name)
 		default:
 			err = pyErr("NotImplementedError", "Unsupported filter %v", f)
@@ -92,20 +91,20 @@ func (d *Document) decodeStream(s *Stream) ([]byte, error) {
 	return data, nil
 }
 
-// pypdf's output limits (pypdf/filters.py, generic/_data_structures.py).
+// Output limits (see the package doc).
 const (
-	maxDecodedOutput        = 75_000_000 // ZLIB/LZW/RUN_LENGTH_MAX_OUTPUT_LENGTH
-	maxZlibRecoveryInput    = 5_000_000  // ZLIB_MAX_RECOVERY_INPUT_LENGTH
-	maxFlateColumns         = 250_000    // FLATE_MAX_COLUMNS
-	maxFlateRowLength       = 4_000_000  // FLATE_MAX_ROW_LENGTH
-	maxContentArrayLength   = 10_000     // CONTENT_STREAM_ARRAY_MAX_LENGTH
-	maxArrayStreamOutput    = 75_000_000 // MAX_ARRAY_BASED_STREAM_OUTPUT_LENGTH
-	maxDeclaredStreamLength = 75_000_000 // MAX_DECLARED_STREAM_LENGTH
+	maxDecodedOutput        = 75_000_000 // per Flate, LZW or RunLength output
+	maxZlibRecoveryInput    = 5_000_000  // corrupt Flate input that recovery tries
+	maxFlateColumns         = 250_000    // predictor /Columns
+	maxFlateRowLength       = 4_000_000  // predictor row bytes
+	maxContentArrayLength   = 10_000     // /Contents array entries
+	maxArrayStreamOutput    = 75_000_000 // joined /Contents array data
+	maxDeclaredStreamLength = 75_000_000 // a stream's length, declared or found
 )
 
-// readLimited reads r, failing like pypdf once more than maxDecodedOutput
-// bytes come out. corrupt reports a decoding error that is not a plain
-// truncation or a checksum mismatch.
+// readLimited reads r, failing with LimitReachedError once more than
+// maxDecodedOutput bytes come out. corrupt reports a decoding error that is
+// not a plain truncation or a checksum mismatch.
 func readLimited(r io.Reader) (out []byte, corrupt bool, err error) {
 	out, rerr := io.ReadAll(io.LimitReader(r, maxDecodedOutput+1))
 	if len(out) > maxDecodedOutput {
@@ -117,8 +116,8 @@ func readLimited(r io.Reader) (out []byte, corrupt bool, err error) {
 	return out, corrupt, nil
 }
 
-// zlibDecompress mimics pypdf's decompress(): a zlib stream, tolerant of
-// truncation and trailing garbage; on corrupt data it keeps what decoded.
+// zlibDecompress decodes a zlib stream, tolerant of truncation and trailing
+// garbage; on corrupt data it keeps what decoded.
 func zlibDecompress(data []byte) ([]byte, error) {
 	r, err := zlib.NewReader(bytes.NewReader(data))
 	if err == nil {
@@ -126,16 +125,15 @@ func zlibDecompress(data []byte) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		// pypdf's byte-by-byte recovery keeps failing after the first
-		// error and gives up once the input index passes 5,000,000.
+		// Recovery from corrupt data gives up on input longer than
+		// maxZlibRecoveryInput+1 bytes.
 		if corrupt && len(data) > maxZlibRecoveryInput+1 {
 			return nil, pyErr("LimitReachedError", "Recovery limit reached while decompressing.")
 		}
 		return out, nil
 	}
-	// No zlib header: pypdf's last resort feeds the bytes to a decompressor
-	// that also accepts a gzip header (wbits | 32); after the first error
-	// zlib produces nothing more, so a bad header yields no data.
+	// No zlib header: the last resort is a gzip header; any other header
+	// yields no data.
 	if len(data) >= 10 && data[0] == 0x1f && data[1] == 0x8b {
 		if gr, err := gzip.NewReader(bytes.NewReader(data)); err == nil {
 			out, corrupt, err := readLimited(gr)
@@ -314,7 +312,7 @@ func ascii85Decode(data []byte) ([]byte, error) {
 	}
 	adobe := true
 	if !(bytes.HasSuffix(data, []byte("~>"))) {
-		adobe = false // pypdf retries with adobe=False after a warning
+		adobe = false // no ~> end marker: plain ASCII85
 	}
 	if adobe {
 		data = data[:len(data)-2]
@@ -399,7 +397,7 @@ func runLengthDecode(data []byte) ([]byte, error) {
 	return out, nil
 }
 
-// lzwDecode ports pypdf's _LzwCodec.decode (early change, 9-12 bits).
+// lzwDecode decodes LZW data (early change, 9-12 bit codes).
 func lzwDecode(data []byte) ([]byte, error) {
 	const clear, eod = 256, 257
 	const maxCode = 4095

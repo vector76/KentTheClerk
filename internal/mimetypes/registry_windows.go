@@ -6,7 +6,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// readRegistry is MimeTypes.read_windows_registry(): every HKEY_CLASSES_ROOT subkey whose name starts
+// readRegistry adds the types the registry gives: every HKEY_CLASSES_ROOT subkey whose name starts
 // with "." and has a non-empty REG_SZ "Content Type" value maps that extension to that type.
 func readRegistry(add func(typ, ext string)) {
 	hkcr, err := registry.OpenKey(registry.CLASSES_ROOT, "", registry.READ)

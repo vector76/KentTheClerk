@@ -1,6 +1,6 @@
 package kb
 
-// kb record / seen / withdraw — the only write path into agent/. See kb/record.py.
+// kb record / seen / withdraw — the only write path into agent/.
 
 import (
 	"fmt"

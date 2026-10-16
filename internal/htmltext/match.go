@@ -1,21 +1,23 @@
 package htmltext
 
-// Hand-written matchers for the html.parser patterns Go's RE2 cannot express. Everything
-// here is iterative: no recursion in proportion to the input.
+// Hand-written matchers for the tokenizer's patterns that Go's RE2 cannot express.
+// Everything here is iterative: no recursion in proportion to the input.
 //
-// locatestarttagend_tolerant and attrfind_tolerant use lookbehind/lookahead, and their match
-// end depends on sre's backtracking order. Every part after an attribute name is optional, so
-// once a name matches the overall match never fails; backtracking only happens locally,
-// inside the value part \s*=+\s*VALUE, when VALUE starts with an unclosed quote:
+// The start-tag pattern (locateStarttagEnd) and the attribute pattern (attrfind) use
+// lookbehind/lookahead, and their match end depends on the order of a backtracking regex
+// engine: alternatives left to right, greedy repeats longest first. Every part after an
+// attribute name is optional, so once a name matches the overall match never fails;
+// backtracking only happens locally, inside the value part \s*=+\s*VALUE, when VALUE starts
+// with an unclosed quote:
 //
-//   - sre first gives back one character of the \s* after the '=' run: VALUE then matches
+//   - first one character of the \s* after the '=' run is given back: VALUE then matches
 //     empty (bare alternative) at that whitespace;
-//   - with no such whitespace it gives back one '=' of a run of two or more: VALUE is then the
-//     bare run starting at that last '=';
+//   - with no such whitespace one '=' of a run of two or more is given back: VALUE is then
+//     the bare run starting at that last '=';
 //   - otherwise the optional value part matches nothing.
 //
-// The CPS reference matcher in match_ref_test.go mirrors sre literally and the test
-// TestScannerMatchesReference checks this scanner against it.
+// The CPS reference matcher in match_ref_test.go backtracks literally in that order and the
+// test TestScannerMatchesReference checks this scanner against it.
 
 // scanner holds the input and caches the search for the next quote, so that many
 // attributes with unclosed quotes cost linear rather than quadratic time.
@@ -27,7 +29,8 @@ type scanner struct {
 	}
 }
 
-// nextQuote is s.find(q, from), q being the single quote (idx 0) or the double quote (idx 1).
+// nextQuote is the index of the first q at or after from (-1 if none), q being the single
+// quote (idx 0) or the double quote (idx 1).
 func (sc *scanner) nextQuote(idx int, q rune, from int) int {
 	c := &sc.qcache[idx]
 	if c.valid && c.from <= from && (c.at < 0 || from <= c.at) {
@@ -74,8 +77,9 @@ func (sc *scanner) valueAt(q int) int {
 	return q
 }
 
-// valuePart matches \s*=+\s*VALUE at a with sre's backtracking. It returns the span of
-// VALUE (group 3 of attrfind_tolerant), or ok == false when the optional part is absent.
+// valuePart matches \s*=+\s*VALUE at a, backtracking as described above. It returns the
+// span of VALUE (group 3 of the attribute pattern), or ok == false when the optional part
+// is absent.
 func (sc *scanner) valuePart(a int) (vstart, vend int, ok bool) {
 	s := sc.s
 	n := len(s)
@@ -122,7 +126,7 @@ func (sc *scanner) skipSpace(p int) int {
 	return p
 }
 
-// attrfind is attrfind_tolerant.match(s, k):
+// attrfind matches the attribute pattern anchored at k:
 //
 //	((?<=['"\s/])[^\s/>][^\s/=>]*)(\s*=+\s*('[^']*'|"[^"]*"|(?![\'"])[^>\s]*))?(?:\s|/(?!>))*
 //
@@ -140,8 +144,8 @@ func (sc *scanner) attrfind(k int) (end, vstart, vend int, hasValue bool) {
 	return sc.skipSpaceOrSlashNoGT(p), vstart, vend, hasValue
 }
 
-// locateStarttagEnd is locatestarttagend_tolerant.match(s, i).end(), for s[i] == '<' and
-// s[i+1] an ASCII letter (re.VERBOSE):
+// locateStarttagEnd returns the end of the start-tag pattern anchored at i, for s[i] == '<'
+// and s[i+1] an ASCII letter (whitespace in the pattern is layout only):
 //
 //	<[a-zA-Z][^\t\n\r\f />\x00]*
 //	(?:[\s/]*
@@ -272,7 +276,8 @@ func searchClose(s []rune, from int, parts ...string) (start, end int) {
 }
 
 // foldClass lists, for each letter of "script" and "style", every character that the
-// letter matches under Python re.IGNORECASE in a str pattern (CPython 3.13).
+// letter matches case-insensitively: its two ASCII cases, plus U+017F LONG S for 's' and
+// U+0130 and U+0131 (dotted capital and dotless small I) for 'i'.
 var foldClass = map[rune][]rune{
 	's': {'S', 's', 0x17F},
 	'c': {'C', 'c'},
@@ -294,8 +299,8 @@ func foldEq(lower rune, r rune) bool {
 	return false
 }
 
-// searchCdataEnd is re.compile(r'</\s*%s\s*>' % elem, re.I).search(s, from): the start of
-// the leftmost match, or -1.
+// searchCdataEnd searches from `from` for </\s*ELEM\s*>, ELEM matched case-insensitively
+// (foldClass): the start of the leftmost match, or -1.
 func searchCdataEnd(s []rune, from int, elem string) int {
 	name := []rune(elem)
 	for p := from; p+1 < len(s); p++ {

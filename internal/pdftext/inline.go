@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// Port of ContentStream._read_inline_image and pypdf/generic/_image_inline.py.
-// Only the stream position matters for text extraction (the image data is
-// discarded), so the readers below track positions, not the data.
+// Inline images (BI ... ID ... EI) in content streams. Only the stream
+// position matters for text extraction (the image data is discarded), so
+// the readers below track positions, not the data.
 
 const inlineBufferSize = 8192
 
