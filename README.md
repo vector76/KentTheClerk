@@ -246,7 +246,10 @@ them like any other statement.
   what it does follows from where the knowledge base is, which the session-start hook tells it. In
   a repository of its own, the agent commits on every act, and if the repository has a remote, it
   also pulls and pushes on every act, as far as the remote can be reached: without a connection it
-  still records and commits, and syncs once back. Copies that wrote on their own merge afterward.
+  still records and commits, and syncs once back. Copies that wrote on their own merge afterward:
+  git hands the record's files to `kb` as it merges them, `kb resolve` merges any it left
+  conflicted, and what neither can merge, such as two different changes to one statement's text,
+  comes to you.
   Inside the code repository, you commit it, with the code it belongs to, and it is pulled and
   pushed with the code; the agent never commits it on its own initiative. A knowledge base in a git
   submodule or subtree is not supported.

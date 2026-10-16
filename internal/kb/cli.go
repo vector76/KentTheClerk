@@ -72,6 +72,7 @@ func newParser() *argparse.Parser {
 	addRulesParser(ap)
 	addPinParser(ap)
 	addSetupParsers(ap)
+	addMergeParsers(ap)
 	help := ap.AddParser("help", "print this help (the same as kb -h)")
 	help.Run = func(argparse.Namespace) int {
 		fmt.Fprint(Stdout, newParser().FormatHelp())

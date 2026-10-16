@@ -711,6 +711,27 @@ func kbReport(r *report, kb string) {
 		} else {
 			r.item("git merges %s by keeping both copies' lines.", strings.Join(unionFiles, ", "))
 		}
+		var unrouted []string
+		for _, f := range []string{"attested/S-0000-x.md", "agent/A-0000-x.md"} {
+			if out, st := git(kb, "check-attr", "merge", "--", f); st != 0 || !strings.HasSuffix(out, ": merge: "+mergeDriverName) {
+				unrouted = append(unrouted, filepath.Dir(filepath.FromSlash(f))+"/")
+			}
+		}
+		if len(unrouted) > 0 {
+			r.item("git does not send the statement files in %s to kb's merge driver.", strings.Join(unrouted, " and "))
+			r.need(3, "Send the statement files to kb's merge driver: add %s to the knowledge base's .gitattributes, "+
+				"as the runbook says.", strings.Join(mergeAttributes, " and "))
+		} else {
+			r.item("git sends the statement files to kb's merge driver.")
+		}
+		if d, st := git(kb, "config", "--get", "merge."+mergeDriverName+".driver"); st == 0 && d == mergeDriverCommand {
+			r.item("kb's merge driver is registered in this clone.")
+		} else {
+			r.item("kb's merge driver is not registered in this clone.")
+			r.need(3, "Register kb's merge driver in this clone; kb never changes git's config itself. Run "+
+				"`%s config merge.%s.driver \"%s\"`, and nothing else under merge.%s: git refuses to merge a file "+
+				"whose driver has a name and no command.", gitPrefix(kb), mergeDriverName, mergeDriverCommand, mergeDriverName)
+		}
 		for _, d := range []string{"attested", "evidence"} {
 			if isEmptyDir(filepath.Join(kb, d)) {
 				r.need(3, "%s/ is empty, and git keeps no empty folder, so a clone would not be a knowledge base: "+

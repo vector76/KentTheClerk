@@ -85,6 +85,7 @@ kb version [--files]
 kb where
 kb rules [<number>|<name>]
 kb pin [--set | --remove]
+kb resolve [<file> ...]
 kb --launcher [version]
 ```
 
@@ -95,7 +96,9 @@ fail; it exists for the day someone touched the files by hand. `kb serve` render
 as linked HTML for reading. `kb where` prints the folder Kent is installed in and the
 knowledge base `kb` operates on, with how it was found. `kb rules` lists Kent's rules and the
 documents built into `kb`, this one included. `kb pin` shows the version of Kent the knowledge base is
-pinned to, if any; run `--set` or `--remove` only when the human asks. `kb --launcher` is answered by the launcher itself: the versions installed, and which one it
+pinned to, if any; run `--set` or `--remove` only when the human asks. `kb resolve` merges the
+record's files that git left conflicted, on your behalf, and says what it could not; git runs
+`kb merge-driver` itself during a merge, never you. `kb --launcher` is answered by the launcher itself: the versions installed, and which one it
 would run and why.
 
 ## Vocabulary

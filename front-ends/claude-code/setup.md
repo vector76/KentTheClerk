@@ -132,7 +132,15 @@ anything turns out different from what you described.
      overrides.jsonl merge=union
      users-log.jsonl merge=union
      users.jsonl merge=union
+     # statement files are merged by kb, which keeps both copies' attestations and marks
+     attested/*.md merge=kent
+     agent/*.md merge=kent
      ```
+
+     Then register kb's merge driver in this clone, which `kb` never does itself, since it does not
+     change git's config. The report gives the `git -C <folder> config` line. Every clone needs
+     them; a clone without them merges statement files as plain text, and `kb resolve` handles the
+     conflicts that leaves.
 
    - Inside the code repository, also a `README.md` in the knowledge base's folder, for colleagues who
      check out the code without Kent. Fill in `<folder>` with the folder's path from the top of the
@@ -165,7 +173,8 @@ anything turns out different from what you described.
      so: it goes into the code's history. A remote for one in its own repository is the human's to
      create; once it exists, `git -C <folder> remote add origin <url>` and a first push, with their
      agreement.
-   - Existing, from a URL: `git clone <url> <folder>`, beside the code repository.
+   - Existing, from a URL: `git clone <url> <folder>`, beside the code repository, then register the
+     merge driver as above.
    - Either way, run `kb setup --report --kb <folder>` and read what it finds.
 2. **The human's id, and their row in the user table.** Set the id if it needs setting. Then, if the
    report says they are not in the user table, add them, as the first act in a new knowledge base:

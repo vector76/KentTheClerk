@@ -31,6 +31,7 @@ type gitPlace struct {
 	top       string // the folder holding the .git: the knowledge base's own, or the code repository's
 	remote    string // for remoteRepo, the remote's name: origin if there is one, else the first
 	submodule bool   // its .git is a file pointing into another repository's modules (S-SG81)
+	driver    bool   // the repository's config registers kb's merge driver (S-NNKA)
 }
 
 // gitTop is the folder holding the .git of the repository the folder dir is in, or "" when it is in none.
@@ -47,33 +48,33 @@ func gitTop(dir string) string {
 	}
 }
 
-var remoteRE = regexp.MustCompile(`(?m)^\s*\[remote\s+"([^"]+)"\s*\]`)
+var (
+	remoteRE = regexp.MustCompile(`(?m)^\s*\[remote\s+"([^"]+)"\s*\]`)
+	driverRE = regexp.MustCompile(`(?m)^\s*\[merge\s+"` + mergeDriverName + `"\s*\]`)
+)
 
-// readGitPlace reads the knowledge base at root's situation in git from files, running no git. A .git
-// that is a file names the repository's folder ("gitdir: ..."): a worktree's, whose config is in the
-// common folder, or a submodule's, inside another repository's modules.
-func readGitPlace(root string) gitPlace {
-	top := gitTop(root)
-	switch {
-	case top == "":
-		return gitPlace{kind: notInGit}
-	case !samePath(top, root):
-		return gitPlace{kind: inCodeRepo, top: top}
-	}
-	p := gitPlace{kind: localRepo, top: top}
-	dotgit := filepath.Join(root, ".git")
-	gitDir := dotgit
+// gitDirOf is the repository folder of the .git in top, and whether that .git is a submodule's. A .git that
+// is a file names the folder ("gitdir: ..."): a worktree's, or a submodule's, inside another repository's
+// modules.
+func gitDirOf(top string) (gitDir string, submodule bool) {
+	dotgit := filepath.Join(top, ".git")
+	gitDir = dotgit
 	if st, err := os.Stat(dotgit); err == nil && !st.IsDir() {
 		b, _ := os.ReadFile(dotgit)
 		if d, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:"); ok {
 			gitDir = strings.TrimSpace(d)
 			if !filepath.IsAbs(gitDir) {
-				gitDir = filepath.Join(root, gitDir)
+				gitDir = filepath.Join(top, gitDir)
 			}
 			slashed := "/" + filepath.ToSlash(filepath.Clean(gitDir)) + "/"
-			p.submodule = strings.Contains(slashed, "/modules/") && !strings.Contains(slashed, "/worktrees/")
+			submodule = strings.Contains(slashed, "/modules/") && !strings.Contains(slashed, "/worktrees/")
 		}
 	}
+	return gitDir, submodule
+}
+
+// gitConfigText is the config of the repository in gitDir, a worktree's from its common folder.
+func gitConfigText(gitDir string) string {
 	common := gitDir
 	if b, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
 		common = strings.TrimSpace(string(b))
@@ -82,7 +83,24 @@ func readGitPlace(root string) gitPlace {
 		}
 	}
 	b, _ := os.ReadFile(filepath.Join(common, "config"))
-	for _, m := range remoteRE.FindAllStringSubmatch(string(b), -1) {
+	return string(b)
+}
+
+// readGitPlace reads the knowledge base at root's situation in git from files, running no git.
+func readGitPlace(root string) gitPlace {
+	top := gitTop(root)
+	if top == "" {
+		return gitPlace{kind: notInGit}
+	}
+	gitDir, submodule := gitDirOf(top)
+	config := gitConfigText(gitDir)
+	p := gitPlace{kind: localRepo, top: top, driver: driverRE.MatchString(config)}
+	if !samePath(top, root) {
+		p.kind = inCodeRepo
+		return p
+	}
+	p.submodule = submodule
+	for _, m := range remoteRE.FindAllStringSubmatch(config, -1) {
 		if p.remote == "" || m[1] == "origin" {
 			p.remote = m[1]
 		}
@@ -138,9 +156,9 @@ func gitLines(root string, env func(string) string) (lines []string, problem str
 	p := readGitPlace(root)
 	run := " Run git as `" + gitPrefix(root) + " …`."
 	expect := "Expect any pull to bring changes, even where nobody else writes, since the same person may write " +
-		"from another machine, and be ready for a pull that merges or stops on a conflict. The logs and the user " +
-		"table merge by keeping both sides' lines. A conflict in the record's files is not yours to resolve by " +
-		"hand: stop and tell the human. After a pull that brought changes, run `kb check`."
+		"from another machine, and be ready for a pull that merges or stops on a conflict. kb merges the record's " +
+		"files as git merges them; when a merge, rebase or pull still leaves conflicts in them, run `kb resolve`, " +
+		"and never merge them by hand. If it cannot resolve one, stop and tell the human. Then run `kb check`."
 	switch p.kind {
 	case notInGit:
 		return []string{"Git: the knowledge base is in no git repository, so nothing commits it and nothing syncs it."}, ""
@@ -155,11 +173,14 @@ func gitLines(root string, env func(string) string) (lines []string, problem str
 		offer, _ := offerCommitSetting(env(offerCommitEnv))
 		lines = []string{"Git: the knowledge base sits inside the code repository at " + p.top + ", so a person commits " +
 			"it, and it is pulled and pushed with the code. Never commit it on your own initiative. " + offer, expect}
-		return lines, ""
 	}
-	if p.submodule {
+	switch {
+	case p.submodule:
 		problem = "the knowledge base is a git submodule, which Kent does not support: whoever keeps it that way is " +
 			"on their own with it"
+	case (p.kind == remoteRepo || p.kind == inCodeRepo) && !p.driver:
+		problem = "kb's merge driver is not registered in this clone, so git merges the record's files as plain text " +
+			"and leaves more conflicts for `kb resolve`"
 	}
 	return lines, problem
 }

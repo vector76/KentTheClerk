@@ -101,7 +101,11 @@ applies:
 An act is never held back because the remote cannot be reached: act and commit, and pull and push
 once it can be. Copies of one knowledge base may each write on their own and be merged afterward.
 Expect any pull to bring changes, even where nobody else writes, and be ready for merges and
-conflicts.
+conflicts. Resolving a conflict in the record's files is yours to do, but kb writes the files for
+you: git hands statement files to kb's merge driver as it merges them, and when a merge, rebase or
+pull still leaves conflicts in the record, `kb resolve` merges them the same way. Never merge them
+by hand, not even to finish a merge. What kb cannot merge, such as two different changes to a
+statement's text, goes to the human.
 
 A knowledge base inside a code repository has a folder of its own that holds nothing else, with its
 own `.gitignore` and a README for people who don't have Kent yet. Never commit it on your own
