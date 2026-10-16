@@ -4,7 +4,7 @@
 #   kent-<version>-<os>-<arch>/kb[.exe]                      the launcher
 #   kent-<version>-<os>-<arch>/versions/<version>/kb[.exe]   this version of Kent
 # The version is the tag without its leading "v"; it is built into the executable as system_version.
-# The Go toolchain is the one go.mod names, the version the parity harness was run with.
+# The Go toolchain is the one go.mod names.
 name: release
 
 on:

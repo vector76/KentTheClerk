@@ -22,7 +22,7 @@ func TestHashCoversSource(t *testing.T) {
 		rel := filepath.ToSlash(p)
 		if d.IsDir() {
 			switch d.Name() {
-			case ".git", ".claude", ".github", "testdata", "parity":
+			case ".git", ".claude", ".github", "testdata":
 				return fs.SkipDir
 			}
 			// the launcher is infrastructure outside the system it dispatches to, never hashed or pinned
