@@ -86,16 +86,24 @@ rename an original.
 
 ## Storage
 
-The record is plain files, meant to be kept in git. `kb` never runs git to change anything: the git
-work is yours, as the knowledge base's mode warrants, and the session-start text tells you the mode
-and what it asks of you. The mode is the file `kent.mode` at the top of the knowledge base, committed
-so that every copy agrees; without it the knowledge base is offline.
+The record is plain files, meant to be kept in git. `kb` reads git but never changes anything in
+it: committing, pulling and pushing are yours. What drives the commits, and separately the pulls and
+pushes, follows from where the knowledge base is, and the session-start text tells you which case
+applies:
 
-- **Offline**: this copy is the authority. Never fetch, pull or push it, even in a git repository.
-  In its own repository, commit what acts wrote.
-- **Online**: a shared git remote is the authority, and copies are synced through it. Fetch and pull
-  often, and before every act; commit each act and push it at once.
+| Where it is | Commits | Pulls and pushes |
+|---|---|---|
+| In no git repository | none | none |
+| Its own repository, no remote | you, on every act | none |
+| Its own repository, with a remote | you, on every act | you, on every act, as far as the remote can be reached |
+| A folder of a code repository | a person | with the code |
 
-A knowledge base can also sit inside a code repository, in a folder of its own that holds nothing
-else, with its own `.gitignore` and a README for people who don't have Kent yet. Its files then
-travel with the code repository's commits.
+An act is never held back because the remote cannot be reached: act and commit, and pull and push
+once it can be. Copies of one knowledge base may each write on their own and be merged afterward.
+Expect any pull to bring changes, even where nobody else writes, and be ready for merges and
+conflicts.
+
+A knowledge base inside a code repository has a folder of its own that holds nothing else, with its
+own `.gitignore` and a README for people who don't have Kent yet. Never commit it on your own
+initiative: the project's settings say whether you offer to after each attestation or leave it to
+the human. A knowledge base in a git submodule or subtree is not supported.

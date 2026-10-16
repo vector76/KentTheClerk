@@ -43,7 +43,7 @@ Ground rules for this conversation:
 
 Read the report below. Tell the human, in a few sentences, what Kent is for and what you found. If
 **Left to do** says nothing, the project is set up: say so, ask whether they want to change the
-project's two settings (below), and go to step 3.
+project's settings (below), and go to step 3.
 
 Otherwise ask all the questions that apply in one message, each with its options and a recommendation,
 so the human can answer them together:
@@ -60,20 +60,23 @@ so the human can answer them together:
   - *Existing:* where it is on this machine, for example one another project uses or one inside the
     code repository, or the URL of a git repository a colleague or the human has, to clone beside the
     code repository.
-- **For a new one beside the code: keep it in git?** Git is optional but recommended: it is how a
-  knowledge base is kept, shared and backed up. If yes: a first commit now? `kb` never runs git; you do
-  the git work, now and in later conversations.
-- **For one in its own git repository: offline or online?** The mode belongs to the knowledge base, in
-  a committed file, so every copy agrees.
-  - *Offline* (the default, and what a knowledge base without the file is): this copy is the authority.
-    It is never fetched, pulled or pushed; you commit what acts wrote.
-  - *Online:* a shared git remote is the authority, for a knowledge base several people write to. In
-    every conversation the agent pulls it often and pushes after every act. It needs a remote that
-    everyone can push to.
+- **For a new one beside the code: keep it in git, and with a remote?** Git is optional but
+  recommended: it is how a knowledge base is kept, shared and backed up. If yes: a first commit now?
+  `kb` never changes anything in git; the agent does the git work, and what it does follows from where
+  the knowledge base is, which the report states in one line:
+  - *Not in git:* nothing commits it and nothing syncs it.
+  - *Its own repository, no remote:* the agent commits it on every act; nothing syncs it.
+  - *Its own repository with a remote:* the agent commits, pulls and pushes it on every act, as far as
+    the remote can be reached. Without a connection it still acts and commits, and syncs once back.
+    Copies that wrote on their own merge afterward. Adding a remote later is all it takes.
+  - *Inside the code repository:* a person commits it, and it is pulled and pushed with the code.
 
-  For a knowledge base inside the code repository, recommend offline: it moves with the code's own
-  commits, pulls and pushes, and online would have the agent pull and push the whole code repository
-  after every act. An existing knowledge base already has its mode; the report says which.
+  If the report says it is a git submodule, tell the human that Kent does not support a knowledge base
+  in a submodule or subtree: it may work, but they are on their own with it.
+- **For one inside the code repository: may the agent offer to commit?** The agent never commits it on
+  its own initiative. By default it leaves committing to the human, who commits a change to the
+  knowledge base together with the code that reflects it; or it can offer to commit after every
+  attestation. This is a per-person setting, `KENT_OFFER_COMMIT`, below.
 - **For a new one: pin it?** `kb pin --set` writes `kent.pin`, naming the version of Kent running now,
   and from then on `kb` refuses to write under any other version. It keeps everyone who writes here on
   the same version. It is optional, alone or in a team.
@@ -86,14 +89,16 @@ so the human can answer them together:
   for every knowledge base on this machine; or an entry under `"folders"` in that file,
   `{"folders": {"<folder>": "<key>"}}`, for knowledge bases in that folder or below it. In a knowledge
   base whose acts already carry an id for them, which `kb user add` lists, that id is their key.
-- **The project's two settings,** kept in the settings file's `env`, per user and never committed:
+- **The project's settings,** kept in the settings file's `env`, per user and never committed:
   - `KENT_ASK_SESSION_MODE`: when the agent asks whether a conversation is on the record.
     `when-needed` (the default) asks when something worth recording comes up; `up-front` asks before
     anything else, for a project whose main work is the knowledge base.
   - `KENT_STATEMENTS_PER_TURN`: how many statements the agent presents for agreement per turn. `1` (the
     default) presents one at a time, which tends to get each one real attention.
+  - `KENT_OFFER_COMMIT`, for a knowledge base inside the code repository only: `never` (the default)
+    leaves committing to the human; `after-attestation` has the agent offer to commit after each one.
 - **An old block in CLAUDE.md,** if the report found one: may you remove it? The hook now gives the agent
-  those lines; carry its settings over into the two above.
+  those lines; carry its settings over into the ones above.
 
 Also say which steps will bring up permission prompts. Wait for the answers.
 
@@ -155,20 +160,11 @@ anything turns out different from what you described.
      3. Then ask, for example, "what did we decide about ..., and why?"
      ```
 
-   - Online, if they chose it: a `kent.mode` file at the top of the knowledge base holding:
-
-     ```
-     # Whether this knowledge base is synced through a shared git remote (online) or not (offline).
-     # Kent tells the agent at the start of each conversation; online, the agent pulls often and
-     # pushes after every act. Commit this file, so that every copy agrees.
-     mode: online
-     ```
-
-     Offline needs no file. Changing an existing knowledge base's mode is a change for everyone who
-     uses it: ask first, and commit the file on its own.
-   - Then make the first commit if they asked for it, including `kent.pin` and `kent.mode` if there
-     are any. For a knowledge base inside the code repository, commit only its folder, and only when the
-     human says so: it goes into the code's history.
+   - Then make the first commit if they asked for it, including `kent.pin` if there is one. For a
+     knowledge base inside the code repository, commit only its folder, and only when the human says
+     so: it goes into the code's history. A remote for one in its own repository is the human's to
+     create; once it exists, `git -C <folder> remote add origin <url>` and a first push, with their
+     agreement.
    - Existing, from a URL: `git clone <url> <folder>`, beside the code repository.
    - Either way, run `kb setup --report --kb <folder>` and read what it finds.
 2. **The human's id, and their row in the user table.** Set the id if it needs setting. Then, if the
@@ -179,16 +175,16 @@ anything turns out different from what you described.
 3. **The settings file.** `kb setup --report --kb <folder>` prints, under **Settings for this project**,
    the JSON Kent needs, with the paths already in the forms Claude Code wants, and what the current file
    lacks. Merge Kent's part into `.claude/settings.local.json`: add what is missing, keep everything else,
-   and do not duplicate entries. Add the two settings to `env` if they differ from the defaults. If
+   and do not duplicate entries. Add the settings to `env` if they differ from the defaults. If
    `KENT_KB` names a different knowledge base, that is a change of knowledge base: ask first. Read the
    file back and make sure it is still valid JSON; Claude Code ignores a settings file it cannot parse.
    Tell the human what each part does:
    - `env.KENT_KB` names the knowledge base for this project only. It must not be a user-wide
      environment variable, which would point every project at the same knowledge base.
    - `permissions.additionalDirectories` and the `allow` rules let the agent read the knowledge base,
-     run `kb`, and write drafts in `off-record/drafts/`. For an online knowledge base they also let it
-     run git there, written `git -C <folder> …`, the form the session-start text tells the agent to use,
-     since it pulls and pushes in every conversation. If the mode changes later, run `kb setup` again.
+     run `kb`, and write drafts in `off-record/drafts/`. For a knowledge base in its own repository they
+     also let it run git there, written `git -C <folder> …`, the form the session-start text tells the
+     agent to use, since it commits on every act. If it moves into git later, run `kb setup` again.
    - The `deny` rules stop the agent from editing the record's files by hand, so only `kb` writes there.
    - `hooks.SessionStart` runs `kb session-start` whenever a conversation starts, is resumed, cleared or
      compacted. It prints Kent's instructions into the agent's context, from the version of Kent that
@@ -203,7 +199,7 @@ anything turns out different from what you described.
 
 Run `kb setup --report` and confirm **Left to do** is empty; deal with what it lists, asking as before.
 Then run `kb session-start` and confirm it prints Kent's instructions, the knowledge base's folder and
-its mode: that is what the agent will see at the start of each conversation. Run `kb check` to confirm the
+what drives its git work: that is what the agent will see at the start of each conversation. Run `kb check` to confirm the
 knowledge base reads cleanly.
 
 ## 4. Hand over
@@ -220,14 +216,14 @@ Tell the human:
 - **How to begin:** start a conversation about something they are deciding, and say whether it is on
   the record. `kb rules introduction` explains how the knowledge base works; the agent reads it when they
   are new or ask why it works as it does.
-- If the knowledge base is meant to be shared, the human creates its remote and pushes it, and makes
-  it online if several people will write to it. Colleagues then clone it and run `kb setup` in their own
-  copy of the code project. One inside the code repository comes with the code: colleagues run
-  `kb setup`, and its README tells those who don't have Kent yet.
+- If the knowledge base is meant to be shared, the human creates its remote and pushes it. Colleagues
+  then clone it and run `kb setup` in their own copy of the code project. One inside the code repository
+  comes with the code: colleagues run `kb setup`, and its README tells those who don't have Kent yet.
 - In their own terminal, `kb serve` in the knowledge base's folder renders it as pages to read.
-- `kb` never runs git. The agent does the git work in each conversation, as the knowledge base's mode
-  warrants: offline, it commits what acts wrote and never pulls or pushes; online, it also pulls often
-  and pushes after every act.
+- `kb` never changes anything in git. The agent does the git work in each conversation, as the
+  knowledge base's place calls for: in its own repository it commits on every act, and with a remote
+  it also pulls and pushes; inside the code repository it leaves commits to them, or offers, as
+  `KENT_OFFER_COMMIT` says.
 - After upgrading Kent, nothing in the project needs to change: the hook prints the instructions of
   whichever version runs. Running `kb setup` again at any time checks the setup and repairs it.
 

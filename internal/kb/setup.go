@@ -28,6 +28,7 @@ const (
 	// the project's settings for Kent, read from the environment the settings file sets
 	askModeEnv     = "KENT_ASK_SESSION_MODE"
 	perTurnEnv     = "KENT_STATEMENTS_PER_TURN"
+	offerCommitEnv = "KENT_OFFER_COMMIT"
 	kentVersionEnv = "KENT_VERSION"
 	// the hook's output is cut off beyond this many characters (Claude Code's limit)
 	sessionStartLimit = 10000
@@ -71,6 +72,10 @@ func settingLines(env func(string) string) (lines, problems []string) {
 		problems = append(problems, fmt.Sprintf("%s is %q, which kb does not understand (a whole number from 1); "+
 			"presenting one at a time", perTurnEnv, env(perTurnEnv)))
 		per, _ = perTurnSetting("")
+	}
+	if _, ok := offerCommitSetting(env(offerCommitEnv)); !ok {
+		problems = append(problems, fmt.Sprintf("%s is %q, which kb does not understand (never or after-attestation); "+
+			"leaving commits to the human", offerCommitEnv, env(offerCommitEnv)))
 	}
 	lines = []string{
 		"Ask about the session mode: " + ask + ".",
@@ -125,8 +130,8 @@ func runSessionStart(ns argparse.Namespace) (code int) {
 	} else {
 		println("- Not pinned: any version of Kent writes here.")
 	}
-	modes, problem := modeLines(root)
-	for _, l := range modes {
+	gl, problem := gitLines(root, os.Getenv)
+	for _, l := range gl {
 		println("- " + l)
 	}
 	if problem != "" {
@@ -191,12 +196,12 @@ func absPath(p string) string {
 }
 
 // kentAllow, kentDeny and kentHook are what Kent needs in a project's settings for the knowledge base at kb.
-// For an online knowledge base that includes git in its folder, since the agent pulls and pushes it all the
-// time (S-DR9W), in the one form the session-start text tells the agent to use.
+// For a knowledge base in a repository of its own that includes git in its folder, since the agent commits
+// it on every act (S-7BWA), in the one form the session-start text tells the agent to use.
 func kentAllow(kb string) []string {
 	allow := []string{"Bash(kb)", "Bash(kb *)", "PowerShell(kb)", "PowerShell(kb *)",
 		"Edit(" + permPath(kb) + "/off-record/drafts/**)"}
-	if mode, _, _ := readKBMode(kb); mode == modeOnline {
+	if readGitPlace(kb).ownRepo() {
 		g := gitPrefix(kb)
 		allow = append(allow, "Bash("+g+" *)", "PowerShell("+g+" *)")
 	}
@@ -504,7 +509,7 @@ func buildReport(project, kbArg string) report {
 		} else {
 			r.item("It has no session-start hook running %s.", sessionStartCommand)
 		}
-		for _, k := range []string{askModeEnv, perTurnEnv, kentVersionEnv} {
+		for _, k := range []string{askModeEnv, perTurnEnv, offerCommitEnv, kentVersionEnv} {
 			if v, ok := sf.env[k]; ok {
 				r.item("It sets %s to %q.", k, v)
 			}
@@ -579,7 +584,7 @@ func buildReport(project, kbArg string) report {
 	if kb != "" {
 		r.section("Settings for this project")
 		var extra [][2]string
-		for _, k := range []string{askModeEnv, perTurnEnv} {
+		for _, k := range []string{askModeEnv, perTurnEnv, offerCommitEnv} {
 			if v, ok := sf.env[k]; ok {
 				extra = append(extra, [2]string{k, v})
 			}
@@ -653,52 +658,21 @@ func kbReport(r *report, kb string) {
 		countFiles(filepath.Join(kb, "attested"), "S-*.md"), countFiles(filepath.Join(kb, "agent"), "A-*.md"),
 		countFiles(filepath.Join(kb, "evidence"), "*.jsonl"))
 
-	mode, found, modeErr := readKBMode(kb)
-	switch {
-	case modeErr != nil:
-		r.item("Its %s cannot be read (%v), so it is treated as offline.", modeFileName, modeErr)
-		r.need(1, "The knowledge base's %s cannot be read: show the human %s and fix it as the runbook says.",
-			modeFileName, modePath(kb))
-	case found:
-		r.item("Knowledge base mode: %s, from %s.", mode, modeFileName)
-	default:
-		r.item("Knowledge base mode: offline, since it has no %s.", modeFileName)
+	place := readGitPlace(kb)
+	r.item("%s", place.summary())
+	if place.submodule {
+		r.item("Its .git points into another repository's modules: it is a git submodule, which Kent does not "+
+			"support. Tell the human that whoever keeps it that way is on their own with it.")
 	}
 
-	top, status := git(kb, "rev-parse", "--show-toplevel")
+	_, status := git(kb, "rev-parse", "--show-toplevel")
 	switch {
 	case status == -1:
 		r.item("git could not be run, so its repository was not checked.")
 	case status != 0:
-		r.item("Not in a git repository. Git is recommended, not required; if the human wants it, " +
-			"the runbook says how.")
-		if mode == modeOnline {
-			r.need(3, "%s says online, but the knowledge base is in no git repository: ask the human whether to put "+
-				"it in git with a shared remote, or to make it offline.", modeFileName)
-		}
+		r.item("Git is recommended, not required; if the human wants it, the runbook says how.")
 	default:
-		inCode := !samePath(top, kb)
-		if inCode {
-			r.item("Inside the git repository at %s, so its files travel with that repository's commits.", top)
-		} else {
-			r.item("Its own git repository.")
-		}
-		url, st := git(kb, "remote", "get-url", "origin")
-		if st == 0 && url != "" {
-			r.item("Its remote origin is %s.", url)
-		} else {
-			r.item("No remote named origin.")
-		}
-		if mode == modeOnline {
-			if url == "" {
-				r.need(3, "%s says online, but the repository has no remote named origin to pull from and push to: "+
-					"the human creates the shared remote, or makes the knowledge base offline.", modeFileName)
-			}
-			if inCode {
-				r.item("Online inside another repository: the agent pulls and pushes that whole repository.")
-			}
-		}
-		if inCode {
+		if place.kind == inCodeRepo {
 			if !hasHintFile(kb) {
 				r.item("No README or other hint file for people who check out the code without Kent.")
 				r.need(3, "Add the hint file README.md to the knowledge base's folder, as the runbook says, for people "+

@@ -221,9 +221,10 @@ them like any other statement.
     `kb session-start` whenever a conversation starts, which gives the agent Kent's instructions. The
     file is per user and never committed, so each person on a team keeps their own paths. Deny
     rules in it stop the agent from editing the record's files by hand, so only `kb` writes there.
-  - **Two settings of yours:** whether the agent asks about the session mode at the start of every
-    conversation or only when something worth recording comes up, and how many statements it
-    presents per turn.
+  - **Settings of yours:** whether the agent asks about the session mode at the start of every
+    conversation or only when something worth recording comes up, how many statements it
+    presents per turn, and, for a knowledge base inside the code repository, whether it offers to
+    commit after each attestation or leaves commits to you.
 
   Setup leaves nothing in what your code repository commits, not even a line in CLAUDE.md, so the
   codebase can stay silent about Kent. If you want colleagues to know the project has a knowledge
@@ -241,11 +242,14 @@ them like any other statement.
   starts.
 - Keep the knowledge base in git, with `off-record/`, `index.db` and `render/` left out, as setup
   arranges: the first is outside the record by design, and the other two are rebuilt from the
-  record whenever needed. `kb` never runs git; your agent does the git work, as the knowledge
-  base's mode warrants. The mode is offline unless the knowledge base holds a committed `kent.mode`
-  saying online. Offline, the agent commits what it recorded and never pulls or pushes. Online, for
-  a knowledge base several people write to through a shared remote, it also pulls often and pushes
-  after every act. The session-start hook tells the agent which.
+  record whenever needed. `kb` never changes anything in git; your agent does the git work, and
+  what it does follows from where the knowledge base is, which the session-start hook tells it. In
+  a repository of its own, the agent commits on every act, and if the repository has a remote, it
+  also pulls and pushes on every act, as far as the remote can be reached: without a connection it
+  still records and commits, and syncs once back. Copies that wrote on their own merge afterward.
+  Inside the code repository, you commit it, with the code it belongs to, and it is pulled and
+  pushed with the code; the agent never commits it on its own initiative. A knowledge base in a git
+  submodule or subtree is not supported.
 - To keep everyone who writes to the knowledge base on the same version of Kent, pin it: `kb pin
   --set` writes `kent.pin` naming the version you are running, and `kb` then refuses to write under
   any other. Commit the pin; to move to a new version, set it again under that version. A pin is
