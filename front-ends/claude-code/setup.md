@@ -160,8 +160,8 @@ anything turns out different from what you described.
 
      To ask the knowledge base questions, or add to it, from your own conversations with Claude Code:
 
-     1. Install Kent the Clerk, so that `kb` is on your PATH. [Ask whoever set up this folder where to
-        get it.]
+     1. Install Kent the Clerk, so that `kb` is on your PATH: see
+        https://github.com/vector76/KentTheClerk.
      2. Open Claude Code at the top of this repository and ask it to run `kb setup` for the knowledge
         base in `<folder>`. Setup connects your copy of the code to it, in settings of your own that
         are never committed.
