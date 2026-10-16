@@ -225,6 +225,11 @@ func kentSettingsJSON(kb string, extraEnv [][2]string) string {
 }
 
 // git runs git in dir and returns its trimmed output and exit status (-1 if git could not be run).
+// unionFiles are the files git merges by keeping both copies' lines (S-8MW2): the two logs, whose entries
+// are independent lines read in the order made, and the user table, whose rows are order-free. Where both
+// copies changed the same row, both lines stay, and kb check reports the key or email twice.
+var unionFiles = []string{overrideLogName, usersLogName, usersName}
+
 func git(dir string, args ...string) (string, int) {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	out, err := cmd.Output()
@@ -649,6 +654,19 @@ func kbReport(r *report, kb string) {
 				strings.Join(unignored, ", "))
 		} else {
 			r.item("git ignores off-record/, index.db and render/.")
+		}
+		var plain []string
+		for _, f := range unionFiles {
+			if out, st := git(kb, "check-attr", "merge", "--", f); st != 0 || !strings.HasSuffix(out, ": merge: union") {
+				plain = append(plain, f)
+			}
+		}
+		if len(plain) > 0 {
+			r.item("git does not merge %s by keeping both copies' lines.", strings.Join(plain, ", "))
+			r.need(3, "git must keep both copies' new lines when it merges %s, rather than report a conflict (S-8MW2): "+
+				"add them to the knowledge base's .gitattributes with merge=union, as the runbook says.", strings.Join(plain, ", "))
+		} else {
+			r.item("git merges %s by keeping both copies' lines.", strings.Join(unionFiles, ", "))
 		}
 		for _, d := range []string{"attested", "evidence"} {
 			if isEmptyDir(filepath.Join(kb, d)) {

@@ -159,9 +159,9 @@ func actingKeyIn(root string, t *userTable, id, source string) (key, msg string)
 		}
 		key = p.key
 	}
-	if to, seq := retiredID(root, key); to != "" {
-		return "", fmt.Sprintf("the user id %s was moved to %s by override %d in this knowledge base; act as %s: change "+
-			"the id in ~/.kenttheclerk.json, KB_USER or git's user.email, or pass --user (%s)", py.StrRepr(key), py.StrRepr(to), seq, to, rule("override-list"))
+	if to, ref := retiredID(root, key); to != "" {
+		return "", fmt.Sprintf("the user id %s was moved to %s by override %s in this knowledge base; act as %s: change "+
+			"the id in ~/.kenttheclerk.json, KB_USER or git's user.email, or pass --user (%s)", py.StrRepr(key), py.StrRepr(to), ref, to, rule("override-list"))
 	}
 	if !t.has(key) {
 		return "", fmt.Sprintf("%s (%s) is not in this knowledge base's user table, so kb records nothing they do here. "+
@@ -289,17 +289,17 @@ func actKeys(root string, sessions *Sessions) map[string]*actCount {
 			}
 		}
 	}
-	entries, _, _ := loadOverrideLog(root)
-	for _, e := range entries {
-		if by := idAfter(entries, entrySeq(e), entryStr(e, "by"), entryStr(e, "turn")); personKey(by) {
+	entries, _ := loadOverrideLog(root)
+	for i, e := range entries {
+		if by := idAfter(entries, i, entryStr(e, "by"), entryStr(e, "turn")); personKey(by) {
 			c := at(by)
 			c.logged++
 			c.saw(entryStr(e, "at"))
 		}
 	}
-	adds, _, _ := loadLogFile(usersLogPath(root))
+	adds, _ := loadLogFile(usersLogPath(root))
 	for _, e := range adds {
-		if by := idAfter(entries, 1, entryStr(e, "by"), ""); personKey(by) {
+		if by := idAfter(entries, 0, entryStr(e, "by"), ""); personKey(by) {
 			c := at(by)
 			c.logged++
 			c.saw(entryStr(e, "at"))
@@ -430,8 +430,8 @@ func adder(root string, t *userTable, explicit, key, email string) string {
 			return key
 		}
 	default:
-		if to, seq := retiredID(root, id); to != "" {
-			die(fmt.Sprintf("the user id %s was moved to %s by override %d in this knowledge base; act as %s (%s)", py.StrRepr(id), py.StrRepr(to), seq, to, rule("override-list")))
+		if to, ref := retiredID(root, id); to != "" {
+			die(fmt.Sprintf("the user id %s was moved to %s by override %s in this knowledge base; act as %s (%s)", py.StrRepr(id), py.StrRepr(to), ref, to, rule("override-list")))
 		}
 		if t.has(id) || id == key {
 			return id
@@ -490,21 +490,21 @@ func runUserAdd(ns argparse.Namespace, args []string) int {
 	if t.has(key) {
 		die(fmt.Sprintf("%s is already in the user table", t.who(key)))
 	}
-	if to, seq := retiredID(root, key); to != "" {
-		die(fmt.Sprintf("%s was moved to %s by override %d and is retired here", py.StrRepr(key), to, seq))
+	if to, ref := retiredID(root, key); to != "" {
+		die(fmt.Sprintf("%s was moved to %s by override %s and is retired here", py.StrRepr(key), to, ref))
 	}
 	userArg, _ := ns.Str("user")
 	by := adder(root, t, userArg, key, email)
 	if !mayAddUser(root, by, key) {
 		die(fmt.Sprintf("%s may not add people to this knowledge base's user table (%s)", by, rule("add-first")))
 	}
-	entries, lines, problem := loadLogFile(usersLogPath(root))
-	if problem != "" {
+	if _, problem := loadLogFile(usersLogPath(root)); problem != "" {
 		die(fmt.Sprintf("the user log %s cannot be read: %s (%s)", usersLogName, problem, rule("write-through-kb")))
 	}
-	e := py.D("seq", py.IntOf(len(entries)+1), "act", "add", "key", key, "name", name, "email", email,
+	// an entry has no id, since nothing cites one, and no number (S-QYEK)
+	e := py.D("act", "add", "key", key, "name", name, "email", email,
 		"at", isoSeconds(usersNow()), "by", by, "authentication", authentication)
-	appendLogEntry(usersLogPath(root), e, lines)
+	appendLogEntry(usersLogPath(root), e)
 	writeUsers(root, append(t.rows, person{key, name, email}))
 	msg := fmt.Sprintf("added %s to the user table: %s, %s", key, name, email)
 	if by != key {
@@ -565,37 +565,31 @@ func addUserParser(sub *argparse.Parser) {
 // usersChecks verifies the user table and its log, and that every key on an act has a row, for kb check.
 // Acts from before the table began, when nobody could be in it, are only warned about (S-0142).
 func usersChecks(root string, sessions *Sessions, errorf, warnf func(string, ...any)) {
-	overrides, _, _ := loadOverrideLog(root)
+	overrides, _ := loadOverrideLog(root)
 	t, problem := loadUsers(root)
 	if problem != "" {
 		errorf("user table: %s (%s)", problem, rule("write-through-kb"))
 	}
-	adds, lines, problem := loadLogFile(usersLogPath(root))
+	// the log is read in the order its entries were made; it has no numbers or chain to check (S-8MW2)
+	adds, problem := loadLogFile(usersLogPath(root))
 	if problem != "" {
 		errorf("user log: %s (%s)", problem, rule("write-through-kb"))
 	}
-	for i, e := range adds {
-		n := i + 1
-		if entrySeq(e) != n {
-			errorf("user log: entry %d is numbered %s; entries were removed or reordered outside kb (%s)", n, py.Repr(e.Get("seq")), rule("write-through-kb"))
-		}
-		var want any
-		if i > 0 {
-			want = sha256Tag(lines[i-1])
-		}
-		if !py.Equal(e.Get("prev"), want) {
-			errorf("user log: entry %d does not carry the hash of the entry before it; the log was changed outside kb (%s)", n, rule("write-through-kb"))
+	for _, e := range adds {
+		n := "the entry adding " + entryStr(e, "key")
+		if entryStr(e, "key") == "" {
+			n = "the entry made at " + entryStr(e, "at")
 		}
 		if entryStr(e, "act") != "add" {
-			errorf("user log: entry %d is %s, not an add (%s)", n, py.Repr(e.Get("act")), rule("add-first"))
+			errorf("user log: %s is %s, not an add (%s)", n, py.Repr(e.Get("act")), rule("add-first"))
 		}
 		for _, k := range []string{"key", "name", "email", "at", "by"} {
 			if entryStr(e, k) == "" {
-				errorf("user log: entry %d has no %s (%s)", n, k, rule("user-table"))
+				errorf("user log: %s has no %s (%s)", n, k, rule("user-table"))
 			}
 		}
 		if !systemHashRE.MatchString(entryStr(e, "system_hash")) || entryStr(e, "system_version") == "" {
-			errorf("user log: entry %d has a missing or malformed system stamp (%s)", n, rule("system-stamp"))
+			errorf("user log: %s has a missing or malformed system stamp (%s)", n, rule("system-stamp"))
 		}
 	}
 	if problem == "" {

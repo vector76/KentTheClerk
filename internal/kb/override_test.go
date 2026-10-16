@@ -224,11 +224,11 @@ func TestOverrideRevise(t *testing.T) {
 	}
 	p := statementPath(root, "S-0001")
 	st := loadStatement(p)
-	if st.Body != "Statement three text." || py.Str(st.Meta.Get("revised")) != "1" || !strings.Contains(p, "one-revised") {
+	entries, _ := loadOverrideLog(root)
+	if st.Body != "Statement three text." || len(entries) != 1 || py.Str(st.Meta.Get("revised")) != overrideRef(entries[0]) || !strings.Contains(p, "one-revised") {
 		t.Fatalf("S-0001 not revised: %s %v %q", p, st.Meta.Get("revised"), st.Body)
 	}
-	entries, _, _ := loadOverrideLog(root)
-	if len(entries) != 1 || !strings.Contains(entryStr(entries[0], "original"), "Statement one text.") {
+	if !strings.Contains(entryStr(entries[0], "original"), "Statement one text.") {
 		t.Fatalf("the log does not keep the original text: %v", entries)
 	}
 	checkClean(t)
@@ -259,19 +259,171 @@ func TestOverrideReviseRefusedOnceMentioned(t *testing.T) {
 	mustRefuse(t, "endorsed by bob", "override", "revise", "S-0001", r, "--proposed", turnPtr(4), "--turn", turnPtr(5), "--reason", "x", "--user", "alice")
 }
 
-func TestOverrideLogIsChained(t *testing.T) {
+// overrideAt makes an override as override does, with the log's clock at the given minute past 9:00, before
+// every test turn.
+func overrideAt(t *testing.T, minute int, user string, turn int, args ...string) string {
+	t.Helper()
+	old := overrideNow
+	overrideNow = func() time.Time { return time.Date(2026, 10, 14, 9, minute, 0, 0, time.UTC) }
+	defer func() { overrideNow = old }()
+	return override(t, user, turn, args...)
+}
+
+func readLines(t *testing.T, p string) []string {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
+}
+
+func writeLines(t *testing.T, p string, lines []string) {
+	t.Helper()
+	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestOverrideIDs checks that an override gets a random O- id, cited by its tombstone and its output, and
+// that its entry carries no number and no hash of the entry before it (S-QYEK, S-8MW2).
+func TestOverrideIDs(t *testing.T) {
 	root := newTestKB(t)
 	attestOne(t, root)
 	checkedBefore(t)
-	override(t, "alice", 5, "scrub", turnPtr(2))
-	override(t, "alice", 5, "scrub", turnPtr(4))
+	out := override(t, "alice", 5, "scrub", turnPtr(2))
+	entries := mustLoadOverrideLog(root)
+	id := entryStr(entries[0], "id")
+	if !overrideIDRE.MatchString(id) || entries[0].Has("seq") || entries[0].Has("prev") {
+		t.Fatalf("the entry is not identified by a new id alone: %s", py.Dumps(entries[0]))
+	}
+	if !strings.Contains(out, "override "+id+": ") {
+		t.Fatalf("kb override does not name the override by its id:\n%s", out)
+	}
+	tt := findSession(root, testSession).Turn(testTurns[2].uuid)
+	if !strings.Contains(turnText(tt), "by override "+id+": ") || markRef(tt.Get("scrubbed")) != id {
+		t.Fatalf("the tombstone does not cite %s: %q %v", id, turnText(tt), tt.Get("scrubbed"))
+	}
 	checkClean(t)
+	// a statement's marks cite it too
+	override(t, "alice", 5, "scrub", "S-0001")
+	m := statementMeta(t, root, "S-0001")
+	if sc := py.Str(m.Get("scrubbed")); !overrideIDRE.MatchString(sc) || py.Str(m.Get("title")) != "Scrubbed by override "+sc {
+		t.Fatalf("S-0001 scrubbed = %v, title %v", m.Get("scrubbed"), m.Get("title"))
+	}
+	checkClean(t)
+	// two entries under one id is an error
 	p := overrideLogPath(root)
+	lines := readLines(t, p)
+	writeLines(t, p, append(lines, lines[0]))
+	checkFails(t, "two entries are override "+id)
+}
+
+// TestOverrideLogMerged checks that a log as a merge leaves it, one copy's new entries after the other's,
+// is read in the order the entries were made, and that the chain no longer guards it (S-8MW2).
+func TestOverrideLogMerged(t *testing.T) {
+	root := newTestKB(t)
+	attestOne(t, root)
+	mustRun(t, "user", "add", "Carol Cole", "--email", "carol@example.com", "--key", "carol", "--user", "alice")
+	overrideAt(t, 10, "alice", 5, "merge", "alice", "carol") // made first
+	overrideAt(t, 20, "bob", 3, "scrub", turnPtr(0))         // made later
+	p := overrideLogPath(root)
+	lines := readLines(t, p)
+	writeLines(t, p, []string{lines[1], lines[0]})
+	entries := mustLoadOverrideLog(root)
+	if entryStr(entries[0], "kind") != ovMerge || entryStr(entries[1], "kind") != ovScrubTurn {
+		t.Fatalf("the log is not read in the order made: %s, %s", entryStr(entries[0], "kind"), entryStr(entries[1], "kind"))
+	}
+	if to, ref := retiredID(root, "alice"); to != "carol" || ref != overrideRef(entries[0]) {
+		t.Fatalf("retiredID(alice) = %s, %s", to, ref)
+	}
+	checkClean(t)
+	// a change to an entry is no longer caught by a hash; git history is what shows it
 	b, _ := os.ReadFile(p)
 	if err := os.WriteFile(p, []byte(strings.Replace(string(b), "a test", "a tset", 1)), 0o666); err != nil {
 		t.Fatal(err)
 	}
-	checkFails(t, "hash of the entry before it")
+	checkClean(t)
+	// entries made in the same second keep the order of their lines
+	same := `{"id": "O-AAAA", "at": "2026-10-14T09:00:00+00:00"}`
+	if got := byAtOrder(t, same, strings.Replace(same, "O-AAAA", "O-BBBB", 1)); got != "O-AAAA O-BBBB" {
+		t.Fatalf("a tie was not kept in line order: %s", got)
+	}
+}
+
+func byAtOrder(t *testing.T, lines ...string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "log.jsonl")
+	writeLines(t, p, lines)
+	entries, problem := loadLogFile(p)
+	if problem != "" {
+		t.Fatal(problem)
+	}
+	var ids []string
+	for _, e := range entries {
+		ids = append(ids, overrideRef(e))
+	}
+	return strings.Join(ids, " ")
+}
+
+// TestOverrideLogBeforeIDs checks that overrides made before S-QYEK, numbered and chained, stay valid: their
+// tombstones and marks cite their numbers, their hashes go unchecked, and a new override joins them.
+func TestOverrideLogBeforeIDs(t *testing.T) {
+	root := newTestKB(t)
+	attestOne(t, root)
+	overrideAt(t, 10, "alice", 5, "scrub", turnPtr(2))
+	overrideAt(t, 20, "alice", 5, "scrub", "S-0001")
+	// rewrite both as kb wrote them before: numbered 1 and 2, the second carrying a hash, and marks citing
+	// the numbers
+	entries := mustLoadOverrideLog(root)
+	ids := []string{overrideRef(entries[0]), overrideRef(entries[1])}
+	old := func(s string) string {
+		s = strings.Replace(s, `"id": "`+ids[0]+`"`, `"seq": 1`, 1)
+		s = strings.Replace(s, `"id": "`+ids[1]+`"`, `"seq": 2`, 1)
+		s = strings.ReplaceAll(s, `"override": "`+ids[0]+`"`, `"override": 1`)
+		s = strings.ReplaceAll(s, "by override "+ids[0], "by override 1")
+		s = strings.ReplaceAll(s, ids[1], "2")
+		return s
+	}
+	lines := readLines(t, overrideLogPath(root))
+	writeLines(t, overrideLogPath(root), []string{old(lines[0]) + "", strings.Replace(old(lines[1]), "}", `, "prev": "sha256:00"}`, 1)})
+	writeLines(t, findSession(root, testSession).Path, func() []string {
+		var out []string
+		for _, l := range readLines(t, findSession(root, testSession).Path) {
+			out = append(out, old(l))
+		}
+		return out
+	}())
+	sp := statementPath(root, "S-0001")
+	b, _ := os.ReadFile(sp)
+	if err := os.WriteFile(sp, []byte(old(string(b))), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if m := statementMeta(t, root, "S-0001"); markRef(m.Get("scrubbed")) != "2" || py.Str(m.Get("title")) != "Scrubbed by override 2" {
+		t.Fatalf("S-0001 was not rewritten as before: %v %v", m.Get("scrubbed"), m.Get("title"))
+	}
+	checkClean(t)
+	overrideAt(t, 30, "alice", 5, "scrub", turnPtr(4))
+	checkClean(t)
+}
+
+// TestUsersLogMerged checks that an add carries no number or hash, and that the log is read in the order
+// made after a merge leaves its lines out of order (S-QYEK, S-8MW2).
+func TestUsersLogMerged(t *testing.T) {
+	root := newTestKB(t)
+	lines := readLines(t, usersLogPath(root))
+	for _, l := range lines {
+		if strings.Contains(l, `"seq"`) || strings.Contains(l, `"prev"`) {
+			t.Fatalf("an add carries a number or a hash: %s", l)
+		}
+	}
+	// alice was added before bob; a merge could leave bob's line first
+	writeLines(t, usersLogPath(root), []string{lines[1], lines[0]})
+	adds, _ := loadLogFile(usersLogPath(root))
+	if entryStr(adds[0], "key") != "alice" && entryStr(adds[0], "at") != entryStr(adds[1], "at") {
+		t.Fatalf("the user log is not read in the order made: %s first", entryStr(adds[0], "key"))
+	}
+	checkClean(t)
 }
 
 func TestOverrideUnknownKind(t *testing.T) {

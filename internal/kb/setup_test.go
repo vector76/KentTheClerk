@@ -131,3 +131,26 @@ func TestUserByFolder(t *testing.T) {
 		t.Errorf("--user did not win: %q", got)
 	}
 }
+
+// TestSetupWantsUnionMerge checks that kb setup asks for merge=union on the logs and the user table of a
+// knowledge base in git (S-8MW2), and is satisfied once .gitattributes holds it.
+func TestSetupWantsUnionMerge(t *testing.T) {
+	root := newTestKB(t)
+	if _, st := git(root, "init", "-q"); st != 0 {
+		t.Skip("git is not available")
+	}
+	var r report
+	kbReport(&r, root)
+	if todo := strings.Join(r.todos(), "\n"); !strings.Contains(todo, "merge=union") || !strings.Contains(todo, "users.jsonl") {
+		t.Fatalf("setup did not ask for merge=union:\n%s", todo)
+	}
+	attrs := "overrides.jsonl merge=union\nusers-log.jsonl merge=union\nusers.jsonl merge=union\n"
+	if err := os.WriteFile(filepath.Join(root, ".gitattributes"), []byte(attrs), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	r = report{}
+	kbReport(&r, root)
+	if todo := strings.Join(r.todos(), "\n"); strings.Contains(todo, "merge=union") {
+		t.Fatalf("setup still asks for merge=union:\n%s", todo)
+	}
+}

@@ -7,6 +7,9 @@ backwards and caught before anything relied on it. Rather than leave people to e
 export and re-import, or rewind the files, `kb` offers a closed list of overrides. Each is entered
 in the override log, `overrides.jsonl` at the top of the knowledge base, which `kb` only appends
 to and `kb check` verifies, so the record is as it was written except where the log says otherwise.
+Each override has an id, such as `O-7KQ2`, by which its tombstones and marks cite it; the earliest
+overrides are numbers instead. The log is read in the order its entries were made, and git history
+is what shows an entry changed by hand.
 
 | Override | Command | What it changes |
 |---|---|---|

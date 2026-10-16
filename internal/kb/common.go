@@ -888,12 +888,12 @@ func newStatementID(root, kind string) string {
 			taken[strings.ToUpper(py.Str(v))] = true
 		}
 	}
-	return drawStatementID(kind, func(id string) bool { return taken[id] }, idSource)
+	return drawID(kind, func(id string) bool { return taken[id] }, idSource)
 }
 
-// drawStatementID draws ids from src until one holds a letter and is not taken. Each character comes from
+// drawID draws ids with the prefix kind from src until one holds a letter and is not taken. Each character comes from
 // one byte's low five bits; 256 is a multiple of 32, so every character is equally likely.
-func drawStatementID(kind string, taken func(string) bool, src io.Reader) string {
+func drawID(kind string, taken func(string) bool, src io.Reader) string {
 	buf := make([]byte, 4)
 	for range 10000 {
 		if _, err := io.ReadFull(src, buf); err != nil {
@@ -909,7 +909,7 @@ func drawStatementID(kind string, taken func(string) bool, src io.Reader) string
 			return id
 		}
 	}
-	die(fmt.Sprintf("could not find a free %s- id in %s", kind, statementDirs[kind]))
+	die(fmt.Sprintf("could not find a free %s- id", kind))
 	return ""
 }
 

@@ -36,20 +36,20 @@ func loadIDs(root, kind string) []string {
 
 func isLetter(c byte) bool { return c > '9' }
 
-func TestDrawStatementID(t *testing.T) {
+func TestDrawID(t *testing.T) {
 	// the bytes' low five bits pick from the alphabet: 0..9 are digits, 10 is A, 31 is Z
 	never := func(string) bool { return false }
-	if got := drawStatementID("S", never, bytes.NewReader([]byte{10, 1, 2, 31})); got != "S-A12Z" {
+	if got := drawID("S", never, bytes.NewReader([]byte{10, 1, 2, 31})); got != "S-A12Z" {
 		t.Fatalf("got %s, want S-A12Z", got)
 	}
 	// the high bits are ignored: 32+10 is A again, 255 is Z
-	if got := drawStatementID("A", never, bytes.NewReader([]byte{42, 255, 0, 0})); got != "A-AZ00" {
+	if got := drawID("A", never, bytes.NewReader([]byte{42, 255, 0, 0})); got != "A-AZ00" {
 		t.Fatalf("got %s, want A-AZ00", got)
 	}
 	// digits only is drawn again, as is an id already taken
 	src := bytes.NewReader([]byte{1, 2, 3, 4, 10, 0, 0, 0, 11, 0, 0, 0})
 	taken := func(id string) bool { return id == "S-A000" }
-	if got := drawStatementID("S", taken, src); got != "S-B000" {
+	if got := drawID("S", taken, src); got != "S-B000" {
 		t.Fatalf("got %s, want S-B000 after skipping S-1234 and the taken S-A000", got)
 	}
 	// every character of the alphabet comes out, and I, L, O and U never do
@@ -60,7 +60,7 @@ func TestDrawStatementID(t *testing.T) {
 	seen := map[byte]bool{}
 	src = bytes.NewReader(all)
 	for range 32 {
-		id := drawStatementID("S", never, src)
+		id := drawID("S", never, src)
 		seen[id[2]] = true
 	}
 	if len(seen) != 32 {

@@ -96,7 +96,7 @@ func TestOverrideUser(t *testing.T) {
 	if p.name != "Alice Smith" || p.email != "alice@smith.example" {
 		t.Fatalf("row after the override: %+v", p)
 	}
-	entries, _ := mustLoadOverrideLog(root)
+	entries := mustLoadOverrideLog(root)
 	if len(entries) != 1 || entryStr(entries[0], "kind") != ovUser || entryStr(entries[0], "was_name") != "Alice Adams" {
 		t.Fatalf("override log: %v", entries)
 	}

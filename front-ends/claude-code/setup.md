@@ -98,6 +98,15 @@ anything turns out different from what you described.
      render/
      ```
 
+     and a `.gitattributes` holding:
+
+     ```
+     # entries added in separate copies are independent lines: a merge keeps both copies' new lines
+     overrides.jsonl merge=union
+     users-log.jsonl merge=union
+     users.jsonl merge=union
+     ```
+
      Then make the first commit if they asked for it, including `kent.pin` if there is one.
    - Existing, from a URL: `git clone <url> <folder>`, beside the code repository.
    - Either way, run `kb setup --report --kb <folder>` and read what it finds.
