@@ -3,6 +3,7 @@ package kb
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -80,7 +81,7 @@ func TestMergeSupersessionMark(t *testing.T) {
 		t.Errorf("two different supersessions merged: %q", problems)
 	}
 	amendBoth := statementText("The text.", []any{author}, "amended_by", []any{"S-JNZA"})
-	if m := mustMerge(t, base, theirs, amendBoth); !dyn.Equal(m.Get("amended_by"), []any{"S-Z5P4", "S-JNZA"}) {
+	if m := mustMerge(t, base, theirs, amendBoth); !dyn.Equal(m.Get("amended_by"), []any{"S-JNZA", "S-Z5P4"}) {
 		t.Errorf("amendments from both copies: %v", m.Get("amended_by"))
 	}
 }
@@ -112,10 +113,122 @@ func TestMergeText(t *testing.T) {
 	}
 }
 
-func TestMergeLines(t *testing.T) {
-	got := mergeLinesText("a\n", "a\nb\n", "a\nc\nb\n")
-	if got != "a\nb\nc\n" {
+// TestUnionMerge: the logs merge as git's union merge does, theirs' changes and deletions included.
+func TestUnionMerge(t *testing.T) {
+	got, err := unionMerge("a\nb\nc\n", "a\nb\nc\nours\n", "a\nc\ntheirs\n")
+	if err != nil {
+		t.Skip("git is not available")
+	}
+	if got != "a\nc\nours\ntheirs\n" {
 		t.Errorf("union merge = %q", got)
+	}
+}
+
+// TestMergeRefusesMarkers: a side with conflict markers anywhere, the text included, is never merged.
+func TestMergeRefusesMarkers(t *testing.T) {
+	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	base := statementText("The text.", []any{author})
+	inBody := statementText("<<<<<<< ours\nThe text.\n=======\nOther.\n>>>>>>> theirs", []any{author})
+	if _, problems := mergeStatementText(base, inBody, base); len(problems) == 0 {
+		t.Errorf("markers in the text were taken as a change")
+	}
+	inMeta := strings.Replace(base, "topics: []", "<<<<<<< ours\ntopics: []\n=======\ntopics: [x]\n>>>>>>> theirs", 1)
+	if _, problems := mergeStatementText(base, base, inMeta); len(problems) == 0 {
+		t.Errorf("markers in the frontmatter were parsed as keys")
+	}
+}
+
+// TestMergeLineEndings: a side with CRLF line endings merges with an LF side, without doubled blank lines.
+func TestMergeLineEndings(t *testing.T) {
+	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	bob := attestation("bob", "2026-10-16T12:00:00+00:00", "endorsement")
+	base := statementText("One.\n\nTwo.", []any{author})
+	crlf := strings.ReplaceAll(statementText("One.\n\nTwo.", []any{author, bob}), "\n", "\r\n")
+	out, problems := mergeStatementText(base, crlf, base)
+	if len(problems) > 0 || !strings.Contains(out, "One.\n\nTwo.\n") || strings.Contains(out, "\r") {
+		t.Errorf("CRLF side: %q\n%q", problems, out)
+	}
+}
+
+// TestMergeEitherWay: ours and theirs swapped give the same bytes, string lists, ties and new keys included.
+func TestMergeEitherWay(t *testing.T) {
+	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	bob := attestation("bob", "2026-10-16T12:00:00+00:00", "endorsement")
+	carol := attestation("carol", "2026-10-16T12:00:00+00:00", "endorsement")
+	base := statementText("The text.", []any{author})
+	a := statementText("The text.", []any{author, bob}, "amended_by", []any{"S-ZZZZ"}, "extra_context", true)
+	b := statementText("The text.", []any{author, carol}, "amended_by", []any{"S-AAAA"}, "superseded_by", "S-P3KB")
+	ab, p1 := mergeStatementText(base, a, b)
+	ba, p2 := mergeStatementText(base, b, a)
+	if len(p1)+len(p2) > 0 || ab != ba {
+		t.Errorf("depends on the side: %q %q\n%s\n---\n%s", p1, p2, ab, ba)
+	}
+}
+
+// TestMergeDeletedList: a list field one side deleted does not come back empty.
+func TestMergeDeletedList(t *testing.T) {
+	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	base := statementText("The text.", []any{author}, "seen", []any{})
+	gone := statementText("The text.", []any{author})
+	if out, _ := mergeStatementText(base, gone, base); strings.Contains(out, "seen:") {
+		t.Errorf("a deleted list came back:\n%s", out)
+	}
+}
+
+// TestMergeWithdrawnAndSuperseded: one side withdrew an agent statement, the other superseded it.
+func TestMergeWithdrawnAndSuperseded(t *testing.T) {
+	agent := func(extra ...any) string {
+		meta := dyn.D("id", "A-7K2M", "title", "A choice", "answers", "a question", "author", "agent:x",
+			"made_in", "aaaaaaaa#bbbbbbbb", "recorded_at", "2026-10-16T10:00:00+00:00", "seen", []any{})
+		for i := 0; i+1 < len(extra); i += 2 {
+			meta.Set(extra[i].(string), extra[i+1])
+		}
+		return dumpFrontmatter(meta) + "\nThe choice.\n"
+	}
+	_, problems := mergeStatementText(agent(), agent("withdrawn_in", "aaaaaaaa#cccccccc", "withdrawn_reason", "x"),
+		agent("superseded_by", "A-P3KB"))
+	if len(problems) == 0 {
+		t.Errorf("a withdrawal and a supersession were both taken")
+	}
+}
+
+// TestQuoteBoolLike: a title that reads like a bool or null reads back as text.
+func TestQuoteBoolLike(t *testing.T) {
+	for _, s := range []string{"true", "false", "null", "~"} {
+		meta, _, err := parseStatementText(dumpFrontmatter(dyn.D("id", "S-7K2M", "title", s)) + "\nText.\n")
+		if err != nil || meta.Get("title") != s {
+			t.Errorf("title %q read back as %#v (%v)", s, meta.Get("title"), err)
+		}
+	}
+}
+
+// TestResolvePathForms: kb resolve takes a file relative to the current folder, or with a drive letter in
+// another case.
+func TestResolvePathForms(t *testing.T) {
+	root := t.TempDir()
+	conflicted := map[string]bool{"attested/S-7K2M-a.md": true}
+	if r, ok := askedFile(root, filepath.Join(root, "attested", "S-7K2M-a.md"), conflicted); !ok || r != "attested/S-7K2M-a.md" {
+		t.Errorf("absolute: %q %v", r, ok)
+	}
+	if r, ok := askedFile(root, "attested/S-7K2M-a.md", conflicted); !ok || r != "attested/S-7K2M-a.md" {
+		t.Errorf("relative to the knowledge base: %q %v", r, ok)
+	}
+	old, _ := os.Getwd()
+	os.Chdir(filepath.Join(root))
+	os.MkdirAll(filepath.Join(root, "attested"), 0o755)
+	os.Chdir(filepath.Join(root, "attested"))
+	defer os.Chdir(old)
+	if r, ok := askedFile(root, "S-7K2M-a.md", conflicted); !ok || r != "attested/S-7K2M-a.md" {
+		t.Errorf("relative to the current folder: %q %v", r, ok)
+	}
+	if runtime.GOOS == "windows" && len(root) > 1 && root[1] == ':' {
+		other := strings.ToLower(root[:1]) + root[1:]
+		if root[:1] == strings.ToLower(root[:1]) {
+			other = strings.ToUpper(root[:1]) + root[1:]
+		}
+		if _, ok := relInside(root, filepath.Join(other, "attested", "S-7K2M-a.md")); !ok {
+			t.Errorf("a drive letter in another case is not inside")
+		}
 	}
 }
 
@@ -152,8 +265,12 @@ func TestMergeDriver(t *testing.T) {
 	}
 	write("A", statementText("Ours.", []any{author}))
 	write("B", statementText("Theirs.", []any{author}))
-	if code := Main([]string{"merge-driver", base, ours, theirs, "attested/S-7K2M-a-decision.md"}); code == 0 {
+	if code := Main([]string{"merge-driver", base, ours, theirs, "attested/S-7K2M-a-decision.md", "merged common ancestors",
+		"HEAD", "feature"}); code == 0 {
 		t.Errorf("driver merged two different texts")
+	}
+	if b, _ := os.ReadFile(ours); !strings.Contains(string(b), "<<<<<<< HEAD") || !strings.Contains(string(b), ">>>>>>> feature") {
+		t.Errorf("the conflict does not carry git's labels:\n%s", b)
 	}
 }
 

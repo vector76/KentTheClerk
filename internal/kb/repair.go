@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -448,7 +449,7 @@ func repairCollision(root string, c idCollision) (written, problems, unattribute
 		e.Set("unattributed", toAny(unattributed))
 	}
 	appendLogEntry(logPath, e)
-	if !containsStr(written, overrideLogName) {
+	if !slices.Contains(written, overrideLogName) {
 		written = append(written, overrideLogName)
 	}
 	return written, nil, unattributed
@@ -502,7 +503,7 @@ func repairIDs(root string, extra []idCollision) (repaired, written, left []stri
 		repaired = append(repaired, fmt.Sprintf("%s: %s keeps it (on %s); %s is now %s", c.id, filepath.Base(c.keep.Path),
 			c.label, was, dyn.Str(c.other.Meta.Get("id"))))
 		for _, f := range w {
-			if !containsStr(written, f) {
+			if !slices.Contains(written, f) {
 				written = append(written, f)
 			}
 		}

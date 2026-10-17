@@ -691,9 +691,18 @@ func startsIndented(l string) bool { return strings.HasPrefix(l, " ") || strings
 // parseFrontmatter is the minimal YAML subset: key: scalar | key: [a, b] | key:\n  - item |
 // key:\n  - k: v\n    k2: v2
 func parseFrontmatter(text string) (*dyn.Dict, string) {
+	meta, body, err := readFrontmatter(text)
+	if err != nil {
+		die(err.Error())
+	}
+	return meta, body
+}
+
+// readFrontmatter is parseFrontmatter that says what it cannot read instead of stopping.
+func readFrontmatter(text string) (*dyn.Dict, string, error) {
 	m := frontmatterRE.FindStringSubmatch(text)
 	if m == nil {
-		return dyn.NewDict(), text
+		return dyn.NewDict(), text, nil
 	}
 	raw, body := m[1], m[2]
 	meta := dyn.NewDict()
@@ -706,7 +715,7 @@ func parseFrontmatter(text string) (*dyn.Dict, string) {
 			continue
 		}
 		if startsIndented(line) {
-			die(fmt.Sprintf("unexpected indentation in frontmatter: %s", dyn.StrRepr(line)))
+			return nil, "", fmt.Errorf("unexpected indentation in frontmatter: %s", dyn.StrRepr(line))
 		}
 		key, _, rest := dyn.Partition(line, ":")
 		key = dyn.Strip(key)
@@ -758,7 +767,7 @@ func parseFrontmatter(text string) (*dyn.Dict, string) {
 		}
 		meta.Set(key, items)
 	}
-	return meta, body
+	return meta, body, nil
 }
 
 func fmQuote(v any) string {
@@ -772,6 +781,10 @@ func fmQuote(v any) string {
 		return "false"
 	}
 	s := dyn.Str(v)
+	// a string that would read back as something else, a bool or null, is quoted so it reads back as itself
+	if _, isStr := v.(string); isStr && (s == "true" || s == "false" || s == "null" || s == "~") {
+		return dyn.JSONStr(s)
+	}
 	if s == "" || strings.ContainsAny(s, ":#[]{},\"'") || s != dyn.Strip(s) {
 		return dyn.JSONStr(s)
 	}
@@ -814,6 +827,16 @@ func dumpFrontmatter(meta *dyn.Dict) string {
 func loadStatement(path string) *Statement {
 	meta, body := parseFrontmatter(dyn.ReadText(path))
 	return &Statement{path, meta, strings.Trim(body, "\n")}
+}
+
+// readStatement reads a statement file's text as loadStatement does, with its line endings made
+// universal, and says what it cannot read instead of stopping.
+func readStatement(path, text string) (*Statement, error) {
+	meta, body, err := readFrontmatter(dyn.Universal(text))
+	if err != nil {
+		return nil, err
+	}
+	return &Statement{path, meta, strings.Trim(body, "\n")}, nil
 }
 
 func writeStatement(path string, st *Statement) {
