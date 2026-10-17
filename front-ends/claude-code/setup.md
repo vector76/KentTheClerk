@@ -50,8 +50,9 @@ Otherwise ask all the questions that apply in one message, each with its options
 so the human can answer them together:
 
 - **Which knowledge base.** A code project refers to at most one; several code projects may share one.
-  If the report found a knowledge base inside the code repository, recommend that one: someone already
-  keeps it there, and it travels with the code.
+  If the report found a knowledge base inside the code repository that travels with the code, recommend
+  that one: someone already keeps it there. One the report says is a repository of its own inside the
+  folder does not travel with the code; ask about it like any existing one.
   - *New:* where it goes. Recommend a folder beside the code repository, named after the project, such
     as `<project>-kb`, usually its own git repository. It can sit inside the code repository instead,
     in a folder of its own used for nothing else, such as `kent` at the top; never mixed into a folder
@@ -104,14 +105,16 @@ anything turns out different from what you described.
 
 1. **The knowledge base.**
    - New: `kb setup --create <folder>` makes the folder with its `attested/` and `evidence/` folders,
-     which is how `kb` finds a knowledge base. Run `kb pin --set` there if they asked for a pin.
+     which is how `kb` finds a knowledge base, and an empty `.gitkeep` in each, since git keeps no empty
+     folder and a clone must still be a knowledge base. Run `kb pin --set` there if they asked for a pin.
    - For a knowledge base beside the code that they chose to keep in git: `git init` in its folder,
      unless the report says a repository already holds it. **Never run `git init` for a knowledge base
      inside the code repository**: the code repository already holds it, and a repository inside it
      would split the knowledge base off from the code.
-   - For either, if it is in git, set its folder up yourself: an empty `.gitkeep` file in `attested/` and
-     in `evidence/`, since git keeps no empty folder and a clone must still be a knowledge base; and, in
-     the knowledge base's own folder even when it is inside the code repository, a `.gitignore` holding:
+   - For either, if it is in git: if the report says `attested/` or `evidence/` is empty, run
+     `kb setup --gitkeep --kb <folder>`, which writes their `.gitkeep` files, since those folders are the
+     record's and only `kb` writes there; and write, in the knowledge base's own folder even when it is
+     inside the code repository, a `.gitignore` holding:
 
      ```
      # off-record material: outside the record by design, never committed
@@ -138,7 +141,7 @@ anything turns out different from what you described.
      change git's config:
 
      ```
-     git -C <folder> config merge.kent.driver "kb merge-driver %O %A %B %P %S %X %Y"
+     git -C <folder> config merge.kent.driver "kb merge-driver %O %A %B %P %S %X %Y %L"
      ```
 
      Set nothing else under `merge.kent`: git refuses to merge with a driver that has a name and no
@@ -172,11 +175,6 @@ anything turns out different from what you described.
      3. Then ask, for example, "what did we decide about ..., and why?"
      ```
 
-   - Then make the first commit if they asked for it, including `kent.pin` if there is one. For a
-     knowledge base inside the code repository, commit only its folder, and only when the human says
-     so: it goes into the code's history. A remote for one in its own repository is the human's to
-     create; once it exists, `git -C <folder> remote add origin <url>` and a first push, with their
-     agreement.
    - Existing, from a URL: `git clone <url> <folder>`, beside the code repository, then register the
      merge driver as above.
    - Either way, run `kb setup --report --kb <folder>` and read what it finds.
@@ -185,6 +183,13 @@ anything turns out different from what you described.
    `kb user add <name> --email <email>` prints the key it generates from the name; tell them, and run
    it again with `--key <key>`, theirs or the one they chose instead. The key must be the one their id
    names, and with git's `user.email` the email must be that one.
+
+   Then the first commit, if they asked for one, after the user table is written so that it is in it,
+   with `kent.pin` if there is one: for a knowledge base of its own, commit the folder, and push it if
+   it has a remote. The remote is the human's to create; once it exists, with their agreement, run
+   `git -C <folder> remote add origin <url>` and `git -C <folder> push -u origin HEAD`. For a knowledge
+   base inside the code repository, the person commits it, with the code: tell them its folder needs
+   committing, the user table included, since it goes into the code's history.
 3. **The settings file.** `kb setup --report --kb <folder>` prints, under **Settings for this project**,
    the JSON Kent needs, with the paths already in the forms Claude Code wants, and what the current file
    lacks. Merge Kent's part into `.claude/settings.local.json`: add what is missing, keep everything else,
@@ -196,8 +201,10 @@ anything turns out different from what you described.
      environment variable, which would point every project at the same knowledge base.
    - `permissions.additionalDirectories` and the `allow` rules let the agent read the knowledge base,
      run `kb`, and write drafts in `off-record/drafts/`. For a knowledge base in its own repository they
-     also let it run git there, written `git -C <folder> …`, the form the session-start text tells the
-     agent to use, since it commits on every act. If it moves into git later, run `kb setup` again.
+     also let it run the git commands the session-start text asks for there: add, commit, pull, push,
+     fetch, status, log, diff and show, and finishing a rebase without an editor, each written
+     `git -C <folder> …`. Any other git command, such as config, checkout or reset, still asks. If it
+     moves into git later, run `kb setup` again.
    - The `deny` rules stop the agent from editing the record's files by hand, so only `kb` writes there.
    - `hooks.SessionStart` runs `kb session-start` whenever a conversation starts, is resumed, cleared or
      compacted. It prints Kent's instructions into the agent's context, from the version of Kent that
@@ -229,8 +236,9 @@ Tell the human:
 - **How to begin:** start a conversation about something they are deciding, and say whether it is on
   the record. `kb rules introduction` explains how the knowledge base works; the agent reads it when they
   are new or ask why it works as it does.
-- If the knowledge base is meant to be shared, the human creates its remote and pushes it. Colleagues
-  then clone it and run `kb setup` in their own copy of the code project. One inside the code repository
+- If the knowledge base is meant to be shared, the human creates its remote, and the agent adds it and
+  pushes, with their agreement, as in step 2. Colleagues then clone it and run `kb setup` in their own
+  copy of the code project. One inside the code repository
   comes with the code: colleagues run `kb setup`, and its README tells those who don't have Kent yet.
 - In their own terminal, `kb serve` in the knowledge base's folder renders it as pages to read.
 - The agent does the git work in each conversation, as the session-start text says for this knowledge

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -130,10 +131,32 @@ func readGitPlace(root string) gitPlace {
 func (p gitPlace) ownRepo() bool { return p.kind == localRepo || p.kind == remoteRepo }
 
 // driverRegistered is whether git, in the repository the knowledge base at root is in, runs kb's merge
-// driver for the record's files: git's own reading of its config, every scope included (S-JNZA).
-func driverRegistered(root string) bool {
+// driver for the record's files: git's own reading of its config, every scope included (S-JNZA). The
+// command may name kb by a path, kb or kb.exe, followed by the driver's arguments. ran is false when git
+// could not be run, and nothing was checked.
+func driverRegistered(root string) (registered, ran bool) {
 	d, st := git(root, "config", "--get", "merge."+mergeDriverName+".driver")
-	return st == 0 && d == mergeDriverCommand
+	if st == -1 {
+		return false, false
+	}
+	got, want := strings.Fields(d), strings.Fields(mergeDriverCommand)
+	if st != 0 || len(got) != len(want) {
+		return false, true
+	}
+	prog := strings.ToLower(filepath.Base(strings.Trim(filepath.ToSlash(got[0]), `"'`)))
+	return (prog == "kb" || prog == "kb.exe") && slices.Equal(got[1:], want[1:]), true
+}
+
+// gitAllowed are the git commands the session-start text asks of the agent in a knowledge base of its own,
+// each as git -C and the folder, for setup's allow rules: commit, sync, look, and finish a merge or rebase
+// without an editor. Anything else, -c and config, checkout, reset or clean among them, asks the human.
+func gitAllowed(kb string) []string {
+	g := gitPrefix(kb)
+	var out []string
+	for _, sub := range []string{"add", "commit", "pull", "push", "fetch", "status", "log", "diff", "show"} {
+		out = append(out, g+" "+sub, g+" "+sub+" *")
+	}
+	return append(out, g+" -c core.editor=true rebase --continue")
 }
 
 // submoduleWarning is what kb says about a knowledge base in a git submodule checkout (S-SG81).
@@ -146,11 +169,11 @@ var gitCaseText = map[gitCase]struct{ summary, line string }{
 		"Git: the knowledge base is in no git repository, so nothing commits it and nothing syncs it."},
 	localRepo: {"Its own git repository, with no remote: the agent commits it on every act, and nothing syncs it.",
 		"Git: the knowledge base is its own git repository, with no remote. You commit it: when an act is done, " +
-			"commit what it wrote. There is nothing to pull or push."},
+			"commit what it wrote."},
 	remoteRepo: {"Its own git repository, with the remote %[1]s: the agent commits, pulls and pushes it on every act.",
-		"Git: the knowledge base is its own git repository, with the remote %[1]s. You commit, pull and push it on " +
-			"every act: pull before the act, and commit what it wrote and push once it is done. When the remote " +
-			"cannot be reached, act and commit anyway, and pull and push once it can be."},
+		"Git: the knowledge base is its own git repository, with the remote %[1]s. On every act, pull first with " +
+			"`%[3]s pull --no-rebase`, expecting it to bring changes; then commit what the act wrote and push. When " +
+			"the remote cannot be reached, act and commit anyway, and pull and push once it can be."},
 	inCodeRepo: {"Inside the code repository at %[2]s: a person commits it, and it is pulled and pushed with the code.",
 		"Git: the knowledge base sits inside the code repository at %[2]s, so a person commits it, and it is pulled " +
 			"and pushed with the code. Never commit it on your own initiative."},
@@ -160,7 +183,7 @@ var gitCaseText = map[gitCase]struct{ summary, line string }{
 func (p gitPlace) summary() string { return sprintfCase(gitCaseText[p.kind].summary, p) }
 
 func sprintfCase(format string, p gitPlace) string {
-	return strings.NewReplacer("%[1]s", p.remote, "%[2]s", p.top).Replace(format)
+	return strings.NewReplacer("%[1]s", p.remote, "%[2]s", p.top, "%[3]s", gitPrefix(p.top)).Replace(format)
 }
 
 // shellSafeRE is a path a shell takes as one word as it stands.
@@ -188,8 +211,7 @@ func gitPrefix(root string) string {
 func offerCommitSetting(v string) (text string, ok bool) {
 	switch strings.TrimSpace(v) {
 	case "", "never":
-		return "Leave committing it to the human, who commits it with the code that reflects the change: do " +
-			"not offer or try to commit for each statement.", true
+		return "Leave committing it to the human, who commits it with the code that reflects the change.", true
 	case "after-attestation":
 		return "After each attestation, offer to commit what it wrote.", true
 	}
@@ -223,15 +245,15 @@ func gitLines(root string, env func(string) string) (lines, problems []string) {
 	}
 	lines = []string{line}
 	if p.kind != notInGit {
-		lines = append(lines, "Expect any pull to bring changes, even where nobody else writes, since the same person "+
-			"may write from another machine, and be ready for a pull that merges or stops on a conflict. kb merges "+
-			"the record's files as git merges them. After every merge, rebase or pull that brought changes, run "+
-			"`kb resolve`: it merges what git left conflicted in the record and reports ids copies gave to different "+
-			"statements. Never merge the record's files by hand. If it cannot resolve something, stop and tell the "+
-			"human. Then run `kb check`. Files kb resolve writes are commits like an act's: "+
-			map[bool]string{true: "commit them, and push them where you push.",
-				false: "leave them to the person, as the rest of the knowledge base."}[p.ownRepo()])
-		if !driverRegistered(root) {
+		lines = append(lines, "After any merge, rebase or pull that brought changes, even with no conflict, run "+
+			"`kb resolve`, then `kb check`. Never merge the record's files by hand; stop and tell the human about "+
+			"anything kb resolve leaves. "+map[bool]string{true: "Commit what it writes like an act's, and push it where "+
+			"you push.", false: "Leave what it writes to the person, like the rest of the knowledge base."}[p.ownRepo()]+
+			" `kb rules record`, Storage, says more.")
+		switch registered, ran := driverRegistered(root); {
+		case !ran:
+			problems = append(problems, "git could not be run, so the knowledge base's repository was not checked")
+		case !registered:
 			problems = append(problems, "kb's merge driver is not registered in this clone, so git merges the record's "+
 				"files as plain text and leaves more conflicts for `kb resolve`")
 		}

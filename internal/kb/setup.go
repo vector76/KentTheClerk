@@ -197,8 +197,9 @@ func kentAllow(kb string) []string {
 	allow := []string{"Bash(kb)", "Bash(kb *)", "PowerShell(kb)", "PowerShell(kb *)",
 		"Edit(" + permPath(kb) + "/off-record/drafts/**)"}
 	if readGitPlace(kb).ownRepo() {
-		g := gitPrefix(kb)
-		allow = append(allow, "Bash("+g+" *)", "PowerShell("+g+" *)")
+		for _, c := range gitAllowed(kb) {
+			allow = append(allow, "Bash("+c+")", "PowerShell("+c+")")
+		}
 	}
 	return allow
 }
@@ -559,14 +560,26 @@ func buildReport(project, kbArg string) report {
 		if inGit {
 			holder = "code repository"
 		}
+		travels := false
 		for _, f := range found {
+			how := "a repository of its own, which does not travel with the code"
+			switch readGitPlace(f).kind {
+			case inCodeRepo:
+				how, travels = "it travels with the code", true
+			case notInGit:
+				how = "not in git"
+			}
 			r.item("Inside the %s, %s is shaped like a knowledge base: %d attested statement(s), "+
-				"%d evidence file(s).", holder, f, countFiles(filepath.Join(f, "attested"), "S-*.md"),
-				countFiles(filepath.Join(f, "evidence"), "*.jsonl"))
+				"%d evidence file(s); %s.", holder, f, countFiles(filepath.Join(f, "attested"), "S-*.md"),
+				countFiles(filepath.Join(f, "evidence"), "*.jsonl"), how)
 		}
 		if len(found) > 0 {
-			r.need(1, "The %s already holds a knowledge base (%s): ask the human whether this project "+
-				"uses it, which the runbook recommends; then run kb setup --report --kb <folder>.", holder, strings.Join(found, ", "))
+			advice := "ask the human whether this project uses it"
+			if travels {
+				advice += ", which the runbook recommends, since it travels with the code"
+			}
+			r.need(1, "The %s already holds a knowledge base (%s): %s; then run kb setup --report --kb <folder>.",
+				holder, strings.Join(found, ", "), advice)
 		} else {
 			r.need(1, "Ask the human whether this project uses a new knowledge base or an existing one, and where it "+
 				"is or should go; then run kb setup --report --kb <folder>.")
@@ -731,7 +744,7 @@ func kbReport(r *report, kb string) {
 		} else {
 			r.item("git sends the statement files to kb's merge driver.")
 		}
-		if driverRegistered(kb) {
+		if ok, _ := driverRegistered(kb); ok {
 			r.item("kb's merge driver is registered in this clone.")
 		} else {
 			r.item("kb's merge driver is not registered in this clone.")
@@ -739,11 +752,16 @@ func kbReport(r *report, kb string) {
 				"`%s config merge.%s.driver \"%s\"`, and nothing else under merge.%s: git refuses to merge a file "+
 				"whose driver has a name and no command.", gitPrefix(kb), mergeDriverName, mergeDriverCommand, mergeDriverName)
 		}
+		var empty []string
 		for _, d := range []string{"attested", "evidence"} {
 			if isEmptyDir(filepath.Join(kb, d)) {
-				r.need(3, "%s/ is empty, and git keeps no empty folder, so a clone would not be a knowledge base: "+
-					"add an empty %s/.gitkeep.", d, d)
+				empty = append(empty, d+"/")
 			}
+		}
+		if len(empty) > 0 {
+			r.need(3, "%s empty, and git keeps no empty folder, so a clone would not be a knowledge base: run "+
+				"kb setup --gitkeep --kb %s, which writes an empty .gitkeep in each.", strings.Join(empty, " and ")+
+				map[bool]string{true: " are", false: " is"}[len(empty) > 1], kb)
 		}
 	}
 
@@ -806,7 +824,23 @@ func createKB(dir string) {
 			die(fmt.Sprintf("cannot create %s: %v", filepath.Join(dir, sub), err))
 		}
 	}
-	println("created the knowledge base " + dir + ", with attested/ and evidence/")
+	writeGitkeeps(dir)
+	println("created the knowledge base " + dir + ", with attested/ and evidence/, each with an empty .gitkeep")
+}
+
+// writeGitkeeps writes an empty .gitkeep in attested/ and evidence/ where they are empty, since git keeps
+// no empty folder and a clone must still be a knowledge base; the folders are the record's, so kb writes
+// the files rather than the agent (Kent Rule 1).
+func writeGitkeeps(dir string) {
+	for _, sub := range []string{"attested", "evidence"} {
+		p := filepath.Join(dir, sub, ".gitkeep")
+		if dyn.IsFile(p) {
+			continue
+		}
+		if err := os.WriteFile(p, nil, 0o666); err != nil {
+			die(fmt.Sprintf("cannot write %s: %v", p, err))
+		}
+	}
 }
 
 func runSetup(ns argparse.Namespace) int {
@@ -827,6 +861,15 @@ func runSetup(ns argparse.Namespace) int {
 		}
 		kbArg = absPath(create)
 		createKB(kbArg)
+		acted = true
+	}
+	if ns.Bool("gitkeep") {
+		kb, _ := chooseKB(kbArg, readSettings(project))
+		if kb == "" || !isKBFolder(kb) {
+			die("--gitkeep needs a knowledge base: name it with --kb")
+		}
+		writeGitkeeps(kb)
+		println("wrote an empty .gitkeep in " + kb + "'s attested/ and evidence/ where there was none")
 		acted = true
 	}
 	if acted {
@@ -860,6 +903,7 @@ func addSetupParsers(sub *argparse.Parser) {
 	p.Option("--project", "the code project's folder (default: CLAUDE_PROJECT_DIR, else the current folder)", nil, false)
 	p.Flag("--report", "print only what setup finds, without the runbook")
 	p.Option("--create", "create a new knowledge base in this folder (new or empty), then report", nil, false)
+	p.Flag("--gitkeep", "write an empty .gitkeep in the knowledge base's attested/ and evidence/, then report")
 	p.Run = runSetup
 
 	s := sub.AddParser("session-start", "print what the agent reads first, for the project's session-start hook")

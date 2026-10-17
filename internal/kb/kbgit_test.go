@@ -3,8 +3,11 @@ package kb
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"kenttheclerk/internal/dyn"
 )
 
 // fakeRepo makes dir a git repository as kb reads one from files: a .git folder with HEAD and the config.
@@ -34,9 +37,10 @@ func TestGitLines(t *testing.T) {
 	}
 	fakeRepo(t, root, "[remote \"backup\"]\n\turl = x\n[remote \"origin\"]\n\turl = y\n")
 	lines, _ = gitLines(root, none)
-	if p := readGitPlace(root); p.kind != remoteRepo || p.remote != "origin" || !strings.Contains(lines[0], "on every act") ||
-		!strings.Contains(lines[0], "cannot be reached") || len(lines) != 2 || !strings.Contains(lines[1], "Expect any pull") ||
-		!strings.Contains(lines[1], "commit them, and push") {
+	if p := readGitPlace(root); p.kind != remoteRepo || p.remote != "origin" || !strings.Contains(lines[0], "On every act") ||
+		!strings.Contains(lines[0], gitPrefix(root)+" pull --no-rebase") ||
+		!strings.Contains(lines[0], "cannot be reached") || len(lines) != 2 || !strings.Contains(lines[1], "kb resolve") ||
+		!strings.Contains(lines[1], "push it where you push") {
 		t.Errorf("repository with a remote: %+v %q", p, lines)
 	}
 
@@ -48,7 +52,7 @@ func TestGitLines(t *testing.T) {
 	}
 	lines, _ = gitLines(inner, none)
 	if !strings.Contains(lines[0], "inside the code repository at "+code) || !strings.Contains(lines[0], "Leave committing") ||
-		!strings.Contains(lines[1], "leave them to the person") {
+		!strings.Contains(lines[1], "Leave what it writes to the person") || strings.Count(joined(lines), "own initiative") != 1 {
 		t.Errorf("inside a code repository: %q", lines)
 	}
 	offer := func(v string) func(string) string {
@@ -254,5 +258,98 @@ func TestSetupInCodeRepository(t *testing.T) {
 	kbReport(&r, kb)
 	if todo := strings.Join(r.todos(), "\n"); strings.Contains(todo, "README.md") || strings.Contains(todo, "besides") {
 		t.Fatalf("setup still asks:\n%s", todo)
+	}
+}
+
+// TestGitAllowNarrow: the allow rules for a knowledge base of its own name the git commands the
+// session-start text asks for, the same for Bash and PowerShell, and nothing else.
+func TestGitAllowNarrow(t *testing.T) {
+	kb := newTestKB(t)
+	fakeRepo(t, kb, "")
+	g := gitPrefix(kb)
+	allow := kentAllow(kb)
+	has := func(rule string) bool { return slices.Contains(allow, rule) }
+	for _, c := range []string{g + " commit *", g + " pull *", g + " push *", g + " status", g + " -c core.editor=true rebase --continue"} {
+		if !has("Bash("+c+")") || !has("PowerShell("+c+")") {
+			t.Errorf("%q is not allowed in both shells", c)
+		}
+	}
+	for _, c := range []string{g + " *", g + " config *", g + " -c *", g + " reset *", g + " checkout *", g + " clean *"} {
+		if has("Bash("+c+")") || has("PowerShell("+c+")") {
+			t.Errorf("%q is allowed", c)
+		}
+	}
+}
+
+// TestDriverRegisteredForms: the driver may name kb by a path, kb or kb.exe; other arguments are not it.
+func TestDriverRegisteredForms(t *testing.T) {
+	root := newTestKB(t)
+	if _, st := git(root, "init", "-q"); st != 0 {
+		t.Skip("git is not available")
+	}
+	args := strings.TrimPrefix(mergeDriverCommand, "kb")
+	for cmd, want := range map[string]bool{
+		mergeDriverCommand:                           true,
+		"C:/Programs/Kent/kb.exe" + args:             true,
+		"/usr/local/bin/kb" + args:                   true,
+		"kb merge-driver %O %A %B %P":                false,
+		"other merge-driver %O %A %B %P %S %X %Y %L": false,
+	} {
+		git(root, "config", "merge.kent.driver", cmd)
+		if got, ran := driverRegistered(root); !ran || got != want {
+			t.Errorf("%q: registered %v, want %v", cmd, got, want)
+		}
+	}
+}
+
+// TestGitNotRunnable: when git cannot be run, session-start says so instead of calling the driver missing.
+func TestGitNotRunnable(t *testing.T) {
+	root := newTestKB(t)
+	fakeRepo(t, root, "")
+	t.Setenv("PATH", "")
+	_, problems := gitLines(root, func(string) string { return "" })
+	if s := joined(problems); !strings.Contains(s, "git could not be run") || strings.Contains(s, "not registered") {
+		t.Errorf("problems: %q", problems)
+	}
+}
+
+// TestGitkeep: a new knowledge base gets .gitkeep files, and an existing empty one gets them from
+// kb setup --gitkeep.
+func TestGitkeep(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "kb")
+	kbRun(t, "setup", "--create", dir, "--project", t.TempDir())
+	for _, sub := range []string{"attested", "evidence"} {
+		if !dyn.IsFile(filepath.Join(dir, sub, ".gitkeep")) {
+			t.Errorf("--create wrote no %s/.gitkeep", sub)
+		}
+	}
+	other := newTestKB(t)
+	kbRun(t, "setup", "--gitkeep", "--kb", other, "--project", t.TempDir())
+	if !dyn.IsFile(filepath.Join(other, "attested", ".gitkeep")) {
+		t.Errorf("--gitkeep wrote no attested/.gitkeep")
+	}
+}
+
+// TestFoundKBTravels: setup recommends a knowledge base it finds in the code repository only when it
+// travels with the code, not when it is a repository of its own inside the folder.
+func TestFoundKBTravels(t *testing.T) {
+	code := t.TempDir()
+	if _, st := git(code, "init", "-q"); st != 0 {
+		t.Skip("git is not available")
+	}
+	inside := filepath.Join(code, "kent")
+	for _, d := range []string{"attested", "evidence"} {
+		os.MkdirAll(filepath.Join(inside, d), 0o755)
+	}
+	os.WriteFile(filepath.Join(inside, "attested", "S-7K2MQX-a.md"), nil, 0o644)
+	t.Setenv(kbEnv, "")
+	r := buildReport(code, "")
+	if todo := joined(r.todos()); !strings.Contains(todo, "travels with the code") {
+		t.Errorf("an in-repo knowledge base was not recommended:\n%s", todo)
+	}
+	fakeRepo(t, inside, "")
+	r = buildReport(code, "")
+	if todo := joined(r.todos()); strings.Contains(todo, "travels with the code") {
+		t.Errorf("a knowledge base with its own repository was said to travel with the code:\n%s", todo)
 	}
 }

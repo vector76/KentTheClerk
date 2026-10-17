@@ -101,10 +101,10 @@ approval. Many people find working this way a relief, and much good work happens
 
 A conversation nobody labelled is treated as off-record. When something worth recording comes up,
 the agent will ask whether to go on the record. (A setting you choose during `kb setup` can tell it
-to ask at the start of every conversation instead.) If you reach a decision off the record, you bring it onto the record
-by stating it yourself in an on-record conversation, for example: "As discussed earlier, I have
-decided that ...". The agent may also offer to collect what's worth recording and propose a fresh
-on-record conversation to capture it cleanly.
+to ask at the start of every conversation instead.) If you reach a decision off the record, you
+bring it onto the record by stating it yourself in an on-record conversation, for example: "As
+discussed earlier, I have decided that ...". The agent may also offer to collect what's worth
+recording and propose a fresh on-record conversation to capture it cleanly.
 
 By default the record keeps what you could see. Your agent's hidden reasoning and tool output are
 left out, because when you say "that's right", you are answering what was in front of you.
@@ -186,11 +186,11 @@ them like any other statement.
   release's downloads, and checks what it downloads against them. It puts the version in
   `%LOCALAPPDATA%\Programs\KentTheClerk` on Windows, or `~/.local/share/kenttheclerk` on macOS and
   Linux, beside any versions already there, replaces the launcher `kb` only if the new one is newer,
-  and adds the folder to your PATH the first time. `kb` runs the version your knowledge base is pinned to, or else
-  the one `KENT_VERSION` names in your project's settings, or else the highest version installed;
-  `kb --launcher` shows which, and why. This page, the rules, the setup runbook and what the
-  session-start hook prints are built into each version, so nothing of Kent goes into your code repository or your knowledge base, and
-  nothing else needs installing.
+  and adds the folder to your PATH the first time. `kb` runs the version your knowledge base is
+  pinned to, or else the one `KENT_VERSION` names in your project's settings, or else the highest
+  version installed; `kb --launcher` shows which, and why. This page, the rules, the setup runbook
+  and what the session-start hook prints are built into each version, so nothing of Kent goes into
+  your code repository or your knowledge base, and nothing else needs installing.
 
   Installing by hand is possible but not recommended, because each step the script takes is one you
   can get wrong. Download your platform's zip and `SHA256SUMS` from the project's GitHub releases,
@@ -228,12 +228,12 @@ them like any other statement.
 
   Setup leaves nothing in what your code repository commits, not even a line in CLAUDE.md, so the
   codebase can stay silent about Kent. If you want colleagues to know the project has a knowledge
-  base, mention it in a README or another document for people. A knowledge base kept inside the
-  code repository is the exception: its folder is committed with the code, with its own
-  `.gitignore` and a README telling colleagues who don't have Kent yet what the folder is and how to
-  get set up. Run `kb setup` again whenever you
-  like: it checks the setup and fixes what is wrong, with your agreement. Upgrading Kent needs no
-  change in the project, since the hook prints the instructions of whichever version runs.
+  base, mention it in a README or another document for people. A knowledge base kept inside the code
+  repository is the exception: its folder is committed with the code, with its own `.gitignore` and
+  a README telling colleagues who don't have Kent yet what the folder is and how to get set up. Run
+  `kb setup` again whenever you like: it checks the setup and fixes what is wrong, with your
+  agreement. Upgrading Kent needs no change in the project, since the hook prints the instructions
+  of whichever version runs.
 - **Work in Claude Code's auto mode.** It is required: without it, the agent asks for your approval
   all the time, and the permissions don't prevent that. The deny rules stay in place as a safety
   net.
@@ -244,11 +244,8 @@ them like any other statement.
   left out, as setup arranges: the first is outside the record by design, and the other two are
   rebuilt from the record whenever needed. `kb` never changes anything in git; your agent does the
   git work, and what it does follows from where the knowledge base is, which the session-start hook
-  tells it. `kb rules record`, under Storage, has the table: in a repository of its own the agent
-  commits on every act, and with a remote it also pulls and pushes; inside the code repository you
-  commit it with the code it belongs to. Copies that wrote on their own merge afterward, and what
-  kb cannot merge, such as two different changes to one statement's text, comes to you. A
-  knowledge base in a git submodule or subtree is not supported.
+  tells it. The table in `kb rules record`, under Storage, says what drives the commits and the
+  syncing in each case.
 - To keep everyone who writes to the knowledge base on the same version of Kent, pin it: `kb pin
   --set` writes `kent.pin` naming the version you are running, and `kb` then refuses to write under
   any other. Commit the pin; to move to a new version, set it again under that version. A pin is
