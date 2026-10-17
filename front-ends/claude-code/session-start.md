@@ -29,7 +29,7 @@ Two rules hold before any of those documents is read:
 | Proposing, drafting or attesting a statement | `kb rules attestation`, then `kb rules procedure` |
 | Recording a choice you made as an agent statement | `kb rules agent-statements`, then `kb rules procedure` |
 | Session modes, forks, snapshots, off-record material | `kb rules sessions` |
-| The layers of the record, citing, documents, changing a statement | `kb rules record` |
+| The layers of the record, citing, documents, changing a statement; storage, git, merges and conflicts | `kb rules record` |
 | Linking statements, or reading one that carries `extra_context: true` | `kb rules links` |
 | Changing the record against its rules: merging two keys for one person, scrubbing content, revising a statement just attested | `kb rules overrides` |
 | Someone not yet in the user table, or a person's name or email changing | `kb rules people` |

@@ -242,19 +242,15 @@ them like any other statement.
 - After setting up, start a new conversation, or run `/clear`, before talking with the agent about
   anything you want recorded: the hook gives the agent Kent's instructions when a conversation
   starts.
-- Keep the knowledge base in git, with `off-record/`, `index.db` and `render/` left out, as setup
-  arranges: the first is outside the record by design, and the other two are rebuilt from the
-  record whenever needed. `kb` never changes anything in git; your agent does the git work, and
-  what it does follows from where the knowledge base is, which the session-start hook tells it. In
-  a repository of its own, the agent commits on every act, and if the repository has a remote, it
-  also pulls and pushes on every act, as far as the remote can be reached: without a connection it
-  still records and commits, and syncs once back. Copies that wrote on their own merge afterward:
-  git hands the record's files to `kb` as it merges them, `kb resolve` merges any it left
-  conflicted and gives a new id to a statement that collided with one already shared, and what
-  neither can merge, such as two different changes to one statement's text, comes to you.
-  Inside the code repository, you commit it, with the code it belongs to, and it is pulled and
-  pushed with the code; the agent never commits it on its own initiative. A knowledge base in a git
-  submodule or subtree is not supported.
+- Keeping the knowledge base in git is recommended, with `off-record/`, `index.db` and `render/`
+  left out, as setup arranges: the first is outside the record by design, and the other two are
+  rebuilt from the record whenever needed. `kb` never changes anything in git; your agent does the
+  git work, and what it does follows from where the knowledge base is, which the session-start hook
+  tells it. `kb rules record`, under Storage, has the table: in a repository of its own the agent
+  commits on every act, and with a remote it also pulls and pushes; inside the code repository you
+  commit it with the code it belongs to. Copies that wrote on their own merge afterward, and what
+  kb cannot merge, such as two different changes to one statement's text, comes to you. A
+  knowledge base in a git submodule or subtree is not supported.
 - To keep everyone who writes to the knowledge base on the same version of Kent, pin it: `kb pin
   --set` writes `kent.pin` naming the version you are running, and `kb` then refuses to write under
   any other. Commit the pin; to move to a new version, set it again under that version. A pin is

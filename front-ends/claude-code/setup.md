@@ -12,7 +12,8 @@ the steps below.
 - The code project's `.claude/settings.local.json` names the knowledge base, gives the agent the
   permissions Kent needs, and runs `kb session-start` when a conversation starts. That hook gives the
   agent Kent's instructions in every conversation.
-- git ignores that file, and nothing the code project commits has changed.
+- git ignores that file, and nothing the code project commits has changed, apart from a knowledge
+  base's own folder inside it.
 - The knowledge base exists, the human has a user id, and they are in its user table.
 - `kb setup --report` finds nothing left to do.
 
@@ -60,23 +61,18 @@ so the human can answer them together:
   - *Existing:* where it is on this machine, for example one another project uses or one inside the
     code repository, or the URL of a git repository a colleague or the human has, to clone beside the
     code repository.
-- **For a new one beside the code: keep it in git, and with a remote?** Git is optional but
-  recommended: it is how a knowledge base is kept, shared and backed up. If yes: a first commit now?
-  `kb` never changes anything in git; the agent does the git work, and what it does follows from where
-  the knowledge base is, which the report states in one line:
-  - *Not in git:* nothing commits it and nothing syncs it.
-  - *Its own repository, no remote:* the agent commits it on every act; nothing syncs it.
-  - *Its own repository with a remote:* the agent commits, pulls and pushes it on every act, as far as
-    the remote can be reached. Without a connection it still acts and commits, and syncs once back.
-    Copies that wrote on their own merge afterward. Adding a remote later is all it takes.
-  - *Inside the code repository:* a person commits it, and it is pulled and pushed with the code.
-
-  If the report says it is a git submodule, tell the human that Kent does not support a knowledge base
-  in a submodule or subtree: it may work, but they are on their own with it.
+- **For a new one beside the code: keep it in git?** Git is optional but recommended: it is how a
+  knowledge base is kept, shared and backed up. If yes: a first commit now? To share it later, add a
+  remote; nothing else changes. `kb` never changes anything in git: the agent does the git work, and
+  what it does follows from where the knowledge base is. The report states that in one line, and the
+  table in `kb rules record` (Storage) says what each case asks.
 - **For one inside the code repository: may the agent offer to commit?** The agent never commits it on
   its own initiative. By default it leaves committing to the human, who commits a change to the
   knowledge base together with the code that reflects it; or it can offer to commit after every
-  attestation. This is a per-person setting, `KENT_OFFER_COMMIT`, below.
+  attestation. This is a per-person setting, `KENT_OFFER_COMMIT`: `never`, the default, or
+  `after-attestation`.
+- **A git submodule,** if the report says the knowledge base is in one: tell the human that Kent does not
+  support a knowledge base in a submodule or subtree. It may work, but they are on their own with it.
 - **For a new one: pin it?** `kb pin --set` writes `kent.pin`, naming the version of Kent running now,
   and from then on `kb` refuses to write under any other version. It keeps everyone who writes here on
   the same version. It is optional, alone or in a team.
@@ -95,8 +91,7 @@ so the human can answer them together:
     anything else, for a project whose main work is the knowledge base.
   - `KENT_STATEMENTS_PER_TURN`: how many statements the agent presents for agreement per turn. `1` (the
     default) presents one at a time, which tends to get each one real attention.
-  - `KENT_OFFER_COMMIT`, for a knowledge base inside the code repository only: `never` (the default)
-    leaves committing to the human; `after-attestation` has the agent offer to commit after each one.
+  - `KENT_OFFER_COMMIT`, for a knowledge base inside the code repository only: the commit choice above.
 - **An old block in CLAUDE.md,** if the report found one: may you remove it? The hook now gives the agent
   those lines; carry its settings over into the ones above.
 
@@ -110,11 +105,13 @@ anything turns out different from what you described.
 1. **The knowledge base.**
    - New: `kb setup --create <folder>` makes the folder with its `attested/` and `evidence/` folders,
      which is how `kb` finds a knowledge base. Run `kb pin --set` there if they asked for a pin.
-   - If they chose git, or the folder is inside the code repository, which is always in git, set the
-     folder up for git yourself: `git init` in it, unless the report says a repository already holds it;
-     an empty `.gitkeep` file in `attested/` and in `evidence/`, since git keeps no empty folder and a
-     clone must still be a knowledge base; and, in the knowledge base's own folder even when it is inside
-     the code repository, a `.gitignore` holding:
+   - For a knowledge base beside the code that they chose to keep in git: `git init` in its folder,
+     unless the report says a repository already holds it. **Never run `git init` for a knowledge base
+     inside the code repository**: the code repository already holds it, and a repository inside it
+     would split the knowledge base off from the code.
+   - For either, if it is in git, set its folder up yourself: an empty `.gitkeep` file in `attested/` and
+     in `evidence/`, since git keeps no empty folder and a clone must still be a knowledge base; and, in
+     the knowledge base's own folder even when it is inside the code repository, a `.gitignore` holding:
 
      ```
      # off-record material: outside the record by design, never committed
@@ -138,14 +135,20 @@ anything turns out different from what you described.
      ```
 
      Then register kb's merge driver in this clone, which `kb` never does itself, since it does not
-     change git's config. The report gives the `git -C <folder> config` line. Every clone needs
-     them; a clone without them merges statement files as plain text, and `kb resolve` handles the
+     change git's config:
+
+     ```
+     git -C <folder> config merge.kent.driver "kb merge-driver %O %A %B %P %S %X %Y"
+     ```
+
+     Set nothing else under `merge.kent`: git refuses to merge with a driver that has a name and no
+     command. Inside the code repository this registers it in the code repository's config. Every clone
+     needs it; a clone without it merges statement files as plain text, and `kb resolve` handles the
      conflicts that leaves.
 
    - Inside the code repository, also a `README.md` in the knowledge base's folder, for colleagues who
      check out the code without Kent. Fill in `<folder>` with the folder's path from the top of the
-     code repository, and, if the human says where colleagues get Kent, put that in place of the
-     sentence in brackets:
+     code repository:
 
      ```
      # Knowledge base
@@ -156,7 +159,8 @@ anything turns out different from what you described.
      - `attested/` holds the statements people confirmed, one file each: the place to start reading.
      - `agent/` holds working choices agents recorded, and `evidence/` the conversations they rest on.
 
-     The files are plain text, but they are written only by Kent's `kb` command, never by hand.
+     The files are plain text, but they are written only by Kent's `kb` command, never by hand. If git
+     reports a conflict in this folder, leave it for someone with Kent to run `kb resolve`.
 
      To ask the knowledge base questions, or add to it, from your own conversations with Claude Code:
 
@@ -208,8 +212,8 @@ anything turns out different from what you described.
 
 Run `kb setup --report` and confirm **Left to do** is empty; deal with what it lists, asking as before.
 Then run `kb session-start` and confirm it prints Kent's instructions, the knowledge base's folder and
-what drives its git work: that is what the agent will see at the start of each conversation. Run `kb check` to confirm the
-knowledge base reads cleanly.
+what drives its git work: that is what the agent will see at the start of each conversation. Run
+`kb check` to confirm the knowledge base reads cleanly.
 
 ## 4. Hand over
 
@@ -229,10 +233,8 @@ Tell the human:
   then clone it and run `kb setup` in their own copy of the code project. One inside the code repository
   comes with the code: colleagues run `kb setup`, and its README tells those who don't have Kent yet.
 - In their own terminal, `kb serve` in the knowledge base's folder renders it as pages to read.
-- `kb` never changes anything in git. The agent does the git work in each conversation, as the
-  knowledge base's place calls for: in its own repository it commits on every act, and with a remote
-  it also pulls and pushes; inside the code repository it leaves commits to them, or offers, as
-  `KENT_OFFER_COMMIT` says.
+- The agent does the git work in each conversation, as the session-start text says for this knowledge
+  base; `kb rules record` has the table of cases.
 - After upgrading Kent, nothing in the project needs to change: the hook prints the instructions of
   whichever version runs. Running `kb setup` again at any time checks the setup and repairs it.
 
