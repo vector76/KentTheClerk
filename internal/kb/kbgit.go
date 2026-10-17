@@ -30,8 +30,8 @@ type gitPlace struct {
 	kind      gitCase
 	top       string // the folder holding the .git: the knowledge base's own, or the code repository's
 	remote    string // for remoteRepo, the remote's name: origin if there is one, else the first
-	submodule bool   // its .git is a file pointing into another repository's modules (S-SG81)
-	driver    bool   // the repository's config registers kb's merge driver (S-NNKA)
+	submodule bool   // the repository is a git submodule checkout (S-SG81)
+	broken    string // a .git that is not a repository, as an empty folder or a stale gitdir: where it is
 }
 
 // gitTop is the folder holding the .git of the repository the folder dir is in, or "" when it is in none.
@@ -48,14 +48,14 @@ func gitTop(dir string) string {
 	}
 }
 
-var (
-	remoteRE = regexp.MustCompile(`(?m)^\s*\[remote\s+"([^"]+)"\s*\]`)
-	driverRE = regexp.MustCompile(`(?m)^\s*\[merge\s+"` + mergeDriverName + `"\s*\]`)
-)
+// remoteRE is a remote's section in git's config, in either form git reads, [remote "x"] and the older
+// [remote.x], in any case. kb reads the config file itself (S-MBME), so a remote defined in a file the
+// config includes is not seen.
+var remoteRE = regexp.MustCompile(`(?mi)^\s*\[remote(?:\s+"([^"]+)"|\.([^\]\s]+))\s*\]`)
 
-// gitDirOf is the repository folder of the .git in top, and whether that .git is a submodule's. A .git that
-// is a file names the folder ("gitdir: ..."): a worktree's, or a submodule's, inside another repository's
-// modules.
+// gitDirOf is the repository folder of the .git in top, and whether it is a submodule's. A .git that is a
+// file names the folder ("gitdir: ..."): a worktree's, which holds a commondir file, or a submodule's,
+// inside another repository's modules folder.
 func gitDirOf(top string) (gitDir string, submodule bool) {
 	dotgit := filepath.Join(top, ".git")
 	gitDir = dotgit
@@ -66,8 +66,18 @@ func gitDirOf(top string) (gitDir string, submodule bool) {
 			if !filepath.IsAbs(gitDir) {
 				gitDir = filepath.Join(top, gitDir)
 			}
-			slashed := "/" + filepath.ToSlash(filepath.Clean(gitDir)) + "/"
-			submodule = strings.Contains(slashed, "/modules/") && !strings.Contains(slashed, "/worktrees/")
+			if _, err := os.Stat(filepath.Join(gitDir, "commondir")); err != nil {
+				segs := strings.Split(filepath.ToSlash(filepath.Clean(gitDir)), "/")
+				lastIndex := func(name string) int {
+					for i := len(segs) - 1; i >= 0; i-- {
+						if segs[i] == name {
+							return i
+						}
+					}
+					return -1
+				}
+				submodule = lastIndex("modules") > lastIndex("worktrees")
+			}
 		}
 	}
 	return gitDir, submodule
@@ -86,23 +96,28 @@ func gitConfigText(gitDir string) string {
 	return string(b)
 }
 
-// readGitPlace reads the knowledge base at root's situation in git from files, running no git.
+// readGitPlace reads the knowledge base at root's situation in git from files, running no git. A .git
+// whose folder has no HEAD is not a repository, and the knowledge base is read as in no git repository,
+// with broken saying where that .git is.
 func readGitPlace(root string) gitPlace {
+	root = filepath.Clean(root)
 	top := gitTop(root)
 	if top == "" {
 		return gitPlace{kind: notInGit}
 	}
 	gitDir, submodule := gitDirOf(top)
-	config := gitConfigText(gitDir)
-	p := gitPlace{kind: localRepo, top: top, driver: driverRE.MatchString(config)}
-	if !samePath(top, root) {
+	if _, err := os.Stat(filepath.Join(gitDir, "HEAD")); err != nil {
+		return gitPlace{kind: notInGit, broken: filepath.Join(top, ".git")}
+	}
+	p := gitPlace{kind: localRepo, top: top, submodule: submodule}
+	if top != root {
 		p.kind = inCodeRepo
 		return p
 	}
-	p.submodule = submodule
-	for _, m := range remoteRE.FindAllStringSubmatch(config, -1) {
-		if p.remote == "" || m[1] == "origin" {
-			p.remote = m[1]
+	for _, m := range remoteRE.FindAllStringSubmatch(gitConfigText(gitDir), -1) {
+		name := m[1] + m[2]
+		if p.remote == "" || name == "origin" {
+			p.remote = name
 		}
 	}
 	if p.remote != "" {
@@ -114,31 +129,62 @@ func readGitPlace(root string) gitPlace {
 // ownRepo is whether the knowledge base is a repository of its own, which the agent commits.
 func (p gitPlace) ownRepo() bool { return p.kind == localRepo || p.kind == remoteRepo }
 
-// summary says the case and what drives the commits and the pulls and pushes (S-7BWA), for setup's report.
-func (p gitPlace) summary() string {
-	switch p.kind {
-	case localRepo:
-		return "Its own git repository, with no remote: the agent commits it on every act, and nothing syncs it."
-	case remoteRepo:
-		return "Its own git repository, with the remote " + p.remote + ": the agent commits, pulls and pushes it on every act."
-	case inCodeRepo:
-		return "Inside the code repository at " + p.top + ": a person commits it, and it is pulled and pushed with the code."
-	}
-	return "In no git repository: nothing commits it or syncs it."
+// driverRegistered is whether git, in the repository the knowledge base at root is in, runs kb's merge
+// driver for the record's files: git's own reading of its config, every scope included (S-JNZA).
+func driverRegistered(root string) bool {
+	d, st := git(root, "config", "--get", "merge."+mergeDriverName+".driver")
+	return st == 0 && d == mergeDriverCommand
 }
 
+// submoduleWarning is what kb says about a knowledge base in a git submodule checkout (S-SG81).
+const submoduleWarning = "the knowledge base is in a git submodule, which Kent does not support: whoever keeps it " +
+	"that way is on their own with it"
+
+// gitCaseText is what kb says about each case: the setup report's line, and the session-start text's.
+var gitCaseText = map[gitCase]struct{ summary, line string }{
+	notInGit: {"In no git repository: nothing commits it or syncs it.",
+		"Git: the knowledge base is in no git repository, so nothing commits it and nothing syncs it."},
+	localRepo: {"Its own git repository, with no remote: the agent commits it on every act, and nothing syncs it.",
+		"Git: the knowledge base is its own git repository, with no remote. You commit it: when an act is done, " +
+			"commit what it wrote. There is nothing to pull or push."},
+	remoteRepo: {"Its own git repository, with the remote %[1]s: the agent commits, pulls and pushes it on every act.",
+		"Git: the knowledge base is its own git repository, with the remote %[1]s. You commit, pull and push it on " +
+			"every act: pull before the act, and commit what it wrote and push once it is done. When the remote " +
+			"cannot be reached, act and commit anyway, and pull and push once it can be."},
+	inCodeRepo: {"Inside the code repository at %[2]s: a person commits it, and it is pulled and pushed with the code.",
+		"Git: the knowledge base sits inside the code repository at %[2]s, so a person commits it, and it is pulled " +
+			"and pushed with the code. Never commit it on your own initiative."},
+}
+
+// summary says the case and what drives the commits and the pulls and pushes (S-7BWA), for setup's report.
+func (p gitPlace) summary() string { return sprintfCase(gitCaseText[p.kind].summary, p) }
+
+func sprintfCase(format string, p gitPlace) string {
+	return strings.NewReplacer("%[1]s", p.remote, "%[2]s", p.top).Replace(format)
+}
+
+// shellSafeRE is a path a shell takes as one word as it stands.
+var shellSafeRE = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,~-]+$`)
+
 // gitPrefix is how the agent runs git on the knowledge base at root, and how the permissions for one in its
-// own repository name it: git -C and the folder with forward slashes, quoted if it holds a space.
+// own repository name it: git -C and the folder with forward slashes, quoted when a shell would split it
+// or read anything in it: in single quotes, which neither bash nor PowerShell reads inside, or in double
+// quotes when it holds a single quote.
 func gitPrefix(root string) string {
 	p := filepath.ToSlash(root)
-	if strings.ContainsAny(p, " \t") {
+	switch {
+	case shellSafeRE.MatchString(p):
+	case !strings.Contains(p, "'"):
+		p = "'" + p + "'"
+	default:
 		p = `"` + p + `"`
 	}
 	return "git -C " + p
 }
 
 // offerCommitSetting describes KENT_OFFER_COMMIT: for a knowledge base inside a code repository, whether the
-// agent offers to commit after each attestation or leaves commits to the human (S-DQES).
+// agent offers to commit after each attestation or leaves commits to the human (S-DQES). A value kb does
+// not understand is not ok, and the default's text is given.
 func offerCommitSetting(v string) (text string, ok bool) {
 	switch strings.TrimSpace(v) {
 	case "", "never":
@@ -147,44 +193,57 @@ func offerCommitSetting(v string) (text string, ok bool) {
 	case "after-attestation":
 		return "After each attestation, offer to commit what it wrote.", true
 	}
-	return "", false
+	text, _ = offerCommitSetting("")
+	return text, false
+}
+
+// offerCommitProblem is what is wrong with KENT_OFFER_COMMIT's value v, or "".
+func offerCommitProblem(v string) string {
+	if _, ok := offerCommitSetting(v); ok {
+		return ""
+	}
+	return offerCommitEnv + " is \"" + v + "\", which kb does not understand (never or after-attestation); " +
+		"leaving commits to the human"
 }
 
 // gitLines tell the agent which case applies to the knowledge base at root and what it asks of the agent
-// (S-7BWA, S-8J77), and any problem with it.
-func gitLines(root string, env func(string) string) (lines []string, problem string) {
+// (S-7BWA, S-8J77), and any problems with it.
+func gitLines(root string, env func(string) string) (lines, problems []string) {
 	p := readGitPlace(root)
-	run := " Run git as `" + gitPrefix(root) + " …`."
-	expect := "Expect any pull to bring changes, even where nobody else writes, since the same person may write " +
-		"from another machine, and be ready for a pull that merges or stops on a conflict. kb merges the record's " +
-		"files as git merges them. After every merge, rebase or pull that brought changes, run `kb resolve`: it " +
-		"merges what git left conflicted in the record and repairs ids two copies gave to different statements. " +
-		"Never merge the record's files by hand. If it cannot resolve something, stop and tell the human. Then " +
-		"run `kb check`."
-	switch p.kind {
-	case notInGit:
-		return []string{"Git: the knowledge base is in no git repository, so nothing commits it and nothing syncs it."}, ""
-	case localRepo:
-		lines = []string{"Git: the knowledge base is its own git repository, with no remote. You commit it: when an act " +
-			"is done, commit what it wrote. There is nothing to pull or push." + run}
-	case remoteRepo:
-		lines = []string{"Git: the knowledge base is its own git repository, with the remote " + p.remote + ". You commit, " +
-			"pull and push it on every act: pull before the act, and commit what it wrote and push once it is done. " +
-			"When the remote cannot be reached, act and commit anyway, and pull and push once it can be." + run, expect}
-	case inCodeRepo:
+	line := sprintfCase(gitCaseText[p.kind].line, p)
+	if p.ownRepo() {
+		line += " Run git as `" + gitPrefix(root) + " …`."
+	}
+	if p.kind == inCodeRepo {
 		offer, _ := offerCommitSetting(env(offerCommitEnv))
-		lines = []string{"Git: the knowledge base sits inside the code repository at " + p.top + ", so a person commits " +
-			"it, and it is pulled and pushed with the code. Never commit it on your own initiative. " + offer, expect}
+		line += " " + offer
+		if pr := offerCommitProblem(env(offerCommitEnv)); pr != "" {
+			problems = append(problems, pr)
+		}
+	}
+	lines = []string{line}
+	if p.kind != notInGit {
+		lines = append(lines, "Expect any pull to bring changes, even where nobody else writes, since the same person "+
+			"may write from another machine, and be ready for a pull that merges or stops on a conflict. kb merges "+
+			"the record's files as git merges them. After every merge, rebase or pull that brought changes, run "+
+			"`kb resolve`: it merges what git left conflicted in the record and repairs ids copies gave to different "+
+			"statements. Never merge the record's files by hand. If it cannot resolve something, stop and tell the "+
+			"human. Then run `kb check`. Files kb resolve writes are commits like an act's: "+
+			map[bool]string{true: "commit them, and push them where you push.",
+				false: "leave them to the person, as the rest of the knowledge base."}[p.ownRepo()])
+		if !driverRegistered(root) {
+			problems = append(problems, "kb's merge driver is not registered in this clone, so git merges the record's "+
+				"files as plain text and leaves more conflicts for `kb resolve`")
+		}
 	}
 	switch {
+	case p.broken != "":
+		problems = append(problems, p.broken+" is not a git repository (it has no HEAD); it is read as in no git "+
+			"repository until it is repaired or removed")
 	case p.submodule:
-		problem = "the knowledge base is a git submodule, which Kent does not support: whoever keeps it that way is " +
-			"on their own with it"
-	case (p.kind == remoteRepo || p.kind == inCodeRepo) && !p.driver:
-		problem = "kb's merge driver is not registered in this clone, so git merges the record's files as plain text " +
-			"and leaves more conflicts for `kb resolve`"
+		problems = append(problems, submoduleWarning)
 	}
-	return lines, problem
+	return lines, problems
 }
 
 // ---------------------------------------------------------------- a knowledge base inside a code repository

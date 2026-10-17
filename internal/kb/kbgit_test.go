@@ -7,79 +7,177 @@ import (
 	"testing"
 )
 
+// fakeRepo makes dir a git repository as kb reads one from files: a .git folder with HEAD and the config.
+func fakeRepo(t *testing.T, dir, config string) {
+	t.Helper()
+	os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, ".git", "config"), []byte(config), 0o644)
+}
+
+func joined(xs []string) string { return strings.Join(xs, "\n") }
+
 // TestGitLines checks that the case is read from the knowledge base's situation (S-MBME) and that the
 // session-start text says what drives its commits and its pulls and pushes (S-7BWA, S-8J77, S-DQES).
 func TestGitLines(t *testing.T) {
 	none := func(string) string { return "" }
 	root := newTestKB(t)
-	lines, problem := gitLines(root, none)
-	if problem != "" || len(lines) != 1 || !strings.Contains(lines[0], "in no git repository") {
-		t.Errorf("not in git: %q %q", lines, problem)
+	lines, problems := gitLines(root, none)
+	if len(problems) != 0 || len(lines) != 1 || !strings.Contains(lines[0], "in no git repository") {
+		t.Errorf("not in git: %q %q", lines, problems)
 	}
-	os.MkdirAll(filepath.Join(root, ".git"), 0o755)
-	os.WriteFile(filepath.Join(root, ".git", "config"), []byte("[core]\n\tbare = false\n"), 0o644)
+	fakeRepo(t, root, "[core]\n\tbare = false\n")
 	lines, _ = gitLines(root, none)
 	if p := readGitPlace(root); p.kind != localRepo || !strings.Contains(lines[0], "no remote") ||
 		!strings.Contains(lines[0], gitPrefix(root)) {
 		t.Errorf("local repository: %+v %q", p, lines)
 	}
-	os.WriteFile(filepath.Join(root, ".git", "config"),
-		[]byte("[remote \"backup\"]\n\turl = x\n[remote \"origin\"]\n\turl = y\n"), 0o644)
+	fakeRepo(t, root, "[remote \"backup\"]\n\turl = x\n[remote \"origin\"]\n\turl = y\n")
 	lines, _ = gitLines(root, none)
 	if p := readGitPlace(root); p.kind != remoteRepo || p.remote != "origin" || !strings.Contains(lines[0], "on every act") ||
-		!strings.Contains(lines[0], "cannot be reached") || len(lines) != 2 || !strings.Contains(lines[1], "Expect any pull") {
+		!strings.Contains(lines[0], "cannot be reached") || len(lines) != 2 || !strings.Contains(lines[1], "Expect any pull") ||
+		!strings.Contains(lines[1], "commit them, and push") {
 		t.Errorf("repository with a remote: %+v %q", p, lines)
 	}
 
 	code := t.TempDir()
-	os.Mkdir(filepath.Join(code, ".git"), 0o755)
+	fakeRepo(t, code, "")
 	inner := filepath.Join(code, "kent")
 	for _, d := range []string{"attested", "evidence"} {
 		os.MkdirAll(filepath.Join(inner, d), 0o755)
 	}
 	lines, _ = gitLines(inner, none)
-	if !strings.Contains(lines[0], "inside the code repository at "+code) || !strings.Contains(lines[0], "Leave committing") {
+	if !strings.Contains(lines[0], "inside the code repository at "+code) || !strings.Contains(lines[0], "Leave committing") ||
+		!strings.Contains(lines[1], "leave them to the person") {
 		t.Errorf("inside a code repository: %q", lines)
 	}
-	lines, _ = gitLines(inner, func(k string) string {
-		if k == offerCommitEnv {
-			return "after-attestation"
+	offer := func(v string) func(string) string {
+		return func(k string) string {
+			if k == offerCommitEnv {
+				return v
+			}
+			return ""
 		}
-		return ""
-	})
-	if !strings.Contains(lines[0], "offer to commit") {
+	}
+	if lines, _ = gitLines(inner, offer("after-attestation")); !strings.Contains(lines[0], "offer to commit") {
 		t.Errorf("inside a code repository, offering commits: %q", lines)
+	}
+	// a value kb does not understand: the default's sentence, and the problem
+	lines, problems = gitLines(inner, offer("sometimes"))
+	if !strings.Contains(lines[0], "Leave committing") || !strings.Contains(joined(problems), offerCommitEnv) {
+		t.Errorf("a bad commit setting: %q %q", lines, problems)
+	}
+	// it is not checked for a knowledge base of its own
+	if _, problems = gitLines(root, offer("sometimes")); strings.Contains(joined(problems), offerCommitEnv) {
+		t.Errorf("the commit setting was checked outside a code repository: %q", problems)
 	}
 	if readGitPlace(inner).ownRepo() {
 		t.Errorf("a knowledge base inside a code repository counts as its own repository")
 	}
 }
 
+// TestGitRemoteForms: a remote is seen in either section form, in any case.
+func TestGitRemoteForms(t *testing.T) {
+	for _, config := range []string{"[Remote \"origin\"]\n", "[remote.origin]\n", "[REMOTE \"up\"]\n"} {
+		root := t.TempDir()
+		fakeRepo(t, root, config)
+		if p := readGitPlace(root); p.kind != remoteRepo {
+			t.Errorf("%q: %+v", config, p)
+		}
+	}
+}
+
+// TestGitBroken: a .git that is not a repository, an empty folder or one naming a folder that is gone, is
+// read as in no git repository, and reported.
+func TestGitBroken(t *testing.T) {
+	root := newTestKB(t)
+	os.Mkdir(filepath.Join(root, ".git"), 0o755)
+	p := readGitPlace(root)
+	_, problems := gitLines(root, func(string) string { return "" })
+	if p.kind != notInGit || p.broken == "" || !strings.Contains(joined(problems), "not a git repository") {
+		t.Errorf("empty .git: %+v %q", p, problems)
+	}
+	var r report
+	kbReport(&r, root)
+	if todo := joined(r.todos()); !strings.Contains(todo, "not a git repository") || strings.Contains(todo, "merge driver") {
+		t.Errorf("setup contradicts itself on a broken .git:\n%s", todo)
+	}
+	os.Remove(filepath.Join(root, ".git"))
+	os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: "+filepath.Join(root, "gone")+"\n"), 0o644)
+	if p := readGitPlace(root); p.kind != notInGit || p.broken == "" {
+		t.Errorf("stale gitdir: %+v", p)
+	}
+}
+
 // TestGitPlaceFromGitFile checks a .git that is a file: a worktree reads its config from the common folder,
-// and a submodule is flagged (S-SG81).
+// even under a folder named modules, and a submodule is flagged, also for a knowledge base in a folder of
+// its checkout (S-SG81).
 func TestGitPlaceFromGitFile(t *testing.T) {
-	parent := t.TempDir()
+	parent := filepath.Join(t.TempDir(), "modules", "work")
 	main := filepath.Join(parent, "main", ".git")
 	os.MkdirAll(filepath.Join(main, "worktrees", "wt"), 0o755)
+	os.WriteFile(filepath.Join(main, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644)
 	os.WriteFile(filepath.Join(main, "config"), []byte("[remote \"origin\"]\n"), 0o644)
+	os.WriteFile(filepath.Join(main, "worktrees", "wt", "HEAD"), []byte("ref: refs/heads/wt\n"), 0o644)
 	os.WriteFile(filepath.Join(main, "worktrees", "wt", "commondir"), []byte("../..\n"), 0o644)
 	wt := filepath.Join(parent, "wt")
 	os.MkdirAll(wt, 0o755)
 	os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+filepath.Join(main, "worktrees", "wt")+"\n"), 0o644)
 	if p := readGitPlace(wt); p.kind != remoteRepo || p.submodule {
-		t.Errorf("worktree: %+v", p)
+		t.Errorf("worktree under a folder named modules: %+v", p)
 	}
 
 	sub := filepath.Join(parent, "code", "kent")
 	os.MkdirAll(filepath.Join(parent, "code", ".git", "modules", "kent"), 0o755)
+	os.WriteFile(filepath.Join(parent, "code", ".git", "modules", "kent", "HEAD"), []byte("ref: refs/heads/main\n"), 0o644)
 	os.MkdirAll(sub, 0o755)
 	os.WriteFile(filepath.Join(sub, ".git"), []byte("gitdir: ../.git/modules/kent\n"), 0o644)
 	p := readGitPlace(sub)
 	if !p.submodule || !p.ownRepo() {
 		t.Errorf("submodule: %+v", p)
 	}
-	if _, problem := gitLines(sub, func(string) string { return "" }); !strings.Contains(problem, "submodule") {
-		t.Errorf("submodule not reported: %q", problem)
+	if _, problems := gitLines(sub, func(string) string { return "" }); !strings.Contains(joined(problems), "submodule") {
+		t.Errorf("submodule not reported: %q", problems)
+	}
+	inSub := filepath.Join(sub, "docs", "kb")
+	os.MkdirAll(inSub, 0o755)
+	if p := readGitPlace(inSub); p.kind != inCodeRepo || !p.submodule {
+		t.Errorf("a knowledge base in a folder of a submodule checkout: %+v", p)
+	}
+}
+
+// TestGitPrefixQuoting: a folder a shell would split, or read anything in, is quoted.
+func TestGitPrefixQuoting(t *testing.T) {
+	cases := map[string]string{
+		"/work/kb":             "git -C /work/kb",
+		"/my work/kb":          "git -C '/my work/kb'",
+		"/work/$HOME/kb":       "git -C '/work/$HOME/kb'",
+		"/work/a`b/kb":         "git -C '/work/a`b/kb'",
+		"/work/o'brien/kb":     `git -C "/work/o'brien/kb"`,
+		"/work/a&b;c/kb":       "git -C '/work/a&b;c/kb'",
+		"C:/Users/x/kb-1.2_3+": "git -C C:/Users/x/kb-1.2_3+",
+	}
+	for in, want := range cases {
+		if got := gitPrefix(in); got != want {
+			t.Errorf("gitPrefix(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestGitPrefixAgrees: setup and session-start find the knowledge base the same way, so the allow rules
+// setup writes and the git prefix the agent is told to use are the same.
+func TestGitPrefixAgrees(t *testing.T) {
+	kb := newTestKB(t)
+	link := filepath.Join(t.TempDir(), "link")
+	target := kb
+	if err := os.Symlink(kb, link); err == nil {
+		target = link
+	}
+	t.Setenv(kbEnv, target)
+	fromSetup, _ := chooseKB("", settingsFile{env: map[string]string{}})
+	fromSession, _ := findKBRoot()
+	if gitPrefix(fromSetup) != gitPrefix(fromSession) {
+		t.Errorf("setup %q, session-start %q", gitPrefix(fromSetup), gitPrefix(fromSession))
 	}
 }
 
@@ -96,7 +194,7 @@ func TestOwnRepoAllowsGit(t *testing.T) {
 	if has() {
 		t.Errorf("a knowledge base in no git repository gets git permissions")
 	}
-	os.Mkdir(filepath.Join(kb, ".git"), 0o755)
+	fakeRepo(t, kb, "")
 	if !has() {
 		t.Errorf("a knowledge base in its own repository gets no git permissions: %q", kentAllow(kb))
 	}

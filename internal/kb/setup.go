@@ -17,6 +17,7 @@ import (
 
 	kent "kenttheclerk"
 	"kenttheclerk/internal/argparse"
+	"kenttheclerk/internal/dyn"
 	"kenttheclerk/internal/pin"
 )
 
@@ -73,10 +74,6 @@ func settingLines(env func(string) string) (lines, problems []string) {
 			"presenting one at a time", perTurnEnv, env(perTurnEnv)))
 		per, _ = perTurnSetting("")
 	}
-	if _, ok := offerCommitSetting(env(offerCommitEnv)); !ok {
-		problems = append(problems, fmt.Sprintf("%s is %q, which kb does not understand (never or after-attestation); "+
-			"leaving commits to the human", offerCommitEnv, env(offerCommitEnv)))
-	}
 	lines = []string{
 		"Ask about the session mode: " + ask + ".",
 		"Statements to present per turn: " + per + ".",
@@ -130,13 +127,11 @@ func runSessionStart(ns argparse.Namespace) (code int) {
 	} else {
 		println("- Not pinned: any version of Kent writes here.")
 	}
-	gl, problem := gitLines(root, os.Getenv)
+	gl, gitProblems := gitLines(root, os.Getenv)
 	for _, l := range gl {
 		println("- " + l)
 	}
-	if problem != "" {
-		problems = append(problems, problem)
-	}
+	problems = append(problems, gitProblems...)
 	people, problem := describeUsers(root)
 	for _, l := range people {
 		if strings.HasPrefix(l, "  ") {
@@ -243,12 +238,12 @@ func kentSettingsJSON(kb string, extraEnv [][2]string) string {
 		"}"
 }
 
-// git runs git in dir and returns its trimmed output and exit status (-1 if git could not be run).
 // unionFiles are the files git merges by keeping both copies' lines (S-8MW2): the two logs, whose entries
 // are independent lines read in the order made, and the user table, whose rows are order-free. Where both
 // copies changed the same row, both lines stay, and kb check reports the key or email twice.
 var unionFiles = []string{overrideLogName, usersLogName, usersName}
 
+// git runs git in dir and returns its trimmed output and exit status (-1 if git could not be run).
 func git(dir string, args ...string) (string, int) {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	out, err := cmd.Output()
@@ -438,13 +433,15 @@ func (r *report) todos() []string {
 // chooseKB is the knowledge base setup is about: --kb, else KENT_KB, else the one the project's settings
 // name (they apply to a running conversation's commands, but setup may be checking a file just written).
 func chooseKB(arg string, sf settingsFile) (path, how string) {
+	// resolved as kb finds the knowledge base when it runs, so that the paths setup writes into the
+	// permissions are the ones the session-start text gives
 	switch {
 	case arg != "":
-		return absPath(arg), "from --kb"
+		return dyn.Resolve(arg), "from --kb"
 	case os.Getenv(kbEnv) != "":
-		return absPath(os.Getenv(kbEnv)), "from " + kbEnv
+		return dyn.Resolve(os.Getenv(kbEnv)), "from " + kbEnv
 	case sf.env[kbEnv] != "":
-		return absPath(sf.env[kbEnv]), "from " + kbEnv + " in " + settingsRel
+		return dyn.Resolve(sf.env[kbEnv]), "from " + kbEnv + " in " + settingsRel
 	}
 	return "", ""
 }
@@ -558,14 +555,18 @@ func buildReport(project, kbArg string) report {
 			where = top
 		}
 		found := findKBsIn(where, 4)
+		holder := "code project's folder"
+		if inGit {
+			holder = "code repository"
+		}
 		for _, f := range found {
-			r.item("Inside the code repository, %s is shaped like a knowledge base: %d attested statement(s), "+
-				"%d evidence file(s).", f, countFiles(filepath.Join(f, "attested"), "S-*.md"),
+			r.item("Inside the %s, %s is shaped like a knowledge base: %d attested statement(s), "+
+				"%d evidence file(s).", holder, f, countFiles(filepath.Join(f, "attested"), "S-*.md"),
 				countFiles(filepath.Join(f, "evidence"), "*.jsonl"))
 		}
 		if len(found) > 0 {
-			r.need(1, "The code repository already holds a knowledge base (%s): ask the human whether this project "+
-				"uses it, which the runbook recommends; then run kb setup --report --kb <folder>.", strings.Join(found, ", "))
+			r.need(1, "The %s already holds a knowledge base (%s): ask the human whether this project "+
+				"uses it, which the runbook recommends; then run kb setup --report --kb <folder>.", holder, strings.Join(found, ", "))
 		} else {
 			r.need(1, "Ask the human whether this project uses a new knowledge base or an existing one, and where it "+
 				"is or should go; then run kb setup --report --kb <folder>.")
@@ -573,8 +574,12 @@ func buildReport(project, kbArg string) report {
 	} else {
 		r.item("%s (%s).", kb, kbHow)
 		kbReport(&r, kb)
+		// the commit setting matters only for a knowledge base inside a code repository (S-DQES)
+		if pr := offerCommitProblem(sf.env[offerCommitEnv]); pr != "" && readGitPlace(kb).kind == inCodeRepo {
+			r.need(9, "In %s, %s.", settingsRel, pr)
+		}
 		if sf.exists && sf.err == nil {
-			if v := sf.env[kbEnv]; v != "" && !samePath(absPath(v), kb) {
+			if v := sf.env[kbEnv]; v != "" && !samePath(dyn.Resolve(v), kb) {
 				r.need(1, "%s names %s, not %s. A project refers to at most one knowledge base; "+
 					"ask the human which one this project uses.", settingsRel, v, kb)
 			}
@@ -591,12 +596,12 @@ func buildReport(project, kbArg string) report {
 		}
 		var missing []string
 		if sf.err == nil {
-			if !samePath(absPath(sf.env[kbEnv]), kb) || sf.env[kbEnv] == "" {
+			if !samePath(dyn.Resolve(sf.env[kbEnv]), kb) || sf.env[kbEnv] == "" {
 				missing = append(missing, kbEnv)
 			}
 			found := false
 			for _, d := range sf.dirs {
-				if samePath(absPath(d), kb) {
+				if samePath(dyn.Resolve(d), kb) {
 					found = true
 				}
 			}
@@ -661,16 +666,18 @@ func kbReport(r *report, kb string) {
 	place := readGitPlace(kb)
 	r.item("%s", place.summary())
 	if place.submodule {
-		r.item("Its .git points into another repository's modules: it is a git submodule, which Kent does not " +
-			"support. Tell the human that whoever keeps it that way is on their own with it.")
+		r.item("Tell the human: %s.", submoduleWarning)
 	}
-
-	_, status := git(kb, "rev-parse", "--show-toplevel")
+	_, gitRuns := git(kb, "--version")
 	switch {
-	case status == -1:
-		r.item("git could not be run, so its repository was not checked.")
-	case status != 0:
+	case place.broken != "":
+		r.item("%s is not a git repository: it has no HEAD.", place.broken)
+		r.need(1, "%s is not a git repository, though it is named like one; ask the human whether to repair it "+
+			"or remove it.", place.broken)
+	case place.kind == notInGit:
 		r.item("Git is recommended, not required; if the human wants it, the runbook says how.")
+	case gitRuns == -1:
+		r.item("git could not be run, so its repository was not checked.")
 	default:
 		if place.kind == inCodeRepo {
 			if !hasHintFile(kb) {
@@ -706,7 +713,7 @@ func kbReport(r *report, kb string) {
 		}
 		if len(plain) > 0 {
 			r.item("git does not merge %s by keeping both copies' lines.", strings.Join(plain, ", "))
-			r.need(3, "git must keep both copies' new lines when it merges %s, rather than report a conflict (S-8MW2): "+
+			r.need(3, "git must keep both copies' new lines when it merges %s, rather than report a conflict: "+
 				"add them to the knowledge base's .gitattributes with merge=union, as the runbook says.", strings.Join(plain, ", "))
 		} else {
 			r.item("git merges %s by keeping both copies' lines.", strings.Join(unionFiles, ", "))
@@ -724,7 +731,7 @@ func kbReport(r *report, kb string) {
 		} else {
 			r.item("git sends the statement files to kb's merge driver.")
 		}
-		if d, st := git(kb, "config", "--get", "merge."+mergeDriverName+".driver"); st == 0 && d == mergeDriverCommand {
+		if driverRegistered(kb) {
 			r.item("kb's merge driver is registered in this clone.")
 		} else {
 			r.item("kb's merge driver is not registered in this clone.")
