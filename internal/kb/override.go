@@ -57,7 +57,10 @@ var overrideNow = now
 // loadOverrideLog reads the log's entries in the order they were made. problem is "" unless a line is not
 // a JSON object.
 func loadOverrideLog(root string) (entries []*dyn.Dict, problem string) {
-	return loadLogFile(overrideLogPath(root))
+	entries, problem = loadLogFile(overrideLogPath(root))
+	// an entry a collision repair moved names the statement's new id (S-W5AJ)
+	applyRepairs(entries)
+	return entries, problem
 }
 
 // loadLogFile reads a log kb only appends to, the override log or the user log, in the order its entries
@@ -1229,7 +1232,7 @@ func overrideChecks(root string, sessions *Sessions, errorf, warnf func(string, 
 }
 
 // statementOverrideChecks verifies a statement's marks from overrides, for kb check.
-func statementOverrideChecks(st *Statement, byRef map[string]*dyn.Dict, errorf func(string, ...any)) {
+func statementOverrideChecks(st *Statement, byRef map[string]*dyn.Dict, errorf func(string, ...any), asMadeBody string) {
 	sid := dyn.Str(st.Meta.Get("id"))
 	if sc := st.Meta.Get("scrubbed"); dyn.Truthy(sc) {
 		n := markRef(sc)
@@ -1243,7 +1246,7 @@ func statementOverrideChecks(st *Statement, byRef map[string]*dyn.Dict, errorf f
 		n := markRef(rv)
 		if e := byRef[n]; e == nil || entryStr(e, "kind") != ovRevise || entryStr(e, "statement") != sid {
 			errorf("%s: marked revised by override %s, which the log does not hold (%s)", sid, n, rule("override-revise"))
-		} else if entryStr(e, "body_sha256") != sha256Tag(dyn.Strip(st.Body)) {
+		} else if h := entryStr(e, "body_sha256"); h != sha256Tag(dyn.Strip(st.Body)) && h != sha256Tag(dyn.Strip(asMadeBody)) {
 			errorf("%s: its text is not the text override %s revised it to; it was changed outside kb (%s)", sid, n, rule("write-through-kb"))
 		}
 	}

@@ -3,6 +3,7 @@ package kb
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -202,6 +203,181 @@ func TestRepairSameName(t *testing.T) {
 	newID := entryStr(mustLoadOverrideLog(k.root)[0], "new_id")
 	if moved := k.read("attested/" + newID + "-one-title.md"); !strings.Contains(moved, "Ours.") {
 		t.Errorf("moved file:\n%s", moved)
+	}
+	// run again before the files are staged: nothing more happens
+	Main([]string{"resolve"})
+	files, _ := filepath.Glob(filepath.Join(k.root, "attested", "*-one-title.md"))
+	if n := len(mustLoadOverrideLog(k.root)); n != 1 || len(files) != 2 {
+		t.Errorf("a second run repaired again: %d entries, files %v", n, files)
+	}
+}
+
+// TestRepairOursShared: the shared ref holds our copy, and our own unpushed citation of it stays; the
+// colleague's copy, merged in from their branch, moves with the citation made beside it.
+func TestRepairOursShared(t *testing.T) {
+	k := newGitKB(t)
+	k.write(k.root, "attested/S-7K2M-ours.md", stmt("S-7K2M", "Ours", "2026-10-02T10:00:00+00:00", "Ours."))
+	k.git(k.root, "add", "-A")
+	k.git(k.root, "commit", "-q", "-m", "ours")
+	k.git(k.root, "push", "-q")
+	k.write(k.root, "attested/S-OUR1-cites-ours.md", stmt("S-OUR1", "Cites ours", "2026-10-03T10:00:00+00:00",
+		"Per S-7K2M.", "rests_on", []any{"S-7K2M"}))
+	k.git(k.root, "add", "-A")
+	k.git(k.root, "commit", "-q", "-m", "our citation, not pushed")
+	k.git(k.other, "checkout", "-q", "-b", "feat")
+	k.write(k.other, "attested/S-7K2M-theirs.md", stmt("S-7K2M", "Theirs", "2026-10-02T11:00:00+00:00", "Theirs."))
+	k.write(k.other, "attested/S-THR1-cites-theirs.md", stmt("S-THR1", "Cites theirs", "2026-10-02T12:00:00+00:00",
+		"Per S-7K2M.", "rests_on", []any{"S-7K2M"}))
+	k.git(k.other, "add", "-A")
+	k.git(k.other, "commit", "-q", "-m", "theirs")
+	k.git(k.other, "push", "-q", "origin", "feat")
+	k.git(k.root, "fetch", "-q")
+	k.git(k.root, "merge", "-q", "--no-edit", "origin/feat")
+	t.Setenv(kbEnv, k.root)
+	if code := Main([]string{"resolve"}); code != 0 {
+		t.Fatalf("resolve exit %d", code)
+	}
+	newID := entryStr(mustLoadOverrideLog(k.root)[0], "new_id")
+	if ours := k.read("attested/S-OUR1-cites-ours.md"); !strings.Contains(ours, "Per S-7K2M.") {
+		t.Errorf("our own citation was moved:\n%s", ours)
+	}
+	if theirs := k.read("attested/S-THR1-cites-theirs.md"); !strings.Contains(theirs, "Per "+newID+".") {
+		t.Errorf("their citation did not move:\n%s", theirs)
+	}
+}
+
+// TestRepairResumes: a repair whose entry was written but whose files were not is finished by running
+// kb resolve again, under the id the entry gave, without a second entry.
+func TestRepairResumes(t *testing.T) {
+	k := newGitKB(t)
+	k.write(k.other, "attested/S-7K2M-shared.md", stmt("S-7K2M", "Shared", "2026-10-02T10:00:00+00:00", "Shared."))
+	k.git(k.other, "add", "-A")
+	k.git(k.other, "commit", "-q", "-m", "shared")
+	k.git(k.other, "push", "-q")
+	k.write(k.root, "attested/S-7K2M-unshared.md", stmt("S-7K2M", "Unshared", "2026-10-03T10:00:00+00:00", "Unshared."))
+	k.git(k.root, "add", "-A")
+	k.git(k.root, "commit", "-q", "-m", "unshared")
+	k.git(k.root, "fetch", "-q")
+	k.git(k.root, "merge", "-q", "--no-edit", "origin/main")
+	appendLogEntry(overrideLogPath(k.root), dyn.D("id", "O-RSM1", "kind", ovRepairID, "at", "2026-10-04T10:00:00+00:00",
+		"by", "kb", "reason", "cut short", "old_id", "S-7K2M", "new_id", "S-RSMD", "kept", "attested/S-7K2M-shared.md",
+		"renamed_from", "attested/S-7K2M-unshared.md", "renamed_to", "attested/S-RSMD-unshared.md", "rewritten", []any{}))
+	t.Setenv(kbEnv, k.root)
+	if code := Main([]string{"resolve"}); code != 0 {
+		t.Fatalf("resolve exit %d", code)
+	}
+	if k.read("attested/S-RSMD-unshared.md") == "" || len(mustLoadOverrideLog(k.root)) != 1 {
+		t.Errorf("the repair was not finished under its logged id, or was entered twice")
+	}
+}
+
+// TestRepairThreeWay: three statements given one id; the shared one keeps it and the other two move, each
+// with the citation made beside it.
+func TestRepairThreeWay(t *testing.T) {
+	k := newGitKB(t)
+	r := k.root
+	k.write(k.other, "attested/S-7K2M-shared.md", stmt("S-7K2M", "Shared", "2026-10-02T10:00:00+00:00", "Shared."))
+	k.git(k.other, "add", "-A")
+	k.git(k.other, "commit", "-q", "-m", "shared")
+	k.git(k.other, "push", "-q")
+	k.git(r, "checkout", "-q", "-b", "b1")
+	k.write(r, "attested/S-7K2M-one.md", stmt("S-7K2M", "One", "2026-10-03T10:00:00+00:00", "One."))
+	k.write(r, "attested/S-CIT1-cites-one.md", stmt("S-CIT1", "Cites one", "2026-10-03T11:00:00+00:00", "Per S-7K2M."))
+	k.git(r, "add", "-A")
+	k.git(r, "commit", "-q", "-m", "one")
+	k.git(r, "checkout", "-q", "-b", "b2", "main")
+	k.write(r, "attested/S-7K2M-two.md", stmt("S-7K2M", "Two", "2026-10-03T12:00:00+00:00", "Two."))
+	k.write(r, "attested/S-CIT2-cites-two.md", stmt("S-CIT2", "Cites two", "2026-10-03T13:00:00+00:00", "Per S-7K2M."))
+	k.git(r, "add", "-A")
+	k.git(r, "commit", "-q", "-m", "two")
+	k.git(r, "checkout", "-q", "main")
+	k.git(r, "merge", "-q", "--no-edit", "b1", "b2")
+	k.git(r, "fetch", "-q")
+	k.git(r, "merge", "-q", "--no-edit", "origin/main")
+	t.Setenv(kbEnv, r)
+	if code := Main([]string{"resolve"}); code != 0 {
+		t.Fatalf("resolve exit %d", code)
+	}
+	ids := map[string]string{}
+	for _, e := range mustLoadOverrideLog(r) {
+		ids[entryStr(e, "renamed_from")] = entryStr(e, "new_id")
+	}
+	one, two := ids["attested/S-7K2M-one.md"], ids["attested/S-7K2M-two.md"]
+	if len(duplicateIDs(r)) != 0 || one == "" || two == "" || one == two {
+		t.Fatalf("not repaired three ways: %v", ids)
+	}
+	if !strings.Contains(k.read("attested/S-CIT1-cites-one.md"), "Per "+one+".") ||
+		!strings.Contains(k.read("attested/S-CIT2-cites-two.md"), "Per "+two+".") {
+		t.Errorf("citations did not follow their statements")
+	}
+}
+
+// TestRepairLeavesSharedLogLines: an entry naming the moving statement is not rewritten in the log, which
+// other copies hold; the repair lists it, and the log reads it under the new id.
+func TestRepairLeavesSharedLogLines(t *testing.T) {
+	k := newGitKB(t)
+	k.write(k.other, "attested/S-7K2M-shared.md", stmt("S-7K2M", "Shared", "2026-10-02T10:00:00+00:00", "Shared."))
+	k.git(k.other, "add", "-A")
+	k.git(k.other, "commit", "-q", "-m", "shared")
+	k.git(k.other, "push", "-q")
+	k.write(k.root, "attested/S-7K2M-unshared.md", stmt("S-7K2M", "Unshared", "2026-10-03T10:00:00+00:00", "Unshared."))
+	line := `{"id": "O-RVS1", "kind": "revise", "at": "2026-10-03T11:00:00+00:00", "statement": "S-7K2M"}`
+	k.write(k.root, overrideLogName, line+"\n")
+	k.git(k.root, "add", "-A")
+	k.git(k.root, "commit", "-q", "-m", "unshared, and a revision of it")
+	k.git(k.root, "fetch", "-q")
+	k.git(k.root, "merge", "-q", "--no-edit", "origin/main")
+	t.Setenv(kbEnv, k.root)
+	Main([]string{"resolve"})
+	if first := strings.SplitN(k.read(overrideLogName), "\n", 2)[0]; first != line {
+		t.Errorf("the earlier line was rewritten: %s", first)
+	}
+	var revise, repair *dyn.Dict
+	for _, e := range mustLoadOverrideLog(k.root) {
+		switch entryStr(e, "kind") {
+		case ovRevise:
+			revise = e
+		case ovRepairID:
+			repair = e
+		}
+	}
+	if repair == nil || revise == nil || entryStr(revise, "statement") != entryStr(repair, "new_id") ||
+		!dyn.Equal(repair.Get("moved_entries"), []any{"O-RVS1"}) {
+		t.Errorf("the revision is not read under the new id: %v %v", revise, repair)
+	}
+	if strings.Contains(k.read(overrideLogName), "\r") {
+		t.Errorf("the log has CRLF line endings")
+	}
+}
+
+// TestAsMadeChain: a statement whose ids two repairs rewrote, the second after renaming it, reads back as
+// it was made.
+func TestAsMadeChain(t *testing.T) {
+	entries := []*dyn.Dict{
+		dyn.D("kind", ovRepairID, "at", "2026-10-04T10:00:00+00:00", "old_id", "S-AAAA", "new_id", "S-BBBB",
+			"renamed_from", "attested/S-CCCC-x.md", "renamed_to", "attested/S-DDDD-x.md", "rewritten", []any{"attested/S-CCCC-x.md"}),
+		dyn.D("kind", ovRepairID, "at", "2026-10-04T10:00:00+00:00", "old_id", "S-CCCC", "new_id", "S-DDDD",
+			"renamed_from", "attested/S-CCCC-x.md", "renamed_to", "attested/S-DDDD-x.md", "rewritten", []any{"attested/S-DDDD-x.md"}),
+	}
+	st := &Statement{Path: "attested/S-DDDD-x.md", Body: "I, S-DDDD, rest on S-BBBB."}
+	if got := asMade(st, entries); got != "I, S-CCCC, rest on S-AAAA." {
+		t.Errorf("asMade = %q", got)
+	}
+}
+
+// TestSharedRefsRebase: during a rebase, the commit it is onto is a shared ref, since HEAD is detached.
+func TestSharedRefsRebase(t *testing.T) {
+	k := newGitKB(t)
+	head, _ := git(k.root, "rev-parse", "HEAD")
+	p, _ := git(k.root, "rev-parse", "--git-path", "rebase-merge")
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(k.root, p)
+	}
+	os.MkdirAll(p, 0o755)
+	os.WriteFile(filepath.Join(p, "onto"), []byte(head+"\n"), 0o644)
+	refs := sharedRefs(k.root)
+	if refs[0] != "refs/remotes/origin/HEAD" || !slices.Contains(refs, head) {
+		t.Errorf("shared refs %v", refs)
 	}
 }
 

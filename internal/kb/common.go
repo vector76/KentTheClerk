@@ -901,6 +901,12 @@ var idSource io.Reader = rand.Reader
 // out the same id. It is drawn again until it holds a letter, which sets it apart from the sequential
 // ids, and is not taken in this copy, by a file name or by an id inside a file.
 func newStatementID(root, kind string) string {
+	taken := takenIDs(root, kind)
+	return drawID(kind, func(id string) bool { return taken[id] }, idSource)
+}
+
+// takenIDs are the ids of the kind, S or A, taken in this copy, by a file name or by an id inside a file.
+func takenIDs(root, kind string) map[string]bool {
 	taken := map[string]bool{}
 	d := filepath.Join(root, statementDirs[kind])
 	for _, p := range dyn.Glob(d, kind+"-*.md") {
@@ -911,7 +917,7 @@ func newStatementID(root, kind string) string {
 			taken[strings.ToUpper(dyn.Str(v))] = true
 		}
 	}
-	return drawID(kind, func(id string) bool { return taken[id] }, idSource)
+	return taken
 }
 
 // drawID draws ids with the prefix kind from src until one holds a letter and is not taken. Each character comes from

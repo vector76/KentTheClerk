@@ -5,7 +5,6 @@ package kb
 import (
 	"fmt"
 	"path/filepath"
-	"sort"
 	"regexp"
 	"strings"
 
@@ -57,31 +56,11 @@ func runCheck(ns argparse.Namespace) int {
 	// the override log, and the tombstones overrides leave in evidence (S-0132)
 	overrides := overrideChecks(root, sessions, errorf, warnf)
 	usersChecks(root, sessions, errorf, warnf)
-	// a statement's text as it was made, before kb repaired an id collision that rewrote ids in it (S-W5AJ):
-	// the turn it was agreed in still holds the old id
+	// a statement's text as it was made, before kb repaired an id collision that rewrote ids in it
+	// (S-RFFZ): the turn it was agreed in still holds the old id
+	logEntries, _ := loadOverrideLog(root)
 	contained := func(st *Statement, text string) bool {
-		if textContained(st.Body, text) {
-			return true
-		}
-		body, name := st.Body, filepath.Base(st.Path)
-		var repairs []*dyn.Dict
-		for _, e := range overrides {
-			if entryStr(e, "kind") == ovRepairID {
-				for _, w := range listOf(e.Get("rewritten")) {
-					if filepath.Base(dyn.Str(w)) == name {
-						repairs = append(repairs, e)
-					}
-				}
-			}
-		}
-		if len(repairs) == 0 {
-			return false
-		}
-		sort.SliceStable(repairs, func(i, j int) bool { return entryStr(repairs[i], "at") > entryStr(repairs[j], "at") })
-		for _, e := range repairs {
-			body = replaceID(body, entryStr(e, "new_id"), entryStr(e, "old_id"))
-		}
-		return textContained(body, text)
+		return textContained(st.Body, text) || textContained(asMade(st, logEntries), text)
 	}
 
 	// resolve is same-session resolution by default; background citations may resolve through the
@@ -204,7 +183,7 @@ func runCheck(ns argparse.Namespace) int {
 			n, _ := dyn.ParseInt(sid[2:])
 			nums = append(nums, int(n.Int64()))
 		}
-		statementOverrideChecks(st, overrides, errorf)
+		statementOverrideChecks(st, overrides, errorf, asMade(st, logEntries))
 		scrubbed := dyn.Truthy(st.Meta.Get("scrubbed"))
 		if !dyn.Truthy(st.Meta.Get("title")) {
 			errorf("%s: missing title (%s)", sid, rule("title-and-answers"))
@@ -350,7 +329,7 @@ func runCheck(ns argparse.Namespace) int {
 			errorf("duplicate id %s: %s and %s (kb resolve repairs it)", aid, name, prev)
 		}
 		ids[aid] = name
-		statementOverrideChecks(st, overrides, errorf)
+		statementOverrideChecks(st, overrides, errorf, asMade(st, logEntries))
 		for _, k := range []string{"title", "answers", "author"} {
 			if dyn.Strip(dyn.Str(dyn.Or(st.Meta.Get(k), ""))) == "" {
 				errorf("%s: missing %s", aid, k)
