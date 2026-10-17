@@ -59,12 +59,17 @@ var (
 	statementIDRE  = regexp.MustCompile(`^([SA])-` + idBody + `\n?$`)
 )
 
-// An id's body (S-0149) is four characters from Crockford's base32 alphabet. The ids given before it were
+// An id's body is characters from Crockford's base32 alphabet (S-0149): six for a new statement's (S-N5TZ),
+// and four or five for those given before it, which stay valid. The ids given before S-0149 were
 // sequential numbers, which the alphabet's digits already cover; the second branch keeps the digits-only
 // form the earlier pattern allowed.
 const (
 	idAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-	idBody     = `(?:[0-9A-HJKMNP-TV-Z]{4}|\p{Nd}{4,})`
+	idBody     = `(?:[0-9A-HJKMNP-TV-Z]{4,6}|\p{Nd}{4,})`
+	// statementIDLen is the length of a new statement's id after its prefix (S-N5TZ); overrideIDLen is a new
+	// override's (S-QYEK), which S-N5TZ does not change
+	statementIDLen = 6
+	overrideIDLen  = 4
 )
 
 var (
@@ -902,7 +907,7 @@ var idSource io.Reader = rand.Reader
 // ids, and is not taken in this copy, by a file name or by an id inside a file.
 func newStatementID(root, kind string) string {
 	taken := takenIDs(root, kind)
-	return drawID(kind, func(id string) bool { return taken[id] }, idSource)
+	return drawID(kind, statementIDLen, func(id string) bool { return taken[id] }, idSource)
 }
 
 // takenIDs are the ids of the kind, S or A, taken in this copy, by a file name or by an id inside a file.
@@ -920,15 +925,16 @@ func takenIDs(root, kind string) map[string]bool {
 	return taken
 }
 
-// drawID draws ids with the prefix kind from src until one holds a letter and is not taken. Each character comes from
-// one byte's low five bits; 256 is a multiple of 32, so every character is equally likely.
-func drawID(kind string, taken func(string) bool, src io.Reader) string {
-	buf := make([]byte, 4)
+// drawID draws ids with the prefix kind and n characters from src until one holds a letter and is not
+// taken. Each character comes from one byte's low five bits; 256 is a multiple of 32, so every character is
+// equally likely.
+func drawID(kind string, n int, taken func(string) bool, src io.Reader) string {
+	buf := make([]byte, n)
 	for range 10000 {
 		if _, err := io.ReadFull(src, buf); err != nil {
 			dyn.RaiseOS(err)
 		}
-		body := make([]byte, 4)
+		body := make([]byte, n)
 		letter := false
 		for i, b := range buf {
 			body[i] = idAlphabet[b&31]

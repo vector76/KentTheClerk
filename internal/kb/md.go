@@ -88,7 +88,8 @@ func italic(s string) string {
 }
 
 // stmtRefs links statement ids, human and agent: STMT_REF.sub(r'<a href="/s/\1">\1</a>', s) with
-// STMT_REF = r"\b([SA]-(?:[0-9A-HJKMNP-TV-Z]{4}|\d{4,}))\b", the ids of S-0149 and the numbers before them.
+// STMT_REF = r"\b([SA]-(?:[0-9A-HJKMNP-TV-Z]{4,6}|\d{4,}))\b", the ids of S-0149 and S-N5TZ and the numbers
+// before them.
 func stmtRefs(s string) string {
 	var b strings.Builder
 	last := 0
@@ -113,7 +114,7 @@ func stmtRefs(s string) string {
 			j += utf8.RuneLen(r)
 			n++
 		}
-		if !(digits && n >= 4 || alphabet && n == 4) {
+		if !(digits && n >= 4 || alphabet && n >= 4 && n <= 6) {
 			continue
 		}
 		b.WriteString(s[last:i])

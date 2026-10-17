@@ -127,7 +127,7 @@ func newOverrideID(root string) string {
 	for _, e := range mustLoadOverrideLog(root) {
 		taken[overrideRef(e)] = true
 	}
-	return drawID("O", func(id string) bool { return taken[id] }, idSource)
+	return drawID("O", overrideIDLen, func(id string) bool { return taken[id] }, idSource)
 }
 
 // overrideAuth is the authority an override is made on: who, the turn of theirs that authorizes it, and why.

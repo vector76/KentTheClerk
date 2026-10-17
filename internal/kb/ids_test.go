@@ -39,17 +39,17 @@ func isLetter(c byte) bool { return c > '9' }
 func TestDrawID(t *testing.T) {
 	// the bytes' low five bits pick from the alphabet: 0..9 are digits, 10 is A, 31 is Z
 	never := func(string) bool { return false }
-	if got := drawID("S", never, bytes.NewReader([]byte{10, 1, 2, 31})); got != "S-A12Z" {
+	if got := drawID("S", 4, never, bytes.NewReader([]byte{10, 1, 2, 31})); got != "S-A12Z" {
 		t.Fatalf("got %s, want S-A12Z", got)
 	}
 	// the high bits are ignored: 32+10 is A again, 255 is Z
-	if got := drawID("A", never, bytes.NewReader([]byte{42, 255, 0, 0})); got != "A-AZ00" {
+	if got := drawID("A", 4, never, bytes.NewReader([]byte{42, 255, 0, 0})); got != "A-AZ00" {
 		t.Fatalf("got %s, want A-AZ00", got)
 	}
 	// digits only is drawn again, as is an id already taken
 	src := bytes.NewReader([]byte{1, 2, 3, 4, 10, 0, 0, 0, 11, 0, 0, 0})
 	taken := func(id string) bool { return id == "S-A000" }
-	if got := drawID("S", taken, src); got != "S-B000" {
+	if got := drawID("S", 4, taken, src); got != "S-B000" {
 		t.Fatalf("got %s, want S-B000 after skipping S-1234 and the taken S-A000", got)
 	}
 	// every character of the alphabet comes out, and I, L, O and U never do
@@ -60,7 +60,7 @@ func TestDrawID(t *testing.T) {
 	seen := map[byte]bool{}
 	src = bytes.NewReader(all)
 	for range 32 {
-		id := drawID("S", never, src)
+		id := drawID("S", 4, never, src)
 		seen[id[2]] = true
 	}
 	if len(seen) != 32 {
@@ -80,7 +80,7 @@ func TestNewStatementIDFormat(t *testing.T) {
 	}
 	for range 2000 {
 		id := newStatementID(root, "S")
-		if !statementIDRE.MatchString(id) || !humanIDRE.MatchString(id) || len(id) != 6 {
+		if !statementIDRE.MatchString(id) || !humanIDRE.MatchString(id) || len(id) != 2+statementIDLen {
 			t.Fatalf("%s is not a valid new id", id)
 		}
 		if digitsRE.MatchString(id) {
@@ -100,14 +100,14 @@ func TestNewStatementIDAvoidsTaken(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		t.Fatal(err)
 	}
-	// ids S-A000 .. S-A00Z less S-A00Q are taken; the draws are limited to that range by the source
+	// ids S-A00000 .. S-A0000Z less S-A0000Q are taken; the draws are limited to that range by the source
 	write := func(name, id string) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("---\nid: "+id+"\ntitle: x\n---\n\nx\n"), 0o666); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for i, c := range []byte(idAlphabet) {
-		id := "S-A00" + string(c)
+		id := "S-A0000" + string(c)
 		switch {
 		case c == 'Q':
 		case i%2 == 0:
@@ -121,21 +121,23 @@ func TestNewStatementIDAvoidsTaken(t *testing.T) {
 	defer func() { idSource = old }()
 	var buf []byte
 	for i := range 32 {
-		buf = append(buf, 10, 0, 0, byte(i))
+		buf = append(buf, 10, 0, 0, 0, 0, byte(i))
 	}
 	idSource = bytes.NewReader(buf)
-	if got := newStatementID(root, "S"); got != "S-A00Q" {
-		t.Fatalf("got %s, want S-A00Q, the one id left", got)
+	if got := newStatementID(root, "S"); got != "S-A0000Q" {
+		t.Fatalf("got %s, want S-A0000Q, the one id left", got)
 	}
 }
 
 func TestIDValidation(t *testing.T) {
-	for _, id := range []string{"S-0001", "S-0149", "A-0001", "S-00001", "S-7K2M", "A-ZZZZ", "S-0A00", "S-1234\n"} {
+	// six characters for a new id (S-N5TZ); four and five stay valid, as do the digits-only ids
+	for _, id := range []string{"S-0001", "S-0149", "A-0001", "S-00001", "S-7K2M", "A-ZZZZ", "S-0A00", "S-1234\n",
+		"S-7K2MX", "S-7K2MXQ", "A-ZZ9Z00"} {
 		if !statementIDRE.MatchString(id) {
 			t.Errorf("%q should be a valid id", id)
 		}
 	}
-	for _, id := range []string{"S-001", "S-7K2", "S-7K2MX", "S-7k2m", "S-IIII", "S-LOOP", "S-OUCH", "S-7U2M", "B-7K2M", "S7K2M", "S-7K2M-"} {
+	for _, id := range []string{"S-001", "S-7K2", "S-7K2MXQZ", "S-7k2m", "S-IIII", "S-LOOP", "S-OUCH", "S-7U2M", "B-7K2M", "S7K2M", "S-7K2M-"} {
 		if statementIDRE.MatchString(id) {
 			t.Errorf("%q should not be a valid id", id)
 		}
@@ -147,11 +149,12 @@ func TestIDValidation(t *testing.T) {
 
 func TestStmtRefsLinksNewIDs(t *testing.T) {
 	cases := map[string]string{
-		"see S-0012.":                         `see <a href="/s/S-0012">S-0012</a>.`,
-		"see S-7K2M and A-0003":               `see <a href="/s/S-7K2M">S-7K2M</a> and <a href="/s/A-0003">A-0003</a>`,
-		"(A-ZZ9Z)":                            `(<a href="/s/A-ZZ9Z">A-ZZ9Z</a>)`,
-		"S-00012":                             `<a href="/s/S-00012">S-00012</a>`,
-		"S-7K2MX S-7K2 xS-7K2M S-7k2m S-LOOP": "S-7K2MX S-7K2 xS-7K2M S-7k2m S-LOOP",
+		"see S-0012.":                           `see <a href="/s/S-0012">S-0012</a>.`,
+		"see S-7K2M and A-0003":                 `see <a href="/s/S-7K2M">S-7K2M</a> and <a href="/s/A-0003">A-0003</a>`,
+		"(A-ZZ9Z)":                              `(<a href="/s/A-ZZ9Z">A-ZZ9Z</a>)`,
+		"S-00012":                               `<a href="/s/S-00012">S-00012</a>`,
+		"S-7K2MXQ and A-7K2MX":                  `<a href="/s/S-7K2MXQ">S-7K2MXQ</a> and <a href="/s/A-7K2MX">A-7K2MX</a>`,
+		"S-7K2MXQZ S-7K2 xS-7K2M S-7k2m S-LOOP": "S-7K2MXQZ S-7K2 xS-7K2M S-7k2m S-LOOP",
 	}
 	for in, want := range cases {
 		if got := stmtRefs(in); got != want {

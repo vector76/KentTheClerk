@@ -283,7 +283,7 @@ func hasHintFile(root string) bool {
 }
 
 var (
-	statementFileRE = regexp.MustCompile(`^S-[0-9A-Z]{4}-[a-z0-9-]*\.md$`)
+	statementFileRE = regexp.MustCompile(`^S-(?:[0-9A-Z]{4,6}|[0-9]{4,})-[a-z0-9-]*\.md$`)
 	evidenceFileRE  = regexp.MustCompile(`^[^.].*\.jsonl$`)
 )
 

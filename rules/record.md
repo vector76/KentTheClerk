@@ -26,8 +26,9 @@ breaks its rules and says why. The recorder detects no contradictions and weighs
 
 A statement and its attestations are separate things. A statement has an id, a title, a text, the
 question it answers, an originator and citations. An id is `S-` for a human statement or `A-` for an
-agent statement, then four digits or capital letters, such as `S-7K2M`; the earliest ids are numbers,
-such as `S-0012`. Ids carry no order: the order of statements is when they were made. An attestation records who, when, the turn where
+agent statement, then six digits or capital letters with at least one letter, such as `S-7K2MQX`.
+Ids of four or five such characters, given before, stay valid, and the earliest ids are numbers, such
+as `S-0012`. Ids carry no order: the order of statements is when they were made. An attestation records who, when, the turn where
 they agreed, the form of agreement, and the system it was made under. "Attested" always carries an
 obvious *by whom*.
 
