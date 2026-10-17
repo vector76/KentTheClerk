@@ -1113,6 +1113,19 @@ func overrideChecks(root string, sessions *Sessions, errorf, warnf func(string, 
 		}
 		byRef[n] = e
 		kind := entryStr(e, "kind")
+		if kind == ovRepairID {
+			// a repair by kb, not an override (S-W5AJ): no human turn, but traceable to what it did
+			if !systemHashRE.MatchString(entryStr(e, "system_hash")) || entryStr(e, "system_version") == "" {
+				errorf("override log: repair %s has a missing or malformed system stamp (%s)", n, rule("system-stamp"))
+			}
+			old, nw := entryStr(e, "old_id"), entryStr(e, "new_id")
+			if !statementIDRE.MatchString(old) || !statementIDRE.MatchString(nw) || old[:1] != nw[:1] || entryStr(e, "at") == "" {
+				errorf("override log: repair %s does not say which id it moved to which, or when", n)
+			} else if p := statementPath(root, nw); p == "" || !dyn.Equal(loadStatement(p).Meta.Get("id"), nw) {
+				errorf("override log: repair %s gave a statement the id %s, which no statement carries now", n, nw)
+			}
+			continue
+		}
 		if !in(kind, overrideKinds) {
 			errorf("override log: override %s has kind %s, which is not on the list (%s)", n, dyn.Repr(e.Get("kind")), rule("override-list"))
 			continue

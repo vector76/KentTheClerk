@@ -140,6 +140,10 @@ func mergeStatementText(base, ours, theirs string) (string, []string) {
 		return "", []string{fmt.Sprintf("the two sides are different statements (%s and %s)",
 			dyn.Str(dyn.Or(am.Get("id"), "no id")), dyn.Str(dyn.Or(bm.Get("id"), "no id")))}
 	}
+	if strings.TrimSpace(base) == "" && statementOrigin(am) != statementOrigin(bm) {
+		return "", []string{fmt.Sprintf("the two sides are different statements that were given the same id, %s, "+
+			"and the same file name; kb resolve gives one of them a new id", dyn.Str(am.Get("id")))}
+	}
 	var keys []string
 	seen := map[string]bool{}
 	for _, d := range []*dyn.Dict{am, bm, om} {
@@ -342,16 +346,24 @@ func runResolve(ns argparse.Namespace) int {
 			files = append(files, p)
 		}
 	}
-	if len(files) == 0 {
-		println("git reports no conflicted files in " + root + ".")
-		return 0
-	}
 	var resolved, left []string
+	var collisions []idCollision
 	for _, f := range files {
 		kind := recordFileKind(f)
-		base, _ := gitBlob(root, f, 1)
+		base, okO := gitBlob(root, f, 1)
 		ours, okA := gitBlob(root, f, 2)
 		theirs, okB := gitBlob(root, f, 3)
+		if kind == "statement" && !okO && okA && okB {
+			// both sides added a file of this name: perhaps two statements given one id and one title
+			if c, problem, ok := sameNameCollision(root, f, ours, theirs); ok {
+				if problem != "" {
+					left = append(left, fmt.Sprintf("%s: two statements were given one id and name, and %s", f, problem))
+				} else {
+					collisions = append(collisions, c)
+				}
+				continue
+			}
+		}
 		var merged string
 		var problems []string
 		switch {
@@ -369,13 +381,30 @@ func runResolve(ns argparse.Namespace) int {
 		dyn.WriteText(filepath.Join(root, filepath.FromSlash(f)), merged)
 		resolved = append(resolved, f)
 	}
+	// then make the record whole: no two statements with one id (S-W5AJ)
+	repaired, written, unrepaired := repairIDs(root, collisions)
+	left = append(left, unrepaired...)
+	for _, f := range written {
+		if !containsStr(resolved, f) {
+			resolved = append(resolved, f)
+		}
+	}
+	if len(repaired) > 0 {
+		println("Repaired id collisions, each entered in " + overrideLogName + ":")
+		for _, r := range repaired {
+			println("  " + r)
+		}
+	}
 	if len(resolved) > 0 {
-		println("Resolved, and written by kb:")
+		println("Written by kb:")
 		for _, f := range resolved {
 			println("  " + f)
 		}
-		println("Stage them with `" + gitPrefix(root) + " add " + strings.Join(resolved, " ") + "`, then finish the " +
-			"merge or rebase, and run kb check.")
+		println("Stage them with `" + gitPrefix(root) + " add -A -- " + strings.Join(resolved, " ") + "`, then " +
+			"finish any merge or rebase, and run kb check.")
+		refreshIndex(root)
+	} else if len(left) == 0 {
+		println("Nothing to resolve: git reports no conflicted files in " + root + ", and no two statements share an id.")
 	}
 	if len(left) > 0 {
 		println("Not resolved, so left for the human; do not merge them by hand:")
@@ -395,7 +424,7 @@ func addMergeParsers(sub *argparse.Parser) {
 	d.Positional("path", argparse.Optional, "the file's path in the repository (%P)")
 	d.Run = runMergeDriver
 
-	r := sub.AddParser("resolve", "merge the record's files git left conflicted, on the agent's behalf")
+	r := sub.AddParser("resolve", "merge the record's files git left conflicted, and repair ids two statements share")
 	r.Positional("files", argparse.ZeroMore, "conflicted files to resolve (default: every conflicted file)")
 	r.Run = runResolve
 }

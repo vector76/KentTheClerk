@@ -5,6 +5,7 @@ package kb
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"regexp"
 	"strings"
 
@@ -56,6 +57,32 @@ func runCheck(ns argparse.Namespace) int {
 	// the override log, and the tombstones overrides leave in evidence (S-0132)
 	overrides := overrideChecks(root, sessions, errorf, warnf)
 	usersChecks(root, sessions, errorf, warnf)
+	// a statement's text as it was made, before kb repaired an id collision that rewrote ids in it (S-W5AJ):
+	// the turn it was agreed in still holds the old id
+	contained := func(st *Statement, text string) bool {
+		if textContained(st.Body, text) {
+			return true
+		}
+		body, name := st.Body, filepath.Base(st.Path)
+		var repairs []*dyn.Dict
+		for _, e := range overrides {
+			if entryStr(e, "kind") == ovRepairID {
+				for _, w := range listOf(e.Get("rewritten")) {
+					if filepath.Base(dyn.Str(w)) == name {
+						repairs = append(repairs, e)
+					}
+				}
+			}
+		}
+		if len(repairs) == 0 {
+			return false
+		}
+		sort.SliceStable(repairs, func(i, j int) bool { return entryStr(repairs[i], "at") > entryStr(repairs[j], "at") })
+		for _, e := range repairs {
+			body = replaceID(body, entryStr(e, "new_id"), entryStr(e, "old_id"))
+		}
+		return textContained(body, text)
+	}
 
 	// resolve is same-session resolution by default; background citations may resolve through the
 	// fork's ancestry chain (S-0034); attestation and proposal turns may not (S-0032).
@@ -169,7 +196,7 @@ func runCheck(ns argparse.Namespace) int {
 			errorf("%s: filename does not start with its id %s", name, sid)
 		}
 		if prev, ok := ids[sid]; ok {
-			errorf("duplicate id %s: %s and %s", sid, name, prev)
+			errorf("duplicate id %s: %s and %s (kb resolve repairs it)", sid, name, prev)
 		}
 		ids[sid] = name
 		// only the sequential ids given before S-0149 can leave a gap; a random id has a letter
@@ -233,7 +260,7 @@ func runCheck(ns argparse.Namespace) int {
 					if !scrubbed {
 						warnf("%s: the turn it was proposed in, %s, was scrubbed; review whether it should stand (%s)", sid, dyn.Str(prop), rule("override-scrub"))
 					}
-				} else if !scrubbed && !textContained(st.Body, turnText(t)) {
+				} else if !scrubbed && !contained(st, turnText(t)) {
 					errorf("%s: body text is not contained verbatim in proposal turn %s (%s)", sid, dyn.Str(prop), rule("exact-text"))
 				}
 				if !dyn.Equal(st.Meta.Get("originator"), item(t, "author")) {
@@ -279,7 +306,7 @@ func runCheck(ns argparse.Namespace) int {
 			if !dyn.Equal(item(t, "role"), "user") || !dyn.Equal(item(t, "author"), by) {
 				errorf("%s: attestation turn %s is authored by %s, not %s (%s)", sid, dyn.Str(turn), dyn.Repr(item(t, "author")), dyn.Repr(by), rule("own-turn"))
 			}
-			if dyn.Equal(form, "self") && !scrubbed && !scrubbedTurn(t) && !textContained(st.Body, turnText(t)) {
+			if dyn.Equal(form, "self") && !scrubbed && !scrubbedTurn(t) && !contained(st, turnText(t)) {
 				errorf("%s: self-attestation but body not contained in %s (%s)", sid, dyn.Str(turn), rule("exact-text"))
 			}
 			h, v := a.Get("system_hash"), a.Get("system_version")
@@ -320,7 +347,7 @@ func runCheck(ns argparse.Namespace) int {
 			errorf("agent/%s: filename does not start with its id %s", name, aid)
 		}
 		if prev, ok := ids[aid]; ok {
-			errorf("duplicate id %s: %s and %s", aid, name, prev)
+			errorf("duplicate id %s: %s and %s (kb resolve repairs it)", aid, name, prev)
 		}
 		ids[aid] = name
 		statementOverrideChecks(st, overrides, errorf)
@@ -353,7 +380,7 @@ func runCheck(ns argparse.Namespace) int {
 			s, t := resolve(dyn.Or(x.Get("turn"), ""), false)
 			if t == nil || s.Kind() == "document" || !dyn.Equal(s.ModeValue(), "on-record") {
 				errorf("%s: seen turn %s does not resolve to an on-record turn (%s)", aid, dyn.Str(x.Get("turn")), rule("on-record-only"))
-			} else if !dyn.Truthy(st.Meta.Get("scrubbed")) && !scrubbedTurn(t) && !textContained(st.Body, turnText(t)) {
+			} else if !dyn.Truthy(st.Meta.Get("scrubbed")) && !scrubbedTurn(t) && !contained(st, turnText(t)) {
 				errorf("%s: seen turn %s does not show the full text (%s)", aid, dyn.Str(x.Get("turn")), rule("seen-in-full"))
 			}
 		}

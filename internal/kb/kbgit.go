@@ -157,8 +157,10 @@ func gitLines(root string, env func(string) string) (lines []string, problem str
 	run := " Run git as `" + gitPrefix(root) + " …`."
 	expect := "Expect any pull to bring changes, even where nobody else writes, since the same person may write " +
 		"from another machine, and be ready for a pull that merges or stops on a conflict. kb merges the record's " +
-		"files as git merges them; when a merge, rebase or pull still leaves conflicts in them, run `kb resolve`, " +
-		"and never merge them by hand. If it cannot resolve one, stop and tell the human. Then run `kb check`."
+		"files as git merges them. After every merge, rebase or pull that brought changes, run `kb resolve`: it " +
+		"merges what git left conflicted in the record and repairs ids two copies gave to different statements. " +
+		"Never merge the record's files by hand. If it cannot resolve something, stop and tell the human. Then " +
+		"run `kb check`."
 	switch p.kind {
 	case notInGit:
 		return []string{"Git: the knowledge base is in no git repository, so nothing commits it and nothing syncs it."}, ""
