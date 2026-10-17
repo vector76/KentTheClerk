@@ -122,7 +122,62 @@ func TestRepairCollision(t *testing.T) {
 	}
 }
 
-// TestRepairSameName: both copies gave a statement the same id and title, so git sees one file added on both
+// TestRepairBothShared: two branches each gave a statement S-7K2M and were merged into main without the
+// driver, then pushed (S-H2ZW). The one that reached main first keeps the id; the other moves with the
+// citation made on its own branch; a citation made on main after both had landed is listed for the human
+// and left as it is.
+func TestRepairBothShared(t *testing.T) {
+	k := newGitKB(t)
+	r := k.root
+	k.git(r, "checkout", "-q", "-b", "one")
+	k.write(r, "attested/S-7K2M-first.md", stmt("S-7K2M", "First", "2026-10-03T10:00:00+00:00", "The first."))
+	k.write(r, "attested/S-ONE1-cites-first.md", stmt("S-ONE1", "Cites first", "2026-10-03T11:00:00+00:00",
+		"Per S-7K2M.", "rests_on", []any{"S-7K2M"}))
+	k.git(r, "add", "-A")
+	k.git(r, "commit", "-q", "-m", "one")
+	k.git(r, "checkout", "-q", "-b", "two", "main")
+	// made earlier than the first, but it reaches main second
+	k.write(r, "attested/S-7K2M-second.md", stmt("S-7K2M", "Second", "2026-10-02T10:00:00+00:00", "The second."))
+	k.write(r, "attested/S-TWO1-cites-second.md", stmt("S-TWO1", "Cites second", "2026-10-02T11:00:00+00:00",
+		"As S-7K2M says.", "rests_on", []any{"S-7K2M"}))
+	k.git(r, "add", "-A")
+	k.git(r, "commit", "-q", "-m", "two")
+	k.git(r, "checkout", "-q", "main")
+	k.git(r, "merge", "-q", "--no-ff", "--no-edit", "one")
+	k.git(r, "merge", "-q", "--no-ff", "--no-edit", "two")
+	k.write(r, "attested/S-LATE-cites-after.md", stmt("S-LATE", "Cites after", "2026-10-04T10:00:00+00:00",
+		"After both, S-7K2M.", "rests_on", []any{"S-7K2M"}))
+	k.git(r, "add", "-A")
+	k.git(r, "commit", "-q", "-m", "late")
+	k.git(r, "push", "-q")
+
+	t.Setenv(kbEnv, r)
+	if code := Main([]string{"resolve"}); code != 1 {
+		t.Fatalf("resolve exit %d, want 1 for the citation left to the human", code)
+	}
+	if dups := duplicateIDs(r); len(dups) != 0 {
+		t.Fatalf("still duplicated: %v", dups)
+	}
+	e := mustLoadOverrideLog(r)[0]
+	newID := entryStr(e, "new_id")
+	if entryStr(e, "kept") != "attested/S-7K2M-first.md" || !dyn.Equal(e.Get("unattributed"), []any{"attested/S-LATE-cites-after.md"}) {
+		t.Errorf("log entry: %s", dyn.Dumps(e))
+	}
+	if k.read("attested/"+newID+"-second.md") == "" {
+		t.Errorf("the statement that reached main second did not move")
+	}
+	if two := k.read("attested/S-TWO1-cites-second.md"); !strings.Contains(two, "  - "+newID) || !strings.Contains(two, "As "+newID+" says.") {
+		t.Errorf("its own branch's citation was not rewritten:\n%s", two)
+	}
+	if one := k.read("attested/S-ONE1-cites-first.md"); !strings.Contains(one, "Per S-7K2M.") {
+		t.Errorf("the first one's citation was rewritten:\n%s", one)
+	}
+	if late := k.read("attested/S-LATE-cites-after.md"); !strings.Contains(late, "After both, S-7K2M.") {
+		t.Errorf("the late citation was changed:\n%s", late)
+	}
+}
+
+// TestRepairSameName:both copies gave a statement the same id and title, so git sees one file added on both
 // sides; kb resolve keeps the shared one at that name and moves this copy's to a new id.
 func TestRepairSameName(t *testing.T) {
 	k := newGitKB(t)

@@ -7,12 +7,14 @@ package kb
 // id changes. It is a repair by kb, entered in the override log so that it can be traced, and not an
 // override: it needs no confirmation or human turn.
 //
-// The shared history is the first of these refs that holds exactly one of the two statements: the
+// The shared history is the first of these refs that holds either of the two statements: the
 // upstream branch, origin's default branch, the side being merged in (MERGE_HEAD), and the second parent of
 // a merge just made. A reference belongs to the statement that keeps its id when its file is on that ref,
 // since a statement's references are fixed when it is made; any other reference was made in the unshared
 // work, where only the other statement existed. The marks the two statements' own relations set on others
-// are rebuilt from those relations.
+// are rebuilt from those relations. When both statements are on the shared history (S-H2ZW), the one that
+// reached its first-parent line first keeps the id, and a reference belongs to whichever statement existed
+// in the commit it was written in; one written where both existed is listed for the human.
 
 import (
 	"fmt"
@@ -71,6 +73,7 @@ type idCollision struct {
 	keep, other *Statement
 	ref         string // the commit that showed which is shared
 	label       string // that ref as the log names it: its name and commit
+	both        bool   // both were on the shared history, and keep reached it first (S-H2ZW)
 }
 
 // atRef is the file at rel inside the knowledge base on ref, if there is one.
@@ -100,34 +103,83 @@ func refExists(root, ref string) bool {
 	return exec.Command("git", "-C", root, "rev-parse", "--verify", "-q", ref+"^{commit}").Run() == nil
 }
 
-// sharedOf decides which of a and b is on the shared history: the first ref that holds exactly one of
-// them. When a ref holds both, both have been shared and others may cite either, so kb does not choose.
-func sharedOf(root string, a, b *Statement) (keep, other *Statement, ref, label, problem string) {
+// sharedOf decides which of a and b is on the shared history: the first ref that holds one of them. When
+// it holds both, the one that reached it first keeps the id (S-H2ZW).
+func sharedOf(root string, a, b *Statement) (c idCollision, problem string) {
 	if gitTop(root) == "" {
-		return nil, nil, "", "", "the knowledge base is not in git, so kb cannot tell which of them was shared"
+		return c, "the knowledge base is not in git, so kb cannot tell which of them was shared"
 	}
 	for _, r := range sharedRefs {
 		if !refExists(root, r) {
 			continue
 		}
 		ina, inb := onRef(root, r, a), onRef(root, r, b)
-		if ina && inb {
-			return nil, nil, "", "", "both are on " + r + ", so both have been shared and others may cite either"
+		if !ina && !inb {
+			continue
 		}
-		if ina || inb {
-			sha, _ := git(root, "rev-parse", "--short", r+"^{commit}")
-			name := r
-			if n, st := git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", r); st == 0 && n != "" && r == "@{u}" {
-				name = n
-			}
-			label = name + " (" + sha + ")"
-			if ina {
-				return a, b, sha, label, ""
-			}
-			return b, a, sha, label, ""
+		sha, _ := git(root, "rev-parse", "--short", r+"^{commit}")
+		name := r
+		if n, st := git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", r); st == 0 && n != "" && r == "@{u}" {
+			name = n
 		}
+		c = idCollision{ref: sha, label: name + " (" + sha + ")"}
+		switch {
+		case ina && inb:
+			// both shared: the one that reached the shared line first keeps the id (S-H2ZW)
+			c.keep, c.other, c.both = firstLanded(root, sha, a, b)
+		case ina:
+			c.keep, c.other = a, b
+		default:
+			c.keep, c.other = b, a
+		}
+		return c, ""
 	}
-	return nil, nil, "", "", "no shared history holds either of them (" + strings.Join(sharedRefs, ", ") + ")"
+	return c, "no shared history holds either of them (" + strings.Join(sharedRefs, ", ") + ")"
+}
+
+// firstLanded orders two statements both on the shared line ref by when they reached it, read from its
+// first-parent history: the first commit on that line that holds each. A statement that reached it in the
+// same commit as the other yields to the one made earlier.
+func firstLanded(root, ref string, a, b *Statement) (keep, other *Statement, both bool) {
+	out, _ := git(root, "rev-list", "--first-parent", "--reverse", ref)
+	revs := strings.Fields(out)
+	landed := func(st *Statement) int {
+		return sort.Search(len(revs), func(i int) bool { return onRef(root, revs[i], st) })
+	}
+	la, lb := landed(a), landed(b)
+	if la < lb || la == lb && (madeAt(a.Meta) < madeAt(b.Meta) || madeAt(a.Meta) == madeAt(b.Meta) && a.Path < b.Path) {
+		return a, b, true
+	}
+	return b, a, true
+}
+
+// addingCommit is the commit that added the file at rel, the oldest if it was added more than once, or ""
+// when no commit did, as for a file not yet committed. Merges are not counted, so it is the commit the
+// file was written in.
+func addingCommit(root, rel string) string {
+	out, st := git(root, "log", "--format=%H", "--diff-filter=A", "--", filepath.ToSlash(rel))
+	if st != 0 || out == "" {
+		return ""
+	}
+	l := strings.Fields(out)
+	return l[len(l)-1]
+}
+
+// citedOne says which of the two statements a reference made in commit refers to, when both have been
+// shared (S-H2ZW): the one that existed where it was made. "" when that was neither or both, as for a
+// citation made after both had landed, which kb cannot attribute.
+func citedOne(root, commit string, keep, other *Statement) string {
+	if commit == "" {
+		return ""
+	}
+	hk, ho := onRef(root, commit, keep), onRef(root, commit, other)
+	switch {
+	case hk && !ho:
+		return "keep"
+	case ho && !hk:
+		return "other"
+	}
+	return ""
 }
 
 // statementFiles are the record's statement files.
@@ -201,7 +253,7 @@ func rewriteForward(st *Statement, old, new string) bool {
 
 // repairCollision gives c.other a new id and rewrites what refers to it. It returns the files it wrote,
 // what it could not repair, and the log entry's fields.
-func repairCollision(root string, c idCollision) (written []string, problems []string) {
+func repairCollision(root string, c idCollision) (written, problems, unattributed []string) {
 	kind := c.id[:1]
 	newID := makeStatementID(root, kind)
 	oldPath := c.other.Path
@@ -210,6 +262,7 @@ func repairCollision(root string, c idCollision) (written []string, problems []s
 
 	// the statement itself: its id, its name, and its text where it names itself
 	x := c.other
+	orig := &Statement{oldPath, x.Meta.Copy(), x.Body}
 	x.Meta.Set("id", newID)
 	rewriteForward(x, c.id, newID)
 	x.Path = newPath
@@ -237,7 +290,18 @@ func repairCollision(root string, c idCollision) (written []string, problems []s
 			continue
 		}
 		st := load(p)
-		if st == nil || onRef(root, c.ref, st) {
+		if st == nil {
+			continue
+		}
+		if c.both {
+			switch citedOne(root, addingCommit(root, rel(p)), c.keep, orig) {
+			case "keep":
+				continue
+			case "":
+				unattributed = append(unattributed, rel(p))
+				continue
+			}
+		} else if onRef(root, c.ref, st) {
 			continue
 		}
 		if rewriteForward(st, c.id, newID) {
@@ -279,7 +343,7 @@ func repairCollision(root string, c idCollision) (written []string, problems []s
 		changed[tp] = true
 	}
 	if len(problems) > 0 {
-		return nil, problems
+		return nil, problems, nil
 	}
 
 	// the override log: entries made in the unshared work that name the statement
@@ -288,7 +352,7 @@ func repairCollision(root string, c idCollision) (written []string, problems []s
 	var lines []string
 	if dyn.IsFile(logPath) {
 		shared := map[string]bool{}
-		if text, ok := atRef(root, c.ref, overrideLogName); ok {
+		if text, ok := atRef(root, c.ref, overrideLogName); ok && !c.both {
 			for _, l := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 				shared[l] = true
 			}
@@ -296,6 +360,17 @@ func repairCollision(root string, c idCollision) (written []string, problems []s
 		for _, l := range dyn.TextLines(logPath) {
 			if !shared[l] && strings.Contains(l, c.id) {
 				if v, err := dyn.Loads(l); err == nil {
+					if e, ok := v.(*dyn.Dict); ok && c.both && (entryStr(e, "statement") == c.id || entryStr(e, "target") == c.id) {
+						// both shared: the entry moves only if it was made where the moving statement existed
+						made, _ := git(root, "log", "--format=%H", "--reverse", "-S"+overrideRef(e), "--", overrideLogName)
+						if f := strings.Fields(made); len(f) == 0 || citedOne(root, f[0], c.keep, orig) != "other" {
+							if len(f) == 0 || citedOne(root, f[0], c.keep, orig) == "" {
+								unattributed = append(unattributed, overrideLogName+" "+overrideRef(e))
+							}
+							lines = append(lines, l)
+							continue
+						}
+					}
 					if e, ok := v.(*dyn.Dict); ok {
 						for _, k := range []string{"statement", "target"} {
 							if entryStr(e, k) == c.id {
@@ -367,11 +442,16 @@ func repairCollision(root string, c idCollision) (written []string, problems []s
 		"run_by", user, "reason", "two copies gave new statements the same random id; the one on "+c.label+
 			" keeps it", "old_id", c.id, "new_id", newID, "kept", rel(c.keep.Path), "renamed_from", rel(oldPath),
 		"renamed_to", rel(newPath), "shared", c.label, "rewritten", toAny(written))
+	if c.both {
+		e.Set("reason", "two copies gave new statements the same random id, and both reached "+c.label+
+			"; the one that reached it first keeps it")
+		e.Set("unattributed", toAny(unattributed))
+	}
 	appendLogEntry(logPath, e)
 	if !containsStr(written, overrideLogName) {
 		written = append(written, overrideLogName)
 	}
-	return written, nil
+	return written, nil, unattributed
 }
 
 func toAny(xs []string) []any {
@@ -397,20 +477,27 @@ func repairIDs(root string, extra []idCollision) (repaired, written, left []stri
 			left = append(left, fmt.Sprintf("%s: %d statements carry it; kb repairs two at a time", id, len(sts)))
 			continue
 		}
-		keep, other, ref, label, problem := sharedOf(root, sts[0], sts[1])
+		c, problem := sharedOf(root, sts[0], sts[1])
 		if problem != "" {
 			left = append(left, fmt.Sprintf("%s: carried by %s and %s, and %s", id, filepath.Base(sts[0].Path),
 				filepath.Base(sts[1].Path), problem))
 			continue
 		}
-		cols = append(cols, idCollision{id, keep, other, ref, label})
+		c.id = id
+		cols = append(cols, c)
 	}
 	for _, c := range cols {
 		was := filepath.Base(c.other.Path)
-		w, problems := repairCollision(root, c)
+		w, problems, unattributed := repairCollision(root, c)
 		if len(problems) > 0 {
 			left = append(left, c.id+": "+strings.Join(problems, "; "))
 			continue
+		}
+		if len(unattributed) > 0 {
+			left = append(left, fmt.Sprintf("%s: %s cite it but were made after both statements had reached %s, so "+
+				"kb cannot tell whether they mean %s, which keeps the id, or the one now %s; they still say %s",
+				c.id, strings.Join(unattributed, ", "), c.label, filepath.Base(c.keep.Path),
+				dyn.Str(c.other.Meta.Get("id")), c.id))
 		}
 		repaired = append(repaired, fmt.Sprintf("%s: %s keeps it (on %s); %s is now %s", c.id, filepath.Base(c.keep.Path),
 			c.label, was, dyn.Str(c.other.Meta.Get("id"))))
@@ -433,9 +520,10 @@ func sameNameCollision(root, rel, ours, theirs string) (c idCollision, problem s
 		statementOrigin(a.Meta) == statementOrigin(b.Meta) {
 		return idCollision{}, "", false
 	}
-	keep, other, ref, label, problem := sharedOf(root, a, b)
+	c, problem = sharedOf(root, a, b)
 	if problem != "" {
 		return idCollision{}, problem, true
 	}
-	return idCollision{strings.ToUpper(dyn.Str(a.Meta.Get("id"))), keep, other, ref, label}, "", true
+	c.id = strings.ToUpper(dyn.Str(a.Meta.Get("id")))
+	return c, "", true
 }

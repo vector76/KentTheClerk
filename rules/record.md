@@ -107,9 +107,10 @@ pull still leaves conflicts in the record, `kb resolve` merges them the same way
 by hand, not even to finish a merge. What kb cannot merge, such as two different changes to a
 statement's text, goes to the human. Run `kb resolve` after every merge, rebase or pull that
 brought changes, even without a conflict: it also repairs an id two copies gave to different
-statements. The one already on the shared history keeps it; the other gets a new id, every
-reference made to it is rewritten, its text included, where only the id changes, and the repair is
-entered in the override log. It is kb's repair, not an override, so it needs no turn of the human's.
+statements. The one already on the shared history keeps it, or, if both are, the one that reached
+it first; the other gets a new id, every reference made to it is rewritten, its text included, where
+only the id changes, and the repair is entered in the override log. A citation made after both had
+reached the shared history cannot be told apart, and kb lists it for the human. It is kb's repair, not an override, so it needs no turn of the human's.
 
 A knowledge base inside a code repository has a folder of its own that holds nothing else, with its
 own `.gitignore` and a README for people who don't have Kent yet. Never commit it on your own

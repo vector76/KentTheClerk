@@ -49,7 +49,9 @@ Agreement has to be explicit, and it applies to exact text:
 - **Silence is not agreement.** Neither is a vague nod at a long summary. If you don't say you agree
   to a specific statement, nothing is recorded.
 - **You agree to the exact words shown.** The recorder checks that the statement matches, word for
-  word, the text the agent showed you, and that your agreement came after it, in your own turn. If
+  word, the text the agent showed you, and that your agreement came after it, in your own turn. The
+  one later difference it allows is a statement id that kb itself renamed, in a logged repair, when
+  two copies gave the same id to different statements. If
   you want a change, say what it is; you can agree subject to that change, or ask to see the revised
   text first.
 - **Statements come one at a time by default.** Reviewing several at once tends to mean the first
