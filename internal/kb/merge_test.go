@@ -94,8 +94,12 @@ func TestMergeText(t *testing.T) {
 	base := statementText("The text.", []any{author})
 	revised := statementText("The revised text.", []any{author})
 	endorsed := statementText("The text.", []any{author, bob})
-	out, problems := mergeStatementText(base, revised, endorsed)
-	if len(problems) > 0 || !strings.Contains(out, "The revised text.") || !strings.Contains(out, "by: bob") {
+	// a revision meeting an endorsement goes to the human (TestMergeReviseMeetsEndorse)
+	if _, problems := mergeStatementText(base, revised, endorsed); len(problems) == 0 {
+		t.Errorf("a revision meeting an endorsement was merged")
+	}
+	// a change to the text with nothing added on the other side is taken
+	if out, problems := mergeStatementText(base, revised, base); len(problems) > 0 || !strings.Contains(out, "The revised text.") {
 		t.Errorf("one-sided text change: %q\n%s", problems, out)
 	}
 	other := statementText("Another text.", []any{author})
@@ -214,7 +218,6 @@ func TestResolvePathForms(t *testing.T) {
 		t.Errorf("relative to the knowledge base: %q %v", r, ok)
 	}
 	old, _ := os.Getwd()
-	os.Chdir(filepath.Join(root))
 	os.MkdirAll(filepath.Join(root, "attested"), 0o755)
 	os.Chdir(filepath.Join(root, "attested"))
 	defer os.Chdir(old)
@@ -312,5 +315,234 @@ func TestResolve(t *testing.T) {
 	if strings.Contains(string(b), "<<<<<<<") || !strings.Contains(string(b), "superseded_by: S-P3KB") ||
 		!strings.Contains(string(b), "S-Z5P4") {
 		t.Errorf("resolved file:\n%s", b)
+	}
+}
+
+// expectMeta is the statement file kb writes for the meta and text, the bytes a merge must give.
+func expectMeta(t *testing.T, got string, meta *dyn.Dict, body string) {
+	t.Helper()
+	if want := dumpFrontmatter(meta) + "\n" + body + "\n"; got != want {
+		t.Errorf("merged file:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func baseMeta(atts []any, extra ...any) *dyn.Dict {
+	meta := dyn.D("id", "S-7K2M", "title", "A decision", "answers", "what was decided",
+		"originator", "jamie", "cites", []any{}, "topics", []any{}, "attestations", atts)
+	for i := 0; i+1 < len(extra); i += 2 {
+		meta.Set(extra[i].(string), extra[i+1])
+	}
+	return meta
+}
+
+// TestMergeBytes: two endorsements and a mark merge to exactly the file kb would write.
+func TestMergeBytes(t *testing.T) {
+	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	bob := attestation("bob", "2026-10-16T12:00:00+00:00", "endorsement")
+	carol := attestation("carol", "2026-10-16T11:00:00+00:00", "endorsement")
+	out, problems := mergeStatementText(statementText("The text.", []any{author}),
+		statementText("The text.", []any{author, bob}, "amended_by", []any{"S-Z5P4"}),
+		statementText("The text.", []any{author, carol}))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	expectMeta(t, out, baseMeta([]any{author, carol, bob}, "amended_by", []any{"S-Z5P4"}), "The text.")
+}
+
+// TestMergeReviseMeetsEndorse: one side changed the text, title or answers, and the other added to the
+// statement as it was; that goes to the human.
+func TestMergeReviseMeetsEndorse(t *testing.T) {
+	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	bob := attestation("bob", "2026-10-16T12:00:00+00:00", "endorsement")
+	base := statementText("The text.", []any{author})
+	for name, changed := range map[string]string{
+		"text":    statementText("The revised text.", []any{author}),
+		"title":   strings.Replace(base, "title: A decision", "title: Another", 1),
+		"answers": strings.Replace(base, "answers: what was decided", "answers: another question", 1),
+	} {
+		for what, added := range map[string]string{
+			"an endorsement": statementText("The text.", []any{author, bob}),
+			"a mark":         statementText("The text.", []any{author}, "clarified_by", []any{"S-Z5P4"}),
+			"a supersession": statementText("The text.", []any{author}, "superseded_by", "S-P3KB"),
+		} {
+			if _, problems := mergeStatementText(base, changed, added); len(problems) == 0 {
+				t.Errorf("a change to the %s met by %s was merged", name, what)
+			}
+		}
+	}
+}
+
+// TestMergeInPlaceEdit: an attestation edited in place on one side, as a reassignment does, keeps its
+// place, so the author stays first.
+func TestMergeInPlaceEdit(t *testing.T) {
+	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	moved := attestation("jamie2", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	moved.Set("turn", author.Get("turn"))
+	bob := attestation("bob", "2026-10-16T12:00:00+00:00", "endorsement")
+	out, problems := mergeStatementText(statementText("The text.", []any{author}),
+		statementText("The text.", []any{moved}), statementText("The text.", []any{author, bob}))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	expectMeta(t, out, baseMeta([]any{moved, bob}), "The text.")
+}
+
+// TestMergeDedupe: the same person endorsing in two copies, or one seen turn recorded at different
+// seconds, is kept once, the earliest.
+func TestMergeDedupe(t *testing.T) {
+	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	bob1 := attestation("bob", "2026-10-16T12:00:00+00:00", "endorsement")
+	bob2 := attestation("bob", "2026-10-16T13:00:00+00:00", "endorsement")
+	bob2.Set("turn", "aaaaaaaa#cccccccc")
+	out, _ := mergeStatementText(statementText("The text.", []any{author}),
+		statementText("The text.", []any{author, bob2}), statementText("The text.", []any{author, bob1}))
+	expectMeta(t, out, baseMeta([]any{author, bob1}), "The text.")
+
+	seen1 := dyn.D("turn", "aaaaaaaa#dddddddd", "at", "2026-10-16T12:00:00+00:00")
+	seen2 := dyn.D("turn", "aaaaaaaa#dddddddd", "at", "2026-10-16T12:00:05+00:00")
+	out, _ = mergeStatementText(statementText("The text.", []any{author}, "seen", []any{}),
+		statementText("The text.", []any{author}, "seen", []any{seen2}),
+		statementText("The text.", []any{author}, "seen", []any{seen1}))
+	expectMeta(t, out, baseMeta([]any{author}, "seen", []any{seen1}), "The text.")
+}
+
+// TestMergeListAddedEmpty: a list one side added, even empty, is kept.
+func TestMergeListAddedEmpty(t *testing.T) {
+	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	base := statementText("The text.", []any{author})
+	out, _ := mergeStatementText(base, statementText("The text.", []any{author}, "seen", []any{}), base)
+	expectMeta(t, out, baseMeta([]any{author}, "seen", []any{}), "The text.")
+}
+
+// TestMergeEmptySide: an empty side is reported as empty, not as a different statement.
+func TestMergeEmptySide(t *testing.T) {
+	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	base := statementText("The text.", []any{author})
+	if _, problems := mergeStatementText(base, "", base); len(problems) != 1 || !strings.Contains(problems[0], "empty") {
+		t.Errorf("empty side: %q", problems)
+	}
+}
+
+// TestConflictMarkers: runs of seven or more, start and end both; a lone line of = signs is not one.
+func TestConflictMarkers(t *testing.T) {
+	if !hasConflictMarkers("<<<<<<<< HEAD\na\n========\nb\n>>>>>>>> theirs\n") {
+		t.Errorf("eight-character markers missed")
+	}
+	if hasConflictMarkers("A heading\n=======\n\nText.\n") {
+		t.Errorf("a Markdown heading underline taken for a conflict")
+	}
+}
+
+// TestReaderRefuses: the reader refuses a file holding conflict markers and a line that is not key: value,
+// and kb check says which.
+func TestReaderRefuses(t *testing.T) {
+	if _, err := readStatement("x", "---\nid: S-7K2M\n<<<<<<< ours\ntitle: a\n=======\ntitle: b\n>>>>>>> theirs\n---\n\nText.\n"); err == nil ||
+		!strings.Contains(err.Error(), "conflict markers") {
+		t.Errorf("markers: %v", err)
+	}
+	if _, err := readStatement("x", "---\nid: S-7K2M\njust words\n---\n\nText.\n"); err == nil {
+		t.Errorf("a line with no colon was read")
+	}
+	root := newTestKB(t)
+	os.WriteFile(filepath.Join(root, "attested", "S-7K2M-x.md"),
+		[]byte("---\n<<<<<<< ours\nid: S-7K2M\n=======\nid: S-7K2N\n>>>>>>> theirs\n---\n\nText.\n"), 0o644)
+	t.Setenv(kbEnv, root)
+	if out, code := kbRun(t, "check"); !strings.Contains(out, "S-7K2M-x.md: it holds conflict markers") || code != 1 {
+		t.Errorf("kb check exit %d:\n%s", code, out)
+	}
+}
+
+// TestWriterRoundTrip: values with line breaks or control characters, a bool-like string and an empty
+// dict in a list read back as written.
+func TestWriterRoundTrip(t *testing.T) {
+	meta := dyn.D("id", "S-7K2M", "reason", "one\ntwo\rthree\vfour\ffive\x1csix\x85seven eight nine",
+		"title", "true", "seen", []any{dyn.NewDict(), dyn.D("turn", "a#b", "at", "x")})
+	text := dumpFrontmatter(meta) + "\nText.\n"
+	got, err := readStatement("x", text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !dyn.Equal(got.Meta, meta) {
+		t.Errorf("read back %s\nfrom\n%s", dyn.Dumps(got.Meta), text)
+	}
+}
+
+// TestUnionMergeEdges: no final newline, an empty base, and binary input, which is an error.
+func TestUnionMergeEdges(t *testing.T) {
+	got, err := unionMerge("", "a", "b\n")
+	if err != nil {
+		t.Skip("git is not available")
+	}
+	if !strings.Contains(got, "a") || !strings.Contains(got, "b") {
+		t.Errorf("empty base, no final newline: %q", got)
+	}
+	if got, err := unionMerge("x\n", "x\na", "x\nb"); err != nil || !strings.Contains(got, "a") || !strings.Contains(got, "b") {
+		t.Errorf("no final newline: %q %v", got, err)
+	}
+	if _, err := unionMerge("a\x00b\n", "a\x00c\n", "a\x00d\n"); err == nil {
+		t.Errorf("binary input was merged")
+	}
+}
+
+// TestDriverLineEndings: CRLF only where both sides have it, so the bytes do not depend on the side.
+func TestDriverLineEndings(t *testing.T) {
+	dir := t.TempDir()
+	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	crlf := func(s string) string { return strings.ReplaceAll(s, "\n", "\r\n") }
+	write := func(name, text string) string {
+		p := filepath.Join(dir, name)
+		os.WriteFile(p, []byte(text), 0o644)
+		return p
+	}
+	run := func(a, b string) string {
+		base := write("O", statementText("The text.", []any{author}))
+		ours := write("A", a)
+		theirs := write("B", b)
+		if code := Main([]string{"merge-driver", base, ours, theirs, "attested/S-7K2M-a.md"}); code != 0 {
+			t.Fatalf("driver exit %d", code)
+		}
+		out, _ := os.ReadFile(ours)
+		return string(out)
+	}
+	a := statementText("The text.", []any{author}, "superseded_by", "S-P3KB")
+	b := statementText("The text.", []any{author}, "amended_by", []any{"S-Z5P4"})
+	if got := run(crlf(a), crlf(b)); !strings.Contains(got, "\r\n") {
+		t.Errorf("both CRLF gave LF")
+	}
+	one, other := run(crlf(a), b), run(b, crlf(a))
+	if one != other || strings.Contains(one, "\r") {
+		t.Errorf("one side CRLF depends on the side, or kept CRLF:\n%q\n%q", one, other)
+	}
+}
+
+// TestDriverOtherFile: a file kb does not merge, as a README among the statements, gets git's own text
+// merge: merged when it can be, conflicted when not.
+func TestDriverOtherFile(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, text string) string {
+		p := filepath.Join(dir, name)
+		os.WriteFile(p, []byte(text), 0o644)
+		return p
+	}
+	base := write("O", "one\ntwo\nthree\n")
+	ours := write("A", "ONE\ntwo\nthree\n")
+	theirs := write("B", "one\ntwo\nTHREE\n")
+	if code := Main([]string{"merge-driver", base, ours, theirs, "attested/README.md"}); code != 0 {
+		t.Fatalf("a clean text merge exited %d", code)
+	}
+	if b, _ := os.ReadFile(ours); string(b) != "ONE\ntwo\nTHREE\n" {
+		t.Errorf("text merge: %q", b)
+	}
+}
+
+// TestUserConflicts: two rows for one key, as two copies adding it with different emails leave, are
+// reported for the human.
+func TestUserConflicts(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, usersName), []byte(
+		`{"key": "sam", "name": "Sam", "email": "sam@a.example"}`+"\n"+
+			`{"key": "sam", "name": "Sam", "email": "sam@b.example"}`+"\n"), 0o644)
+	if got := userConflicts(root); len(got) != 1 || !strings.Contains(got[0], "the key sam has 2 rows") {
+		t.Errorf("user conflicts: %q", got)
 	}
 }

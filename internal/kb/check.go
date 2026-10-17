@@ -39,6 +39,25 @@ func listOf(v any) []any {
 
 func runCheck(ns argparse.Namespace) int {
 	root := repoRoot()
+	// statement files kb cannot read, as one holding conflict markers, come first: the rest of the check
+	// reads every statement, so it waits until they are fixed
+	var broken []string
+	for _, p := range statementFiles(root) {
+		if _, err := readStatement(p, dyn.ReadText(p)); err != nil {
+			why := "it cannot be read: " + err.Error()
+			if hasConflictMarkers(dyn.Universal(dyn.ReadText(p))) {
+				why = "it holds conflict markers; run kb resolve, and leave to the human what it cannot merge"
+			}
+			broken = append(broken, filepath.Base(p)+": "+why)
+		}
+	}
+	if len(broken) > 0 {
+		for _, b := range broken {
+			println("ERROR: " + b)
+		}
+		println(fmt.Sprintf("%d statement file(s) kb cannot read; the rest of the check runs once they are fixed", len(broken)))
+		return 1
+	}
 	var errors, warnings []string
 	errorf := func(f string, a ...any) { errors = append(errors, fmt.Sprintf(f, a...)) }
 	warnf := func(f string, a ...any) { warnings = append(warnings, fmt.Sprintf(f, a...)) }

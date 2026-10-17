@@ -705,6 +705,11 @@ func parseFrontmatter(text string) (*dyn.Dict, string) {
 
 // readFrontmatter is parseFrontmatter that says what it cannot read instead of stopping.
 func readFrontmatter(text string) (*dyn.Dict, string, error) {
+	// a file holding a conflict git wrote is refused rather than read, so that no act rewrites it and loses
+	// a side
+	if hasConflictMarkers(text) {
+		return nil, "", fmt.Errorf("it holds conflict markers")
+	}
 	m := frontmatterRE.FindStringSubmatch(text)
 	if m == nil {
 		return dyn.NewDict(), text, nil
@@ -722,9 +727,12 @@ func readFrontmatter(text string) (*dyn.Dict, string, error) {
 		if startsIndented(line) {
 			return nil, "", fmt.Errorf("unexpected indentation in frontmatter: %s", dyn.StrRepr(line))
 		}
-		key, _, rest := dyn.Partition(line, ":")
+		key, colon, rest := dyn.Partition(line, ":")
 		key = dyn.Strip(key)
 		rest = dyn.Strip(rest)
+		if colon == "" || !fmKeyRE.MatchString(key) {
+			return nil, "", fmt.Errorf("not a key: value line in frontmatter: %s", dyn.StrRepr(line))
+		}
 		if strings.HasPrefix(rest, "[") && strings.HasSuffix(rest, "]") {
 			inner := dyn.Strip(rest[1 : len(rest)-1])
 			items := []any{}
@@ -751,6 +759,11 @@ func readFrontmatter(text string) (*dyn.Dict, string, error) {
 				continue
 			}
 			s := dyn.Strip(l)
+			if s == "- {}" {
+				items = append(items, dyn.NewDict())
+				i++
+				continue
+			}
 			if strings.HasPrefix(s, "- ") {
 				s = s[2:]
 				if strings.Contains(s, ":") && !strings.HasPrefix(s, "'") && !strings.HasPrefix(s, `"`) {
@@ -775,6 +788,13 @@ func readFrontmatter(text string) (*dyn.Dict, string, error) {
 	return meta, body, nil
 }
 
+// fmKeyRE is a frontmatter key kb writes: an identifier.
+var fmKeyRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// fmLineBreaks are the characters the frontmatter reader splits lines at, as Python's splitlines does; a
+// value holding one is written quoted, with each escaped, so that it stays on its line.
+const fmLineBreaks = "\n\r\v\f\x1c\x1d\x1e\u0085\u2028\u2029"
+
 func fmQuote(v any) string {
 	switch x := v.(type) {
 	case nil:
@@ -789,6 +809,9 @@ func fmQuote(v any) string {
 	// a string that would read back as something else, a bool or null, is quoted so it reads back as itself
 	if _, isStr := v.(string); isStr && (s == "true" || s == "false" || s == "null" || s == "~") {
 		return dyn.JSONStr(s)
+	}
+	if strings.ContainsAny(s, fmLineBreaks) {
+		return strings.NewReplacer("\u0085", `\u0085`, "\u2028", `\u2028`, "\u2029", `\u2029`).Replace(dyn.JSONStr(s))
 	}
 	if s == "" || strings.ContainsAny(s, ":#[]{},\"'") || s != dyn.Strip(s) {
 		return dyn.JSONStr(s)
@@ -808,6 +831,10 @@ func dumpFrontmatter(meta *dyn.Dict) string {
 			out = append(out, k+":")
 			for _, it := range l {
 				if d, ok := it.(*dyn.Dict); ok {
+					if d.Len() == 0 {
+						out = append(out, "  - {}")
+						continue
+					}
 					first := true
 					for _, ik := range d.Keys() {
 						prefix := "    "
@@ -856,6 +883,7 @@ func loadAllStatements(root string) []*Statement {
 	}
 	return byMade(out)
 }
+
 
 // loadAllAgentStatements reads agent/ in the order the statements were made (byMade).
 func loadAllAgentStatements(root string) []*Statement {
