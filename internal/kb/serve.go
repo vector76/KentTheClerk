@@ -381,9 +381,6 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 	for _, c := range query(db, "SELECT c.target, c.note FROM context_links c LEFT JOIN statements s ON s.id = c.target WHERE c.statement = ? ORDER BY s.made_at, c.target", sid) {
 		out = append(out, "<tr><th>context for</th><td><a href='/s/"+esc(c["target"])+"'>"+esc(c["target"])+"</a>: "+esc(c["note"])+"</td></tr>")
 	}
-	if truthy(s["topics"]) {
-		out = append(out, "<tr><th>topics</th><td>"+esc(s["topics"])+"</td></tr>")
-	}
 	out = append(out, "<tr><th>file</th><td><code>"+esc(s["path"])+"</code></td></tr></table>")
 	if truthy(s["modified_in"]) {
 		out = append(out, "<h2>agreed with modification — check by reading</h2>")

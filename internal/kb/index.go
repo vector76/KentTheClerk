@@ -32,7 +32,7 @@ CREATE INDEX turns_session ON turns(session, seq);
 CREATE TABLE statements (
   id TEXT PRIMARY KEY, title TEXT, answers TEXT, originator TEXT, proposed_in TEXT, modified_in TEXT,
   supersedes TEXT, superseded_by TEXT, amends TEXT, amended_by TEXT, clarifies TEXT, clarified_by TEXT,
-  topics TEXT, body TEXT, path TEXT,
+  body TEXT, path TEXT,
   kind TEXT, rests_on TEXT, seen_count INTEGER, withdrawn_in TEXT, made_at TEXT
 );
 CREATE TABLE attestations (
@@ -200,11 +200,11 @@ func buildIndex(root string) string {
 			originator, proposed = m.Get("author"), m.Get("made_in")
 		}
 		id := m.Get("id")
-		exec("INSERT INTO statements VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		exec("INSERT INTO statements VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 			id, m.Get("title"), m.Get("answers"), originator, proposed,
 			m.Get("modified_in"), m.Get("supersedes"), m.Get("superseded_by"), m.Get("amends"),
 			joinStrs(dyn.Or(m.Get("amended_by"), []any{})), m.Get("clarifies"), joinStrs(dyn.Or(m.Get("clarified_by"), []any{})),
-			joinStrs(dyn.Or(m.Get("topics"), []any{})), ks.st.Body, rel(ks.st.Path, root),
+			ks.st.Body, rel(ks.st.Path, root),
 			ks.kind, joinStrs(dyn.Or(m.Get("rests_on"), []any{})), dyn.IntOf(len(listOf(m.Get("seen")))), m.Get("withdrawn_in"), madeAt(m))
 		for _, xv := range listOf(m.Get("seen")) {
 			exec("INSERT INTO citations VALUES (?,?,?)", id, dyn.AsDict(xv).Get("turn"), "seen")

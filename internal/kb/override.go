@@ -991,7 +991,6 @@ func runOverrideRevise(ns argparse.Namespace, args []string) int {
 	if v := st.Meta.Get("context_for"); dyn.Truthy(v) {
 		ordered.Set("context_for", v)
 	}
-	ordered.Set("topics", dyn.Or(getOr(meta, "topics", st.Meta.Get("topics")), []any{}))
 	ordered.Set("attestations", []any{record})
 	ordered.Set("revised", id)
 

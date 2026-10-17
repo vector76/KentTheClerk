@@ -191,7 +191,6 @@ func runAttest(ns argparse.Namespace) int {
 	if len(context) > 0 {
 		ordered.Set("context_for", context)
 	}
-	ordered.Set("topics", dyn.Or(getOr(meta, "topics", []any{}), []any{}))
 	ordered.Set("attestations", []any{record})
 	dest := filepath.Join(root, "attested", sid+"-"+slugify(dyn.AsStr(meta.Get("title")), 60)+".md")
 	dyn.WriteText(dest, dumpFrontmatter(ordered)+"\n"+body+"\n")

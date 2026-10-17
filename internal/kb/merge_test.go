@@ -17,7 +17,7 @@ func attestation(by, at, form string) *dyn.Dict {
 // statementText is a statement file as kb writes it, with extra fields set after the attestations.
 func statementText(body string, atts []any, extra ...any) string {
 	meta := dyn.D("id", "S-7K2M", "title", "A decision", "answers", "what was decided",
-		"originator", "jamie", "cites", []any{}, "topics", []any{}, "attestations", atts)
+		"originator", "jamie", "cites", []any{}, "attestations", atts)
 	for i := 0; i+1 < len(extra); i += 2 {
 		meta.Set(extra[i].(string), extra[i+1])
 	}
@@ -136,7 +136,7 @@ func TestMergeRefusesMarkers(t *testing.T) {
 	if _, problems := mergeStatementText(base, inBody, base); len(problems) == 0 {
 		t.Errorf("markers in the text were taken as a change")
 	}
-	inMeta := strings.Replace(base, "topics: []", "<<<<<<< ours\ntopics: []\n=======\ntopics: [x]\n>>>>>>> theirs", 1)
+	inMeta := strings.Replace(base, "cites: []", "<<<<<<< ours\ncites: []\n=======\ncites: [x]\n>>>>>>> theirs", 1)
 	if _, problems := mergeStatementText(base, base, inMeta); len(problems) == 0 {
 		t.Errorf("markers in the frontmatter were parsed as keys")
 	}
@@ -328,7 +328,7 @@ func expectMeta(t *testing.T, got string, meta *dyn.Dict, body string) {
 
 func baseMeta(atts []any, extra ...any) *dyn.Dict {
 	meta := dyn.D("id", "S-7K2M", "title", "A decision", "answers", "what was decided",
-		"originator", "jamie", "cites", []any{}, "topics", []any{}, "attestations", atts)
+		"originator", "jamie", "cites", []any{}, "attestations", atts)
 	for i := 0; i+1 < len(extra); i += 2 {
 		meta.Set(extra[i].(string), extra[i+1])
 	}

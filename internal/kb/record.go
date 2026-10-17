@@ -114,7 +114,6 @@ func runRecord(ns argparse.Namespace) int {
 	if len(context) > 0 {
 		ordered.Set("context_for", context)
 	}
-	ordered.Set("topics", dyn.Or(getOr(meta, "topics", []any{}), []any{}))
 	shown := textContained(body, turnText(turn))
 	if shown {
 		ordered.Set("seen", []any{dyn.D("turn", madeIn, "at", ts)})

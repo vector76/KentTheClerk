@@ -12,7 +12,7 @@ import (
 // stmt is a statement file's text with the given id, title, time of its attestation and text.
 func stmt(id, title, at, body string, extra ...any) string {
 	meta := dyn.D("id", id, "title", title, "answers", "a question", "originator", "jamie", "cites", []any{},
-		"topics", []any{}, "attestations", []any{attestation("jamie", at, "proposed-and-agreed")})
+		"attestations", []any{attestation("jamie", at, "proposed-and-agreed")})
 	for i := 0; i+1 < len(extra); i += 2 {
 		meta.Set(extra[i].(string), extra[i+1])
 	}
