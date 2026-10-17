@@ -201,10 +201,11 @@ anything turns out different from what you described.
      environment variable, which would point every project at the same knowledge base.
    - `permissions.additionalDirectories` and the `allow` rules let the agent read the knowledge base,
      run `kb`, and write drafts in `off-record/drafts/`. For a knowledge base in its own repository they
-     also let it run the git commands the session-start text asks for there: add, commit, pull, push,
-     fetch, status, log, diff and show, and finishing a rebase without an editor, each written
-     `git -C <folder> …`. Any other git command, such as config, checkout or reset, still asks. If it
-     moves into git later, run `kb setup` again.
+     also let it run, each written `git -C <folder> …`, exactly the git forms the session-start text
+     and `kb resolve` ask for: `status`, `fetch`, `pull --no-rebase`, `add` with paths, `commit -m` with
+     a message, `commit --no-edit`, `push`, `push -u origin HEAD`, and finishing a rebase without an
+     editor. Anything else asks, `log`, `diff` and `show` included, since some of git's options write
+     files or run programs. If it moves into git later, run `kb setup` again.
    - The `deny` rules stop the agent from editing the record's files by hand, so only `kb` writes there.
    - `hooks.SessionStart` runs `kb session-start` whenever a conversation starts, is resumed, cleared or
      compacted. It prints Kent's instructions into the agent's context, from the version of Kent that

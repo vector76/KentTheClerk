@@ -261,22 +261,32 @@ func TestSetupInCodeRepository(t *testing.T) {
 	}
 }
 
-// TestGitAllowNarrow: the allow rules for a knowledge base of its own name the git commands the
-// session-start text asks for, the same for Bash and PowerShell, and nothing else.
+// TestGitAllowNarrow: the allow rules for a knowledge base of its own are exactly the git forms the text
+// asks for, the same for Bash and PowerShell; no rule lets an option through that writes a file or runs
+// a program (log, diff, show, a wildcard after fetch, pull or push).
 func TestGitAllowNarrow(t *testing.T) {
 	kb := newTestKB(t)
 	fakeRepo(t, kb, "")
-	g := gitPrefix(kb)
-	allow := kentAllow(kb)
-	has := func(rule string) bool { return slices.Contains(allow, rule) }
-	for _, c := range []string{g + " commit *", g + " pull *", g + " push *", g + " status", g + " -c core.editor=true rebase --continue"} {
-		if !has("Bash("+c+")") || !has("PowerShell("+c+")") {
-			t.Errorf("%q is not allowed in both shells", c)
+	g := gitPrefix(kb) + " "
+	var want []string
+	for _, c := range []string{"status", "fetch", "pull --no-rebase", "pull --no-rebase --no-edit", "add *",
+		"commit -m *", "commit --no-edit", "push", "push -u origin HEAD", "-c core.editor=true rebase --continue"} {
+		want = append(want, "Bash("+g+c+")", "PowerShell("+g+c+")")
+	}
+	var got []string
+	for _, a := range kentAllow(kb) {
+		if strings.Contains(a, "(git ") {
+			got = append(got, a)
 		}
 	}
-	for _, c := range []string{g + " *", g + " config *", g + " -c *", g + " reset *", g + " checkout *", g + " clean *"} {
-		if has("Bash("+c+")") || has("PowerShell("+c+")") {
-			t.Errorf("%q is allowed", c)
+	if !slices.Equal(got, want) {
+		t.Errorf("git allow rules:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	for _, a := range got {
+		for _, bad := range []string{" log", " diff", " show", "fetch *", "pull *", "push *", "--output", "-pack", "--exec"} {
+			if strings.Contains(a, bad) {
+				t.Errorf("%s lets %q through", a, bad)
+			}
 		}
 	}
 }

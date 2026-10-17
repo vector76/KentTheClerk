@@ -147,16 +147,30 @@ func driverRegistered(root string) (registered, ran bool) {
 	return (prog == "kb" || prog == "kb.exe") && slices.Equal(got[1:], want[1:]), true
 }
 
-// gitAllowed are the git commands the session-start text asks of the agent in a knowledge base of its own,
-// each as git -C and the folder, for setup's allow rules: commit, sync, look, and finish a merge or rebase
-// without an editor. Anything else, -c and config, checkout, reset or clean among them, asks the human.
+// gitAllowed are the git commands setup allows the agent in a knowledge base of its own, each as git -C and
+// the folder: exactly the forms the session-start text, the runbook and kb resolve's closing hint ask for.
+// Most are fixed, with no wildcard, since git's own options can write files anywhere (log, diff and show's
+// --output) or run programs (fetch and pull's --upload-pack, push's --receive-pack and --exec, pull's
+// --rebase --exec, diff's --ext-diff and --textconv). So the read commands, log, diff and show, are not
+// allowed at all and ask the human; only a bare status is. Two forms take a wildcard, because an argument
+// must vary: "add *" for the paths to stage, and "commit -m *" for the message. The wildcard still lets
+// git add and git commit take any of their own options, but neither command has an option that writes
+// outside the repository or runs a program it is given; global options such as -c, --config, --git-dir
+// and --work-tree go before the subcommand, where the wildcard does not reach.
 func gitAllowed(kb string) []string {
-	g := gitPrefix(kb)
-	var out []string
-	for _, sub := range []string{"add", "commit", "pull", "push", "fetch", "status", "log", "diff", "show"} {
-		out = append(out, g+" "+sub, g+" "+sub+" *")
+	g := gitPrefix(kb) + " "
+	return []string{
+		g + "status",
+		g + "fetch",
+		g + "pull --no-rebase",
+		g + "pull --no-rebase --no-edit",
+		g + "add *",
+		g + "commit -m *",
+		g + "commit --no-edit",
+		g + "push",
+		g + "push -u origin HEAD",
+		g + "-c core.editor=true rebase --continue",
 	}
-	return append(out, g+" -c core.editor=true rebase --continue")
 }
 
 // submoduleWarning is what kb says about a knowledge base in a git submodule checkout (S-SG81).
