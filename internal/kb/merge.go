@@ -415,21 +415,19 @@ func runResolve(ns argparse.Namespace) int {
 		}
 	}
 	var resolved, left []string
-	var collisions []idCollision
 	for _, f := range files {
 		kind := recordFileKind(f)
 		base, okO := gitBlob(root, f, 1)
 		ours, okA := gitBlob(root, f, 2)
 		theirs, okB := gitBlob(root, f, 3)
 		if kind == "statement" && !okO && okA && okB {
-			// both sides added a file of this name: perhaps two statements given one id and one title
-			if c, problem, ok := sameNameCollision(root, f, ours, theirs); ok {
-				switch {
-				case problem != "":
-					left = append(left, fmt.Sprintf("%s: two statements were given one id and name, and %s", f, problem))
-				case c.id != "":
-					collisions = append(collisions, c)
-				}
+			// both sides added a file of this name: perhaps two statements given one id and one title (S-74B5)
+			a, errA := readStatement(f, ours)
+			b, errB := readStatement(f, theirs)
+			if errA == nil && errB == nil && dyn.Truthy(a.Meta.Get("id")) && dyn.Equal(a.Meta.Get("id"), b.Meta.Get("id")) &&
+				statementOrigin(a.Meta) != statementOrigin(b.Meta) {
+				left = append(left, fmt.Sprintf("%s: both sides added it, as two different statements: %s",
+					f, collisionText(dyn.Str(a.Meta.Get("id")), []string{"ours", "theirs"})))
 				continue
 			}
 		}
@@ -450,20 +448,8 @@ func runResolve(ns argparse.Namespace) int {
 		writeRecordFile(filepath.Join(root, filepath.FromSlash(f)), kind, merged)
 		resolved = append(resolved, f)
 	}
-	// then make the record whole: no two statements with one id (S-W5AJ)
-	repaired, written, unrepaired := repairIDs(root, collisions)
-	left = append(left, unrepaired...)
-	for _, f := range written {
-		if !slices.Contains(resolved, f) {
-			resolved = append(resolved, f)
-		}
-	}
-	if len(repaired) > 0 {
-		println("Repaired id collisions, each entered in " + overrideLogName + ":")
-		for _, r := range repaired {
-			println("  " + r)
-		}
-	}
+	// then report any id two statements carry, which kb leaves to the human (S-74B5)
+	left = append(left, collisions(root)...)
 	if len(resolved) > 0 {
 		println("Written by kb:")
 		for _, f := range resolved {
@@ -497,7 +483,7 @@ func addMergeParsers(sub *argparse.Parser) {
 	d.Positional("theirs_label", argparse.Optional, "the label of theirs (%Y)")
 	d.Run = runMergeDriver
 
-	r := sub.AddParser("resolve", "merge the record's files git left conflicted, and repair ids two statements share")
+	r := sub.AddParser("resolve", "merge the record's files git left conflicted, and report ids two statements share")
 	r.Positional("files", argparse.ZeroMore, "conflicted files to resolve: absolute, or relative to the current "+
 		"folder or the knowledge base (default: every conflicted file)")
 	r.Run = runResolve

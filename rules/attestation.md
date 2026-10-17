@@ -36,9 +36,7 @@ settings).
 **Kent Rule 25.** The attested text is exactly the text that was agreed to: word for word the
 proposal, or, for a self-attestation, word for word within the human's own turn. Under
 agreed-with-modification it is the proposal with the stated change applied, and both turns are
-recorded so the result can be checked by reading. The one difference allowed later is an id that a
-logged collision repair rewrote (`kb rules record`, Storage): kb checks the text with that repair
-undone, so nothing else in it may differ.
+recorded so the result can be checked by reading.
 
 **Kent Rule 26.** A person attests a given statement once. A further attestation of the same
 statement comes from someone else.

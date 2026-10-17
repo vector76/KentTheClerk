@@ -107,15 +107,11 @@ pull still leaves conflicts in the record, `kb resolve` merges them the same way
 by hand, not even to finish a merge. What kb cannot merge, such as two different changes to a
 statement's text, goes to the human.
 
-Run `kb resolve` after every merge, rebase or pull that brought changes, even without a conflict: it
-also repairs an id that copies gave to different statements. The one already on the shared history
-keeps the id; if several are, the one that reached it first keeps it. Each other gets a new id, and
-every reference made to it is rewritten, its text included, where only the id changes, even inside a
-link or a code span. A citation made after both had reached the shared history cannot be told apart,
-and kb lists it for the human. The repair is entered in the override log; it is kb's repair, not an
-override, so it needs no turn of the human's. Files `kb resolve` writes are committed like an act's:
-in a repository of its own, commit them, and push them if it has a remote; inside a code repository,
-leave them to the person.
+Run `kb resolve` after every merge, rebase or pull that brought changes, even without a conflict. It
+also reports two statements carrying one id, which copies can give to different statements. kb does
+not repair that: it is left to the human, and how to fix one is worked out if it happens. Files
+`kb resolve` writes are committed like an act's: in a repository of its own, commit them, and push
+them if it has a remote; inside a code repository, leave them to the person.
 
 A knowledge base inside a code repository has a folder of its own that holds nothing else, with its
 own `.gitignore` and a README for people who don't have Kent yet. Never commit it on your own

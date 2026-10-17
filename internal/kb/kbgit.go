@@ -226,7 +226,7 @@ func gitLines(root string, env func(string) string) (lines, problems []string) {
 		lines = append(lines, "Expect any pull to bring changes, even where nobody else writes, since the same person "+
 			"may write from another machine, and be ready for a pull that merges or stops on a conflict. kb merges "+
 			"the record's files as git merges them. After every merge, rebase or pull that brought changes, run "+
-			"`kb resolve`: it merges what git left conflicted in the record and repairs ids copies gave to different "+
+			"`kb resolve`: it merges what git left conflicted in the record and reports ids copies gave to different "+
 			"statements. Never merge the record's files by hand. If it cannot resolve something, stop and tell the "+
 			"human. Then run `kb check`. Files kb resolve writes are commits like an act's: "+
 			map[bool]string{true: "commit them, and push them where you push.",

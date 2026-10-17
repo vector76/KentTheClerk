@@ -56,12 +56,7 @@ func runCheck(ns argparse.Namespace) int {
 	// the override log, and the tombstones overrides leave in evidence (S-0132)
 	overrides := overrideChecks(root, sessions, errorf, warnf)
 	usersChecks(root, sessions, errorf, warnf)
-	// a statement's text as it was made, before kb repaired an id collision that rewrote ids in it
-	// (S-RFFZ): the turn it was agreed in still holds the old id
-	logEntries, _ := loadOverrideLog(root)
-	contained := func(st *Statement, text string) bool {
-		return textContained(st.Body, text) || textContained(asMade(st, logEntries), text)
-	}
+	contained := func(st *Statement, text string) bool { return textContained(st.Body, text) }
 
 	// resolve is same-session resolution by default; background citations may resolve through the
 	// fork's ancestry chain (S-0034); attestation and proposal turns may not (S-0032).
@@ -175,7 +170,7 @@ func runCheck(ns argparse.Namespace) int {
 			errorf("%s: filename does not start with its id %s", name, sid)
 		}
 		if prev, ok := ids[sid]; ok {
-			errorf("duplicate id %s: %s and %s (kb resolve repairs it)", sid, name, prev)
+			errorf("duplicate id %s: %s and %s: copies gave different statements the same id; kb does not repair this, and it is left to the human", sid, name, prev)
 		}
 		ids[sid] = name
 		// only the sequential ids given before S-0149 can leave a gap; a random id has a letter
@@ -183,7 +178,7 @@ func runCheck(ns argparse.Namespace) int {
 			n, _ := dyn.ParseInt(sid[2:])
 			nums = append(nums, int(n.Int64()))
 		}
-		statementOverrideChecks(st, overrides, errorf, asMade(st, logEntries))
+		statementOverrideChecks(st, overrides, errorf)
 		scrubbed := dyn.Truthy(st.Meta.Get("scrubbed"))
 		if !dyn.Truthy(st.Meta.Get("title")) {
 			errorf("%s: missing title (%s)", sid, rule("title-and-answers"))
@@ -326,10 +321,10 @@ func runCheck(ns argparse.Namespace) int {
 			errorf("agent/%s: filename does not start with its id %s", name, aid)
 		}
 		if prev, ok := ids[aid]; ok {
-			errorf("duplicate id %s: %s and %s (kb resolve repairs it)", aid, name, prev)
+			errorf("duplicate id %s: %s and %s: copies gave different statements the same id; kb does not repair this, and it is left to the human", aid, name, prev)
 		}
 		ids[aid] = name
-		statementOverrideChecks(st, overrides, errorf, asMade(st, logEntries))
+		statementOverrideChecks(st, overrides, errorf)
 		for _, k := range []string{"title", "answers", "author"} {
 			if dyn.Strip(dyn.Str(dyn.Or(st.Meta.Get(k), ""))) == "" {
 				errorf("%s: missing %s", aid, k)

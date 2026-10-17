@@ -291,9 +291,6 @@ func actKeys(root string, sessions *Sessions) map[string]*actCount {
 	}
 	entries, _ := loadOverrideLog(root)
 	for i, e := range entries {
-		if entryStr(e, "kind") == ovRepairID {
-			continue // a repair by kb, not an act by a person (S-W5AJ)
-		}
 		if by := idAfter(entries, i, entryStr(e, "by"), entryStr(e, "turn")); personKey(by) {
 			c := at(by)
 			c.logged++
