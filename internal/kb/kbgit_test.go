@@ -102,7 +102,7 @@ func TestGitBroken(t *testing.T) {
 		t.Errorf("empty .git: %+v %q", p, problems)
 	}
 	var r report
-	kbReport(&r, root)
+	kbReport(&r, root, false)
 	if todo := joined(r.todos()); !strings.Contains(todo, "not a git repository") || strings.Contains(todo, "merge driver") {
 		t.Errorf("setup contradicts itself on a broken .git:\n%s", todo)
 	}
@@ -178,8 +178,9 @@ func TestGitPrefixAgrees(t *testing.T) {
 		target = link
 	}
 	t.Setenv(kbEnv, target)
-	fromSetup, _ := chooseKB("", settingsFile{env: map[string]string{}})
-	fromSession, _ := findKBRoot()
+	fromSetup := chooseKBs("", settingsFile{env: map[string]string{}})[0].path
+	roots, _, _ := findKBRoots()
+	fromSession := roots[0]
 	if gitPrefix(fromSetup) != gitPrefix(fromSession) {
 		t.Errorf("setup %q, session-start %q", gitPrefix(fromSetup), gitPrefix(fromSession))
 	}
@@ -247,7 +248,7 @@ func TestSetupInCodeRepository(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(kb, "design.md"), nil, 0o644)
 	var r report
-	kbReport(&r, kb)
+	kbReport(&r, kb, false)
 	todo := strings.Join(r.todos(), "\n")
 	if !strings.Contains(todo, "README.md") || !strings.Contains(todo, "design.md") {
 		t.Fatalf("setup did not ask for the hint file and about design.md:\n%s", todo)
@@ -255,7 +256,7 @@ func TestSetupInCodeRepository(t *testing.T) {
 	os.Remove(filepath.Join(kb, "design.md"))
 	os.WriteFile(filepath.Join(kb, "README.md"), nil, 0o644)
 	r = report{}
-	kbReport(&r, kb)
+	kbReport(&r, kb, false)
 	if todo := strings.Join(r.todos(), "\n"); strings.Contains(todo, "README.md") || strings.Contains(todo, "besides") {
 		t.Fatalf("setup still asks:\n%s", todo)
 	}

@@ -31,7 +31,8 @@ it alone. An agent statement may be context for either kind.
 it: a further attestation on the statement itself. To build on it, list it in `rests_on`, which does
 not mark it, since depending on a statement does not change how it reads. Otherwise mention it by id
 in the text, or not at all; a mention makes no link. A statement that both builds on another and
-changes how it reads lists it in both `rests_on` and `context_for`.
+changes how it reads lists it in both `rests_on` and `context_for`. Both reach a statement in another
+knowledge base too, where `context_for` marks nothing (Kent Rule 60).
 
 ## Reading
 

@@ -20,7 +20,9 @@ session.
 **Kent Rule 12.** A session nobody declared is off-record. A session that never touches the
 knowledge base, or only reads it, can stay that way. When statements worth recording come up, ask
 the human whether the session goes on the record before snapshotting it as on-record. Where this
-project's settings say to ask up front, ask before doing anything else.
+project's settings say to ask up front, ask before doing anything else. Where the project refers to
+several knowledge bases, the session goes on the record in one of them, which the human names
+(Kent Rule 59).
 
 **Kent Rule 13.** Never snapshot a private session.
 

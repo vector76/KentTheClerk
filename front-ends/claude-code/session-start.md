@@ -10,7 +10,7 @@ and no pipes: the project's permissions allow exactly that form, and anything co
 the human again. Read the knowledge base's files with your file-reading and search tools rather than
 the shell, for the same reason; `kb search <terms>` searches the whole record. `kb help` lists the
 commands. Below, `<kb>/` stands for the knowledge base's folder, given at the end with the version of
-Kent that runs. Kent's rules and the documents you read are built into `kb`: `kb rules` lists them,
+Kent that runs; where the project refers to several, for the folder of the one in question. Kent's rules and the documents you read are built into `kb`: `kb rules` lists them,
 `kb rules <name>` prints a document, `kb rules <number>` prints one rule, and a refusal names the rule
 it enforces and how to view it. Read a document when its topic comes up, not before.
 
@@ -31,6 +31,7 @@ Two rules hold before any of those documents is read:
 | Session modes, forks, snapshots, off-record material | `kb rules sessions` |
 | The layers of the record, citing, documents, changing a statement; storage, git, merges and conflicts | `kb rules record` |
 | Linking statements, or reading one that carries `extra_context: true` | `kb rules links` |
+| Several knowledge bases, or a reference such as `K-…/S-…` into another one | `kb rules several-knowledge-bases` |
 | Changing the record against its rules: merging two keys for one person, scrubbing content, revising a statement just attested | `kb rules overrides` |
 | Someone not yet in the user table, or a person's name or email changing | `kb rules people` |
 | Setting Kent up in this project, or something below says it is not set up right | `kb setup` |

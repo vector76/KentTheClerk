@@ -4,7 +4,8 @@
 //	<install folder>/kb[.exe]                      this launcher
 //	<install folder>/versions/<version>/kb[.exe]   each installed version of Kent
 //
-// It runs the version the knowledge base is pinned to (S-0115); with no pin, the version named by
+// It runs the version the knowledge base is pinned to (S-0115), the one --kb names when the project refers to
+// several and their pins differ; with no pin, the version named by
 // KENT_VERSION in the user's settings for the project; with neither, the installed version with the
 // highest version number, a development build such as 0.9.0-dev counting as just below 0.9.0. A pin and a
 // different KENT_VERSION are refused. A missing version is never installed (S-0108): the launcher says how
@@ -25,6 +26,7 @@ import (
 	"sort"
 	"strings"
 
+	"kenttheclerk/internal/kbset"
 	"kenttheclerk/internal/pin"
 )
 
@@ -76,35 +78,112 @@ func installed(dir string) []string {
 	return out
 }
 
-// findKB is where the recorder will look for the knowledge base: KENT_KB, else the current folder or the
-// nearest folder above it holding attested/ and evidence/. It mirrors the recorder's own lookup only to find
-// the pin; when it finds nothing, the version chosen without a pin reports the problem itself.
-func findKB() string {
-	isKB := func(p string) bool {
-		a, err1 := os.Stat(filepath.Join(p, "attested"))
-		e, err2 := os.Stat(filepath.Join(p, "evidence"))
-		return err1 == nil && err2 == nil && a.IsDir() && e.IsDir()
-	}
+// findKBs are where the recorder will look for the knowledge bases: the folders KENT_KB names, which may
+// be several (S-ZBVAHS), else the current folder or the nearest folder above it holding attested/ and
+// evidence/. It mirrors the recorder's own lookup only to find the pins; when it finds nothing, the version
+// chosen without a pin reports the problem itself.
+func findKBs() []string {
 	if env := os.Getenv(kbEnv); env != "" {
-		if p, err := filepath.Abs(env); err == nil && isKB(p) {
-			return p
+		var out []string
+		for _, f := range kbset.SplitList(env) {
+			if p := kbset.Abs(f); kbset.IsKB(p) {
+				out = append(out, p)
+			}
 		}
-		return ""
+		return out
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		return ""
+		return nil
 	}
 	for p := cwd; ; {
-		if isKB(p) {
-			return p
+		if kbset.IsKB(p) {
+			return []string{p}
 		}
 		parent := filepath.Dir(p)
 		if parent == p {
-			return ""
+			return nil
 		}
 		p = parent
 	}
+}
+
+// kbArg is the value of --kb among the arguments, wherever it stands, as the recorder takes it.
+func kbArg(args []string) string {
+	for i, a := range args {
+		switch {
+		case a == "--":
+			return ""
+		case a == "--kb" && i+1 < len(args):
+			return args[i+1]
+		case strings.HasPrefix(a, "--kb="):
+			return strings.TrimPrefix(a, "--kb=")
+		}
+	}
+	return ""
+}
+
+// pinned is a knowledge base and its pin.
+type pinned struct {
+	root string
+	pin  *pin.Pin
+}
+
+// pinFor is the pin that chooses the version: that of the knowledge base --kb names, else the one pin the
+// project's knowledge bases agree on. When their pins differ, a command must name its knowledge base,
+// except kb session-start, which runs under the highest version they are pinned to and tells the agent to
+// pass --kb. A --kb the launcher cannot follow is left to the recorder to report.
+func pinFor(args []string) (*pin.Pin, string, error) {
+	roots := findKBs()
+	if a := kbArg(args); a != "" {
+		if f, err := kbset.Arg(a, roots); err == nil {
+			roots = []string{f}
+		}
+	}
+	var pins []pinned
+	for _, r := range roots {
+		got, ok, err := pin.Read(r)
+		if err != nil {
+			return nil, "", fmt.Errorf("the knowledge base's pin cannot be read: %v", err)
+		}
+		if ok {
+			pins = append(pins, pinned{r, &got})
+		} else {
+			pins = append(pins, pinned{r, nil})
+		}
+	}
+	if len(pins) == 0 {
+		return nil, "", nil
+	}
+	same := true
+	for _, x := range pins[1:] {
+		if (x.pin == nil) != (pins[0].pin == nil) || (x.pin != nil && *x.pin != *pins[0].pin) {
+			same = false
+		}
+	}
+	if same {
+		return pins[0].pin, pin.Path(pins[0].root), nil
+	}
+	if len(args) == 1 && args[0] == sessionStartArg {
+		var best *pinned
+		for i, x := range pins {
+			if x.pin != nil && (best == nil || compareVersions(x.pin.Version, best.pin.Version) > 0) {
+				best = &pins[i]
+			}
+		}
+		return best.pin, pin.Path(best.root), nil
+	}
+	var names []string
+	for _, x := range pins {
+		v := "not pinned"
+		if x.pin != nil {
+			v = "pinned to " + x.pin.Version
+		}
+		names = append(names, x.root+" ("+v+")")
+	}
+	return nil, "", fmt.Errorf("this project's knowledge bases are pinned differently: %s. Name the one this "+
+		"command acts on with --kb <folder or id>, and the launcher runs the version it is pinned to.",
+		strings.Join(names, ", "))
 }
 
 // choice is the version to run and why.
@@ -205,19 +284,11 @@ func launch(args []string) int {
 	}
 	versions := installed(dir)
 
-	var p *pin.Pin
-	pinPath := ""
-	if root := findKB(); root != "" {
-		pinPath = pin.Path(root)
-		got, ok, err := pin.Read(root)
-		if err != nil {
-			return fail(fmt.Errorf("the knowledge base's pin cannot be read: %v", err))
-		}
-		if ok {
-			p = &got
-		}
-	}
+	p, pinPath, pinErr := pinFor(args)
 	c, chooseErr := choose(versions, p, pinPath, strings.TrimSpace(os.Getenv(versionEnv)), dir)
+	if pinErr != nil {
+		chooseErr = pinErr
+	}
 
 	if len(args) > 0 && args[0] == "--launcher" {
 		return launcherInfo(args[1:], dir, versions, c, chooseErr)

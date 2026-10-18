@@ -54,7 +54,8 @@ func flushStdout() {
 }
 
 func newParser() *argparse.Parser {
-	ap := argparse.New("kb", "conversation-grounded knowledge base tools")
+	ap := argparse.New("kb", "conversation-grounded knowledge base tools. --kb <folder or id>, anywhere in a "+
+		"command, names the knowledge base it acts on, where the project refers to several")
 	ap.Subcommands("cmd")
 	addSnapshotParser(ap)
 	addIngestParser(ap)
@@ -71,6 +72,7 @@ func newParser() *argparse.Parser {
 	addWhereParser(ap)
 	addRulesParser(ap)
 	addPinParser(ap)
+	addIDParser(ap)
 	addSetupParsers(ap)
 	addMergeParsers(ap)
 	help := ap.AddParser("help", "print this help (the same as kb -h)")
@@ -103,6 +105,12 @@ func Main(args []string) (code int) {
 			}
 		}
 	}()
+	args, kb, err := takeKBFlag(args)
+	if err != nil {
+		fmt.Fprintln(Stderr, "error: "+err.Error())
+		return 2
+	}
+	kbFlag = kb
 	ap := newParser()
 	ns, sub, exit := ap.Parse(args, Stdout, Stderr)
 	if exit != nil {

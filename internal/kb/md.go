@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"kenttheclerk/internal/dyn"
+	"kenttheclerk/internal/kbset"
 )
 
 // htmlEscape escapes &, < and > in s, and with quote also " and '.
@@ -116,6 +117,12 @@ func stmtRefs(s string) string {
 		}
 		if !(digits && n >= 4 || alphabet && n >= 4 && n <= 6) {
 			continue
+		}
+		// K-XXXXXXXXXXXX/S-XXXXXX names a statement in another knowledge base, not one here
+		if k := i - 1 - (2 + kbset.IDLen); i > 0 && s[i-1] == '/' && k >= 0 && kbset.IDRE.MatchString(s[k:i-1]) {
+			if r, ok := runeBefore(s, k); !ok || !dyn.IsWord(r) {
+				continue
+			}
 		}
 		b.WriteString(s[last:i])
 		ref := s[i:j]

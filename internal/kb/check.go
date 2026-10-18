@@ -11,6 +11,7 @@ import (
 	kent "kenttheclerk"
 	"kenttheclerk/internal/argparse"
 	"kenttheclerk/internal/dyn"
+	"kenttheclerk/internal/kbset"
 	"kenttheclerk/internal/pin"
 )
 
@@ -37,8 +38,73 @@ func listOf(v any) []any {
 	return dyn.Iter(v)
 }
 
+// runCheck checks the knowledge base --kb names, or each of the project's, and then, across several, that
+// no session is on the record in two of them (S-DHSE97).
 func runCheck(ns argparse.Namespace) int {
-	root := repoRoot()
+	if kbFlag != "" {
+		return checkKB(repoRoot())
+	}
+	roots, _, problem := findKBRoots()
+	if problem != "" {
+		die("no knowledge base found: " + problem)
+	}
+	if len(roots) == 1 {
+		return checkKB(roots[0])
+	}
+	code := 0
+	for i, r := range roots {
+		if i > 0 {
+			println("")
+		}
+		println("# " + kbLabel(r))
+		println("")
+		if checkKB(r) != 0 {
+			code = 1
+		}
+	}
+	println("")
+	println("# Across them")
+	println("")
+	problems := 0
+	ids := map[string]string{}
+	for _, r := range roots {
+		if id, ok, _ := kbset.ReadID(r); ok {
+			if other, dup := ids[id]; dup {
+				println(fmt.Sprintf("warning: %s and %s have the same id, %s, so they are copies of one knowledge base", other, r, id))
+				problems++
+			}
+			ids[id] = r
+		}
+	}
+	bySession := map[string][]string{}
+	var order []string
+	for _, r := range roots {
+		for _, s := range loadAllSessions(r).Values() {
+			if s.Kind() == "document" || !dyn.Equal(s.ModeValue(), "on-record") {
+				continue
+			}
+			if _, ok := bySession[s.ID()]; !ok {
+				order = append(order, s.ID())
+			}
+			bySession[s.ID()] = append(bySession[s.ID()], r)
+		}
+	}
+	for _, sid := range order {
+		if in := bySession[sid]; len(in) > 1 {
+			println(fmt.Sprintf("ERROR: session %s is on the record in %s; a session is on the record in one knowledge base (%s)",
+				dyn.Head(sid, 8), strings.Join(in, " and "), rule("one-knowledge-base")))
+			problems++
+			code = 1
+		}
+	}
+	if problems == 0 {
+		println(fmt.Sprintf("%d knowledge bases: no session is on the record in more than one", len(roots)))
+	}
+	return code
+}
+
+// checkKB checks one knowledge base and prints what it finds; it returns 1 if there are errors.
+func checkKB(root string) int {
 	// statement files kb cannot read, as one holding conflict markers, come first: the rest of the check
 	// reads every statement, so it waits until they are fixed
 	var broken []string
@@ -70,6 +136,36 @@ func runCheck(ns argparse.Namespace) int {
 	} else if ok && !p.Matches(kent.Version(), kent.Hash()) {
 		warnf("this knowledge base is pinned to %s; this kb is %s and would refuse to write here (%s)",
 			p, thisBuild(), rule("pinned-version"))
+	}
+
+	// the id (S-Y17H90): an id file that does not hold one valid id, as after a merge of two, is an error
+	if _, _, err := kbset.ReadID(root); err != nil {
+		errorf("the knowledge base's id cannot be read: %v; an id never changes, so keep the one other "+
+			"knowledge bases refer to (%s)", err, rule("other-knowledge-base"))
+	}
+	// references into other knowledge bases: one that cannot be followed here is not wrong, since only
+	// someone who has that knowledge base can follow it (S-ZBVAHS), so it is noted once per knowledge base
+	unfollowed := map[string]int{}
+	var unfollowedOrder []string
+	foreign := func(sid, field string, ref any) *Statement {
+		r := followRef(root, dyn.Str(ref))
+		switch r.status {
+		case refOwn:
+			warnf("%s: %s %s names this knowledge base's own id; the statement id alone, %s, says the same (%s)", sid, field, dyn.Str(ref), r.statement, rule("other-knowledge-base"))
+			if p := statementPath(root, r.statement); p != "" {
+				return loadStatement(p)
+			}
+		case refNoKB:
+			if unfollowed[r.kbID] == 0 {
+				unfollowedOrder = append(unfollowedOrder, r.kbID)
+			}
+			unfollowed[r.kbID]++
+		case refMissing:
+			warnf("%s: %s %s, which is not in %s; that copy may be behind (%s)", sid, field, dyn.Str(ref), kbLabel(r.folder), rule("other-knowledge-base"))
+		case refFound:
+			return loadStatement(r.path)
+		}
+		return nil
 	}
 
 	// the override log, and the tombstones overrides leave in evidence (S-0132)
@@ -415,7 +511,14 @@ func runCheck(ns argparse.Namespace) int {
 		sid := st.Meta.Get("id")
 		inForce := !dyn.Truthy(st.Meta.Get("superseded_by")) && !dyn.Truthy(st.Meta.Get("withdrawn_in"))
 		for _, x := range listOf(st.Meta.Get("rests_on")) {
-			dep := lookup(x)
+			var dep *Statement
+			if isForeignRef(dyn.Str(x)) {
+				if dep = foreign(dyn.Str(sid), "rests_on", x); dep == nil {
+					continue
+				}
+			} else {
+				dep = lookup(x)
+			}
 			if dep == nil {
 				errorf("%s: rests_on %s, which does not exist", dyn.Str(sid), dyn.Str(x))
 			} else if inForce && dyn.Truthy(dep.Meta.Get("scrubbed")) {
@@ -437,7 +540,9 @@ func runCheck(ns argparse.Namespace) int {
 		for _, rm := range marks {
 			relName, mark := rm[0], rm[1]
 			if old := st.Meta.Get(relName); dyn.Truthy(old) {
-				if o := lookup(old); o == nil {
+				if isForeignRef(dyn.Str(old)) {
+					errorf("%s: %s %s, in another knowledge base, which it cannot mark; only context_for and rests_on reach another knowledge base (%s)", dyn.Str(sid), relName, dyn.Str(old), rule("other-knowledge-base"))
+				} else if o := lookup(old); o == nil {
 					errorf("%s: %s %s, which does not exist", dyn.Str(sid), relName, dyn.Str(old))
 				} else {
 					m := o.Meta.Get(mark)
@@ -504,6 +609,13 @@ func runCheck(ns argparse.Namespace) int {
 				errorf("%s: context_for names %s twice (%s)", sid, l.target, rule("context-for"))
 			}
 			seen[l.target] = true
+			if isForeignRef(l.target) {
+				// never marked (S-BJK3H8), so there is no mark to check
+				if t := foreign(sid, "context_for", l.target); t != nil && strings.HasPrefix(sid, "S-") && strings.HasPrefix(dyn.Str(t.ID()), "A-") {
+					errorf("%s: context_for %s, an agent statement; a human statement relates to one only by superseding it (%s)", sid, l.target, rule("agent-no-attestations"))
+				}
+				continue
+			}
 			incoming[l.target] = true
 			if strings.HasPrefix(sid, "S-") && strings.HasPrefix(l.target, "A-") {
 				errorf("%s: context_for %s, an agent statement; a human statement relates to one only by superseding it (%s)", sid, l.target, rule("agent-no-attestations"))
@@ -552,6 +664,9 @@ func runCheck(ns argparse.Namespace) int {
 
 	for _, w := range warnings {
 		println("warning: " + w)
+	}
+	for _, id := range unfollowedOrder {
+		println(fmt.Sprintf("note: %d reference(s) into %s, a knowledge base not on this machine, not followed", unfollowed[id], id))
 	}
 	for _, e := range errors {
 		println("ERROR: " + e)
@@ -607,6 +722,6 @@ func containsValue(v any, x any) bool {
 }
 
 func addCheckParser(sub *argparse.Parser) {
-	p := sub.AddParser("check", "verify invariants over evidence/ and attested/")
+	p := sub.AddParser("check", "verify invariants over evidence/ and attested/, in each of the project's knowledge bases")
 	p.Run = runCheck
 }

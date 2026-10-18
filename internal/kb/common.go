@@ -22,6 +22,7 @@ import (
 
 	kent "kenttheclerk"
 	"kenttheclerk/internal/dyn"
+	"kenttheclerk/internal/kbset"
 )
 
 const (
@@ -39,7 +40,7 @@ var productRules = map[string]int{
 	"seen-in-full": 34, "agent-revision": 35, "agent-no-attestations": 37, "system-stamp": 44,
 	"pinned-version": 44, "author-only": 46, "context-for": 47, "override-list": 50, "override-on-record": 51,
 	"override-confirm": 52, "override-revise": 53, "override-scrub": 54, "user-table": 55, "add-first": 56,
-	"acting-key": 57, "user-change": 58,
+	"acting-key": 57, "user-change": 58, "one-knowledge-base": 59, "other-knowledge-base": 60,
 }
 
 // rule is how a message cites a rule, saying how to read it (S-0106), e.g. "Kent Rule 7: `kb rules 7` to
@@ -125,50 +126,12 @@ func isoSeconds(t time.Time) string { return t.Format("2006-01-02T15:04:05") + "
 
 // Kent is installed outside the customer's repositories, and the knowledge folder usually sits beside
 // the code repository rather than in it (S-0084). Its location comes per user and per project from
-// KENT_KB (S-0085); without it, kb looks for the record in the current folder and above.
-const kbEnv = "KENT_KB"
+// KENT_KB (S-0085), which may name several (S-ZBVAHS); without it, kb looks for the record in the current
+// folder and above. kbs.go chooses among them.
+const kbEnv = kbset.Env
 
 func isKBFolder(p string) bool {
 	return dyn.IsDir(filepath.Join(p, "attested")) && dyn.IsDir(filepath.Join(p, "evidence"))
-}
-
-// findKBRoot says where the knowledge base is and how it was found: (path or "", explanation).
-func findKBRoot() (string, string) {
-	if env := os.Getenv(kbEnv); env != "" {
-		p := dyn.Resolve(env)
-		if isKBFolder(p) {
-			return p, "from " + kbEnv
-		}
-		return "", fmt.Sprintf("%s names %s, which has no attested/ and evidence/ folders", kbEnv, p)
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		dyn.RaiseOS(err)
-	}
-	p := dyn.Resolve(cwd)
-	for cand := p; ; {
-		if isKBFolder(cand) {
-			if cand == p {
-				return cand, "from the current folder"
-			}
-			return cand, "from a folder above the current one"
-		}
-		parent := filepath.Dir(cand)
-		if parent == cand {
-			break
-		}
-		cand = parent
-	}
-	return "", kbEnv + " is not set, and no attested/ and evidence/ folders were found in the current " +
-		"folder or above"
-}
-
-func repoRoot() string {
-	root, how := findKBRoot()
-	if root == "" {
-		die("no knowledge base found: " + how)
-	}
-	return root
 }
 
 // rel is p relative to root (p itself when it cannot be made relative).
@@ -883,7 +846,6 @@ func loadAllStatements(root string) []*Statement {
 	}
 	return byMade(out)
 }
-
 
 // loadAllAgentStatements reads agent/ in the order the statements were made (byMade).
 func loadAllAgentStatements(root string) []*Statement {

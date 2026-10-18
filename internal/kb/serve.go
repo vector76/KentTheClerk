@@ -293,7 +293,7 @@ func (h *kbServer) overview(db *sql.DB) string {
 			}
 		}
 		for _, r := range query(db, "SELECT c.target FROM context_links c LEFT JOIN statements s ON s.id = c.target WHERE c.statement = ? ORDER BY s.made_at, c.target", s["id"]) {
-			marks = append(marks, `context for <a href="/s/`+esc(r["target"])+`">`+esc(r["target"])+`</a>`)
+			marks = append(marks, `context for `+stmtLink(sqlS(r["target"])))
 		}
 		for _, r := range query(db, "SELECT c.statement FROM context_links c LEFT JOIN statements s ON s.id = c.statement WHERE c.target = ? ORDER BY s.made_at, c.statement", s["id"]) {
 			marks = append(marks, `context from <a href="/s/`+esc(r["statement"])+`">`+esc(r["statement"])+`</a>`)
@@ -352,7 +352,7 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 		var links []string
 		for _, x := range splitComma(s["rests_on"]) {
 			if x != "" {
-				links = append(links, "<a href='/s/"+esc(x)+"'>"+esc(x)+"</a>")
+				links = append(links, stmtLink(x))
 			}
 		}
 		out = append(out, "<tr><th>rests on</th><td>"+strings.Join(links, ", ")+"</td></tr>")
@@ -372,14 +372,14 @@ func (h *kbServer) statement(w http.ResponseWriter, db *sql.DB, sid string) {
 			var links []string
 			for _, x := range splitComma(s[key]) {
 				if x != "" {
-					links = append(links, "<a href='/s/"+esc(x)+"'>"+esc(x)+"</a>")
+					links = append(links, stmtLink(x))
 				}
 			}
 			out = append(out, "<tr><th>"+esc(strings.ReplaceAll(key, "_", " "))+"</th><td>"+strings.Join(links, ", ")+"</td></tr>")
 		}
 	}
 	for _, c := range query(db, "SELECT c.target, c.note FROM context_links c LEFT JOIN statements s ON s.id = c.target WHERE c.statement = ? ORDER BY s.made_at, c.target", sid) {
-		out = append(out, "<tr><th>context for</th><td><a href='/s/"+esc(c["target"])+"'>"+esc(c["target"])+"</a>: "+esc(c["note"])+"</td></tr>")
+		out = append(out, "<tr><th>context for</th><td>"+stmtLink(sqlS(c["target"]))+": "+esc(c["note"])+"</td></tr>")
 	}
 	out = append(out, "<tr><th>file</th><td><code>"+esc(s["path"])+"</code></td></tr></table>")
 	if truthy(s["modified_in"]) {
@@ -531,6 +531,15 @@ func (h *kbServer) search(w http.ResponseWriter, db *sql.DB, q string) {
 		}()
 	}
 	h.html(w, page("search", strings.Join(out, "")), 200)
+}
+
+// stmtLink links a statement id to its page. A reference into another knowledge base, which this server
+// does not hold, is shown without a link (S-Y17H90).
+func stmtLink(x string) string {
+	if isForeignRef(x) {
+		return `<span title="in another knowledge base">` + esc(x) + `</span>`
+	}
+	return "<a href='/s/" + esc(x) + "'>" + esc(x) + "</a>"
 }
 
 func runServe(ns argparse.Namespace) int {

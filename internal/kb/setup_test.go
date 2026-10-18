@@ -48,7 +48,7 @@ func TestSettingLines(t *testing.T) {
 // project, leave nothing missing.
 func TestKentSettingsRoundTrip(t *testing.T) {
 	project, kb := t.TempDir(), t.TempDir()
-	text := kentSettingsJSON(kb, [][2]string{{askModeEnv, "up-front"}})
+	text := kentSettingsJSON([]string{kb}, [][2]string{{askModeEnv, "up-front"}})
 	var v map[string]any
 	if err := json.Unmarshal([]byte(text), &v); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, text)
@@ -140,7 +140,7 @@ func TestSetupWantsUnionMerge(t *testing.T) {
 		t.Skip("git is not available")
 	}
 	var r report
-	kbReport(&r, root)
+	kbReport(&r, root, false)
 	if todo := strings.Join(r.todos(), "\n"); !strings.Contains(todo, "merge=union") || !strings.Contains(todo, "users.jsonl") {
 		t.Fatalf("setup did not ask for merge=union:\n%s", todo)
 	}
@@ -149,7 +149,7 @@ func TestSetupWantsUnionMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	r = report{}
-	kbReport(&r, root)
+	kbReport(&r, root, false)
 	if todo := strings.Join(r.todos(), "\n"); strings.Contains(todo, "merge=union") {
 		t.Fatalf("setup still asks for merge=union:\n%s", todo)
 	}

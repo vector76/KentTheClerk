@@ -54,6 +54,10 @@ func restsOn(root string, meta *dyn.Dict) []any {
 		out = append(out, dyn.Str(x))
 	}
 	for _, x := range out {
+		if isForeignRef(x.(string)) {
+			requireForeignRef(root, "rests_on", x.(string))
+			continue
+		}
 		if !statementIDRE.MatchString(x.(string)) || statementPath(root, x) == "" {
 			die(fmt.Sprintf("rests_on: %s is not an existing statement id", x))
 		}
@@ -64,7 +68,8 @@ func restsOn(root string, meta *dyn.Dict) []any {
 func deleteDraft(path string) { _ = os.Remove(path) }
 
 func runAttest(ns argparse.Namespace) int {
-	root := repoRoot()
+	turnArg, _ := ns.Str("turn")
+	root := turnRoot(turnArg)
 	requirePin(root)
 	userArg, _ := ns.Str("user")
 	user := currentUser(userArg, root)
@@ -72,7 +77,6 @@ func runAttest(ns argparse.Namespace) int {
 	if !in(form, attestationForms) {
 		die("form must be one of " + dyn.Tuple(attestationForms...))
 	}
-	turnArg, _ := ns.Str("turn")
 	agreePtr := parsePointer(turnArg)
 	sess, agree := resolveOnRecord(root, agreePtr, "--turn")
 	if !dyn.Equal(item(agree, "role"), "user") || !dyn.Equal(item(agree, "author"), user) {
@@ -162,6 +166,7 @@ func runAttest(ns argparse.Namespace) int {
 	}
 	for _, r := range rels.Keys() {
 		target := rels.Get(r)
+		refusedForeign(r, dyn.Str(target))
 		if statementPath(root, target) == "" {
 			die(fmt.Sprintf("%s: %s does not exist", r, dyn.Str(target)))
 		}

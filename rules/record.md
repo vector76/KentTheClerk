@@ -69,7 +69,8 @@ notice one in a human's statement, point it out; what to do about it is the auth
 ## Citing
 
 **Kent Rule 6.** Cite statements by id (`S-0012`, `A-0003`) and evidence by pointer
-(`<session-id>#<turn-uuid>`). Never cite by heading, position, or a label a view made up.
+(`<session-id>#<turn-uuid>`). Never cite by heading, position, or a label a view made up. A statement
+in another knowledge base is cited by that knowledge base's id and its own (Kent Rule 60).
 
 **Kent Rule 7.** Never assert anything from evidence directly, and never summarise evidence in
 place. Evidence supports statements; it is not one.

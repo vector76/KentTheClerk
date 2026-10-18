@@ -82,6 +82,12 @@ func kbRun(t *testing.T, args ...string) (out string, code int) {
 		}
 		out = buf.String()
 	}()
+	args, kb, err := takeKBFlag(args)
+	if err != nil {
+		return err.Error(), 2
+	}
+	kbFlag = kb
+	defer func() { kbFlag = "" }()
 	ns, sub, exit := newParser().Parse(args, &buf, &buf)
 	if exit != nil {
 		return buf.String(), exit.Code

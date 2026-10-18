@@ -49,7 +49,11 @@ project's settings (below), and go to step 3.
 Otherwise ask all the questions that apply in one message, each with its options and a recommendation,
 so the human can answer them together:
 
-- **Which knowledge base.** A code project refers to at most one; several code projects may share one.
+- **Which knowledge base.** Several code projects may share one, and a code project may refer to
+  several: topics shared with different people go in separate knowledge bases, since a knowledge base
+  is shared whole. Each conversation goes on the record in at most one of them, and may read and cite
+  the others. To add one to a project that has one already, run `kb setup --report --kb <folder>`;
+  the settings it prints name both.
   If the report found a knowledge base inside the code repository that travels with the code, recommend
   that one: someone already keeps it there. One the report says is a repository of its own inside the
   folder does not travel with the code; ask about it like any existing one.
@@ -106,7 +110,14 @@ anything turns out different from what you described.
 1. **The knowledge base.**
    - New: `kb setup --create <folder>` makes the folder with its `attested/` and `evidence/` folders,
      which is how `kb` finds a knowledge base, and an empty `.gitkeep` in each, since git keeps no empty
-     folder and a clone must still be a knowledge base. Run `kb pin --set` there if they asked for a pin.
+     folder and a clone must still be a knowledge base, and `kent.id`, the knowledge base's id, which
+     references from other knowledge bases carry and which never changes. Run `kb pin --set` there if
+     they asked for a pin.
+   - Existing, with no id yet, where the report asks for one: `kb id --create --kb <folder>`, once, in
+     one copy; commit `kent.id` and push it, so that every copy has the same id. A knowledge base that
+     another project refers to but this one does not name is found through `~/.kenttheclerk.json`,
+     which maps ids to folders under `knowledge_bases`; add an entry there if the human wants
+     references into it followed from here.
    - For a knowledge base beside the code that they chose to keep in git: `git init` in its folder,
      unless the report says a repository already holds it. **Never run `git init` for a knowledge base
      inside the code repository**: the code repository already holds it, and a repository inside it
@@ -185,7 +196,7 @@ anything turns out different from what you described.
    names, and with git's `user.email` the email must be that one.
 
    Then the first commit, if they asked for one, after the user table is written so that it is in it,
-   with `kent.pin` if there is one: for a knowledge base of its own, commit the folder, and push it if
+   with `kent.id`, and `kent.pin` if there is one: for a knowledge base of its own, commit the folder, and push it if
    it has a remote. The remote is the human's to create; once it exists, with their agreement, run
    `git -C <folder> remote add origin <url>` and `git -C <folder> push -u origin HEAD`. For a knowledge
    base inside the code repository, the person commits it, with the code: tell them its folder needs
@@ -194,11 +205,13 @@ anything turns out different from what you described.
    the JSON Kent needs, with the paths already in the forms Claude Code wants, and what the current file
    lacks. Merge Kent's part into `.claude/settings.local.json`: add what is missing, keep everything else,
    and do not duplicate entries. Add the settings to `env` if they differ from the defaults. If
-   `KENT_KB` names a different knowledge base, that is a change of knowledge base: ask first. Read the
+   `KENT_KB` names a knowledge base the report does not list, ask whether it is being replaced or kept
+   beside the new one. Read the
    file back and make sure it is still valid JSON; Claude Code ignores a settings file it cannot parse.
    Tell the human what each part does:
-   - `env.KENT_KB` names the knowledge base for this project only. It must not be a user-wide
-     environment variable, which would point every project at the same knowledge base.
+   - `env.KENT_KB` names the knowledge base for this project only, or several, separated as `PATH`
+     separates folders (`;` on Windows, `:` elsewhere). It must not be a user-wide environment
+     variable, which would point every project at the same knowledge bases.
    - `permissions.additionalDirectories` and the `allow` rules let the agent read the knowledge base,
      run `kb`, and write drafts in `off-record/drafts/`. For a knowledge base in its own repository they
      also let it run, each written `git -C <folder> …`, exactly the git forms the session-start text

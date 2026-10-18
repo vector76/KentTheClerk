@@ -213,7 +213,9 @@ them like any other statement.
   - **A knowledge base.** Either a new one, usually in its own folder beside the code repository
     and, if you choose, in a git repository of its own, or an existing one, such as one a colleague
     shares or one another of your projects uses. Several code projects can share one knowledge
-    base; a code project uses at most one. A knowledge base can also live inside the code
+    base, and a code project can refer to several, such as one for topics shared with a client
+    and one kept to yourself; each conversation goes on the record in at most one of them, and may
+    read and cite the others. A knowledge base can also live inside the code
     repository, in a folder of its own such as `kent`, so that it travels with the code; setup
     recognizes one that is already there, whatever its folder is called.
   - **Your project's `.claude/settings.local.json`.** It names the knowledge base for this project,

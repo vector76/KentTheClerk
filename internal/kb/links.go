@@ -41,15 +41,19 @@ func contextLinks(meta *dyn.Dict) []contextLink {
 }
 
 // contextProblem says what is wrong with one context_for entry of statement self, or "".
+// A target in another knowledge base is checked where it is followed, not here.
 func contextProblem(root, self string, l contextLink) string {
 	switch {
+	case isForeignRef(l.target):
 	case !statementIDRE.MatchString(l.target):
 		return fmt.Sprintf("%s is not a statement id; each entry names a statement and carries a note "+
-			"(statement: S-xxxx, note: how this changes its reading)", dyn.StrRepr(l.target))
+			"(statement: S-xxxx, or K-xxxx/S-xxxx in another knowledge base, note: how this changes its reading)", dyn.StrRepr(l.target))
 	case l.target == self:
 		return fmt.Sprintf("%s cannot be context for itself", l.target)
 	case statementPath(root, l.target) == "":
 		return fmt.Sprintf("%s does not exist", l.target)
+	}
+	switch {
 	case l.note == "":
 		return fmt.Sprintf("the link to %s has no note; the note says how this statement changes its reading", l.target)
 	case strings.ContainsAny(l.note, "\r\n"):
@@ -80,6 +84,15 @@ func contextFor(root, kind string, meta, rels *dyn.Dict) []any {
 			die(fmt.Sprintf("context_for: %s is named twice; one link carries one note (%s)", l.target, rule("context-for")))
 		}
 		seen[l.target] = true
+		if isForeignRef(l.target) {
+			requireForeignRef(root, "context_for", l.target)
+			if r := followRef(root, l.target); kind == "S" && strings.HasPrefix(r.statement, "A-") {
+				die(fmt.Sprintf("context_for: %s is an agent statement; a human statement relates to an agent statement only "+
+					"by superseding it (%s)", l.target, rule("agent-no-attestations")))
+			}
+			out = append(out, dyn.D("statement", l.target, "note", l.note))
+			continue
+		}
 		for _, r := range rels.Keys() {
 			if dyn.Str(rels.Get(r)) == l.target {
 				die(fmt.Sprintf("context_for: this draft already %s %s, which marks it; no further link is needed (%s)", r, l.target, rule("context-for")))
@@ -99,6 +112,11 @@ func contextFor(root, kind string, meta, rels *dyn.Dict) []any {
 func markContext(root string, links []any, newID string) {
 	for _, e := range links {
 		target := dyn.Str(e.(*dyn.Dict).Get("statement"))
+		if isForeignRef(target) {
+			// a session on the record here cannot write into another knowledge base (S-BJK3H8)
+			println(fmt.Sprintf("%s is in another knowledge base, so it is not marked %s", target, extraContextKey))
+			continue
+		}
 		p := statementPath(root, target)
 		if p == "" {
 			warn(fmt.Sprintf("context_for %s: statement not found; not marking", target))
@@ -212,6 +230,20 @@ func loadLinkGraph(root string) map[string]*linkNode {
 		}
 		nodes[id] = n
 	}
+	// a statement in another knowledge base is shown as far as it can be followed here, without its links
+	var foreign []string
+	for _, n := range nodes {
+		for _, e := range n.out {
+			if nodes[e.other] == nil && isForeignRef(e.other) {
+				foreign = append(foreign, e.other)
+			}
+		}
+	}
+	for _, ref := range foreign {
+		if nodes[ref] == nil {
+			nodes[ref] = foreignNode(root, ref)
+		}
+	}
 	for _, n := range nodes {
 		for _, e := range n.out {
 			if o := nodes[e.other]; o != nil {
@@ -220,6 +252,30 @@ func loadLinkGraph(root string) map[string]*linkNode {
 		}
 	}
 	return nodes
+}
+
+// foreignNode is a statement in another knowledge base, reached by a reference written <kb id>/<statement
+// id>. Its own links are not read: the map stays within this knowledge base (S-BJK3H8).
+func foreignNode(root, ref string) *linkNode {
+	r := followRef(root, ref)
+	n := &linkNode{id: ref, path: "-", inForce: true}
+	switch r.status {
+	case refFound:
+		st := loadStatement(r.path)
+		n.path, n.title, n.madeAt, n.status = filepath.ToSlash(r.path), dyn.Str(dyn.Or(st.Meta.Get("title"), "")), madeAt(st.Meta), "in force"
+		if sb := st.Meta.Get("superseded_by"); dyn.Truthy(sb) {
+			n.inForce, n.status = false, "superseded by "+r.kbID+"/"+dyn.Str(sb)
+		} else if dyn.Truthy(st.Meta.Get("withdrawn_in")) {
+			n.inForce, n.status = false, "withdrawn"
+		}
+	case refNoKB:
+		n.status = "in a knowledge base not on this machine"
+	case refMissing:
+		n.status = "not found in " + kbLabel(r.folder)
+	case refOwn:
+		n.status = "names this knowledge base's own id"
+	}
+	return n
 }
 
 // linkMap is the neighbourhood kb links prints: every statement reached, and the ones shown in full.
@@ -389,15 +445,36 @@ func (m linkMap) render() string {
 }
 
 func runLinks(ns argparse.Namespace) int {
-	root := repoRoot()
 	depthV := ns["depth"].(*big.Int)
 	if !depthV.IsInt64() || depthV.Int64() < 1 || depthV.Int64() > 100 {
 		die("--depth must be from 1 to 100")
 	}
 	depth := int(depthV.Int64())
+	// references into another knowledge base map that one, followed as a reference into it is
+	ids := ns.List("statements")
+	root, from := "", ""
+	for i, id := range ids {
+		id = strings.ToUpper(strings.TrimSpace(id))
+		if !isForeignRef(id) {
+			continue
+		}
+		r := followRef(repoRootOrFirst(), id)
+		switch {
+		case r.status == refNoKB:
+			die(fmt.Sprintf("%s is in a knowledge base that is not on this machine (%s)", id, rule("other-knowledge-base")))
+		case r.status == refOwn:
+			r.folder = repoRootOrFirst()
+		case from != "" && from != r.kbID:
+			die("the statements given are in different knowledge bases; map one knowledge base at a time")
+		}
+		root, from, ids[i] = r.folder, r.kbID, r.statement
+	}
+	if root == "" {
+		root = repoRoot()
+	}
 	nodes := loadLinkGraph(root)
 	var roots []string
-	for _, id := range ns.List("statements") {
+	for _, id := range ids {
 		id = strings.ToUpper(strings.TrimSpace(id))
 		if !statementIDRE.MatchString(id) {
 			die(fmt.Sprintf("%s is not a statement id (S-xxxx or A-xxxx)", dyn.StrRepr(id)))
@@ -413,7 +490,7 @@ func runLinks(ns argparse.Namespace) int {
 
 func addLinksParser(sub *argparse.Parser) {
 	p := sub.AddParser("links", "map the links around statements in one call: ids, files, titles, notes, standing")
-	p.Positional("statements", argparse.OneMore, "S-xxxx or A-xxxx")
+	p.Positional("statements", argparse.OneMore, "S-xxxx or A-xxxx, or K-xxxx/S-xxxx in another knowledge base")
 	p.IntOption("--depth", "how many links out to go (default 1); statements in force nearer than that are shown with their links", 1)
 	p.Run = runLinks
 }

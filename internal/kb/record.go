@@ -46,9 +46,9 @@ func loadAgent(root, aid string) (string, *Statement) {
 }
 
 func runRecord(ns argparse.Namespace) int {
-	root := repoRoot()
-	requirePin(root)
 	turnArg, _ := ns.Str("turn")
+	root := turnRoot(turnArg)
+	requirePin(root)
 	sess, turn := onRecordTurn(root, turnArg, "--turn")
 	if !dyn.Equal(item(turn, "role"), "assistant") || !strings.HasPrefix(dyn.Str(item(turn, "author")), "agent:") {
 		die(fmt.Sprintf("--turn %s is authored by %s; an agent statement is made in an agent's "+
@@ -79,6 +79,7 @@ func runRecord(ns argparse.Namespace) int {
 	}
 	for _, r := range rels.Keys() {
 		target := rels.Get(r)
+		refusedForeign(r, dyn.Str(target))
 		if !strings.HasPrefix(dyn.Str(target), "A-") {
 			die(fmt.Sprintf("%s: %s is a human statement; an agent statement may revise only agent statements. "+
 				"Changing what a human said is the human's to do (%s)", r, dyn.Str(target), rule("agent-revision")))
@@ -141,11 +142,11 @@ func runRecord(ns argparse.Namespace) int {
 }
 
 func runSeen(ns argparse.Namespace) int {
-	root := repoRoot()
+	turnArg, _ := ns.Str("turn")
+	root := turnRoot(turnArg)
 	requirePin(root)
 	statement, _ := ns.Str("statement")
 	p, st := loadAgent(root, statement)
-	turnArg, _ := ns.Str("turn")
 	sess, turn := onRecordTurn(root, turnArg, "--turn")
 	if !textContained(st.Body, turnText(turn)) {
 		die(fmt.Sprintf("the full text of %s does not appear in %s; seen means shown in full (%s)", dyn.Str(st.ID()), turnArg, rule("seen-in-full")))
@@ -169,14 +170,14 @@ func runSeen(ns argparse.Namespace) int {
 }
 
 func runWithdraw(ns argparse.Namespace) int {
-	root := repoRoot()
+	turnArg, _ := ns.Str("turn")
+	root := turnRoot(turnArg)
 	requirePin(root)
 	statement, _ := ns.Str("statement")
 	p, st := loadAgent(root, statement)
 	if dyn.Truthy(st.Meta.Get("withdrawn_in")) || dyn.Truthy(st.Meta.Get("superseded_by")) {
 		die(fmt.Sprintf("%s is no longer in force (%s)", dyn.Str(st.ID()), rule("agent-revision")))
 	}
-	turnArg, _ := ns.Str("turn")
 	sess, turn := onRecordTurn(root, turnArg, "--turn")
 	reason, _ := ns.Str("reason")
 	if dyn.Strip(reason) == "" {

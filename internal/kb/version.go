@@ -9,6 +9,7 @@ import (
 
 	kent "kenttheclerk"
 	"kenttheclerk/internal/argparse"
+	"kenttheclerk/internal/kbset"
 )
 
 // productDir is where this version of Kent is installed: the folder holding its executable, under the
@@ -48,13 +49,25 @@ func runWhere(ns argparse.Namespace) int {
 	} else {
 		println("launched: directly, not by the launcher")
 	}
-	root, how := findKBRoot()
-	if root == "" {
-		println(fmt.Sprintf("knowledge base: none (%s)", how))
+	roots, how, problem := findKBRoots()
+	if r := flagRoot(); r != "" {
+		roots, how, problem = []string{r}, "from --kb", ""
+	}
+	if problem != "" {
+		println(fmt.Sprintf("knowledge base: none (%s)", problem))
 		return 1
 	}
-	println(fmt.Sprintf("knowledge base: %s (%s)", root, how))
-	println("pin: " + pinStatus(root))
+	for _, root := range roots {
+		println(fmt.Sprintf("knowledge base: %s (%s)", root, how))
+		if id, ok, err := kbset.ReadID(root); err != nil {
+			println(fmt.Sprintf("id: cannot be read: %v", err))
+		} else if ok {
+			println("id: " + id)
+		} else {
+			println("id: none")
+		}
+		println("pin: " + pinStatus(root))
+	}
 	return 0
 }
 

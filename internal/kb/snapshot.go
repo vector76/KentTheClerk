@@ -425,10 +425,6 @@ func writeJSONL(dest string, header *dyn.Dict, records []*dyn.Dict) {
 }
 
 func runSnapshot(ns argparse.Namespace) int {
-	root := repoRoot()
-	requirePin(root)
-	userArg, _ := ns.Str("user")
-	user := currentUser(userArg, root)
 	mode, _ := ns.Str("mode")
 	filter, _ := ns.Str("filter")
 	session, hasSession := ns.Str("session")
@@ -490,6 +486,11 @@ func runSnapshot(ns argparse.Namespace) int {
 		records = kept
 	}
 
+	// the knowledge base comes from the session, which is recorded in one only (S-DHSE97)
+	root := sessionRoot(sessionID, true)
+	requirePin(root)
+	userArg, _ := ns.Str("user")
+	user := currentUser(userArg, root)
 	turns, info := project(records, filter, user)
 	branchPoint := resolveBranchPoint(records, turns)
 	if info.humanTurns == 0 {

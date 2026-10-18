@@ -18,6 +18,7 @@ import (
 	kent "kenttheclerk"
 	"kenttheclerk/internal/argparse"
 	"kenttheclerk/internal/dyn"
+	"kenttheclerk/internal/kbset"
 	"kenttheclerk/internal/pin"
 )
 
@@ -99,11 +100,11 @@ func runSessionStart(ns argparse.Namespace) (code int) {
 			code = 0
 		}
 	}()
-	root, how := findKBRoot()
-	if root == "" {
+	roots, how, problem := findKBRoots()
+	if problem != "" {
 		println("# Knowledge base")
 		println("")
-		println("Kent the Clerk's session-start hook ran in this project, but kb found no knowledge base: " + how +
+		println("Kent the Clerk's session-start hook ran in this project, but kb found no knowledge base: " + problem +
 			". Nothing in this conversation can be recorded until that is fixed. Tell the human when the " +
 			"conversation starts, and offer to run `kb setup`, which finds out what is wrong and walks through " +
 			"fixing it.")
@@ -113,13 +114,86 @@ func runSessionStart(ns argparse.Namespace) (code int) {
 	println("")
 	println("## This project")
 	println("")
-	println(fmt.Sprintf("- Knowledge base: %s (%s).", root, how))
+	var problems []string
+	if len(roots) > 1 {
+		println(fmt.Sprintf("This project refers to %d knowledge bases (%s), each below. A session is on the record "+
+			"in at most one of them (%s). When this one goes on the record, ask the human which, and pass "+
+			"`--kb <folder or id>` to the first `kb snapshot`; after that kb finds it from the session. Any other "+
+			"command that is not about a session's turns takes `--kb` too. The others may be read and cited: a "+
+			"statement in another knowledge base is written `<its id>/<statement id>` (%s).",
+			len(roots), how, rule("one-knowledge-base"), rule("other-knowledge-base")))
+		if pinsDiffer(roots) {
+			println("")
+			println("Their pins differ, so pass `--kb` on every command, even one about a session's turns: the " +
+				"launcher runs the version of Kent the knowledge base it names is pinned to.")
+		}
+		println("")
+	}
 	launched := os.Getenv("KENT_LAUNCHED")
 	if launched == "" {
 		launched = kent.Version() + ", run directly rather than by the launcher"
 	}
-	println("- Kent: " + launched + ".")
-	var problems []string
+	lines, bad := settingLines(os.Getenv)
+	problems = append(problems, bad...)
+	if len(roots) == 1 {
+		// one knowledge base reads as it did before there could be several
+		println(fmt.Sprintf("- Knowledge base: %s (%s).", roots[0], how))
+		println("- Kent: " + launched + ".")
+		problems = append(problems, describeKB(roots[0])...)
+		for _, l := range lines {
+			println("- " + l)
+		}
+	} else {
+		println("- Kent: " + launched + ".")
+		for _, l := range lines {
+			println("- " + l)
+		}
+		for _, root := range roots {
+			println("")
+			println("### " + root)
+			println("")
+			for _, p := range describeKB(root) {
+				problems = append(problems, "in "+root+" (pass --kb "+root+"): "+p)
+			}
+		}
+	}
+	if len(problems) > 0 {
+		println("")
+		println("Not set up right, so tell the human when the conversation starts, and offer to run `kb setup`:")
+		println("")
+		for _, p := range problems {
+			println("- " + p + ".")
+		}
+	}
+	return 0
+}
+
+// pinsDiffer is whether the knowledge bases are pinned to different versions, or some pinned and some not.
+func pinsDiffer(roots []string) bool {
+	first := ""
+	for i, r := range roots {
+		p, ok, _ := pin.Read(r)
+		v := ""
+		if ok {
+			v = p.String()
+		}
+		if i == 0 {
+			first = v
+		} else if v != first {
+			return true
+		}
+	}
+	return false
+}
+
+// describeKB prints the session-start lines about one knowledge base: its id, pin, git and people. It
+// returns what is not set up right.
+func describeKB(root string) (problems []string) {
+	if id, ok, err := kbset.ReadID(root); err != nil {
+		problems = append(problems, fmt.Sprintf("the knowledge base's id cannot be read: %v", err))
+	} else if ok {
+		println("- Id: " + id + "; a reference from another knowledge base to a statement here is written " + id + "/<statement id>.")
+	}
 	if p, ok, err := pin.Read(root); err != nil {
 		problems = append(problems, fmt.Sprintf("the knowledge base's pin cannot be read: %v", err))
 	} else if ok {
@@ -143,20 +217,7 @@ func runSessionStart(ns argparse.Namespace) (code int) {
 	if problem != "" {
 		problems = append(problems, problem)
 	}
-	lines, bad := settingLines(os.Getenv)
-	for _, l := range lines {
-		println("- " + l)
-	}
-	problems = append(problems, bad...)
-	if len(problems) > 0 {
-		println("")
-		println("Not set up right, so tell the human when the conversation starts, and offer to run `kb setup`:")
-		println("")
-		for _, p := range problems {
-			println("- " + p + ".")
-		}
-	}
-	return 0
+	return problems
 }
 
 // ---------------------------------------------------------------- kb setup: what it finds
@@ -173,6 +234,14 @@ func permPath(p string) string {
 
 // settingPath is a folder as the settings file's env and additionalDirectories hold it.
 func settingPath(p string) string { return filepath.ToSlash(p) }
+
+func settingPaths(ps []string) []string {
+	var out []string
+	for _, p := range ps {
+		out = append(out, settingPath(p))
+	}
+	return out
+}
 
 // samePath compares two folders as the file system would.
 func samePath(a, b string) bool {
@@ -209,8 +278,35 @@ func kentDeny(kb string) []string {
 	return []string{"Edit(" + pp + "/attested/**)", "Edit(" + pp + "/evidence/**)", "Edit(" + pp + "/agent/**)"}
 }
 
-// kentSettingsJSON is the part of .claude/settings.local.json that Kent needs, to be merged into the file.
-func kentSettingsJSON(kb string, extraEnv [][2]string) string {
+// kbListValue is KENT_KB's value for the knowledge bases kbs, separated as PATH separates folders.
+func kbListValue(kbs []string) string {
+	var parts []string
+	for _, kb := range kbs {
+		parts = append(parts, settingPath(kb))
+	}
+	return strings.Join(parts, string(os.PathListSeparator))
+}
+
+// allAllow and allDeny are kentAllow and kentDeny over several knowledge bases, each rule once.
+func allAllow(kbs []string) []string {
+	var out []string
+	for _, kb := range kbs {
+		out = append(out, missingFrom(out, kentAllow(kb))...)
+	}
+	return out
+}
+
+func allDeny(kbs []string) []string {
+	var out []string
+	for _, kb := range kbs {
+		out = append(out, missingFrom(out, kentDeny(kb))...)
+	}
+	return out
+}
+
+// kentSettingsJSON is the part of .claude/settings.local.json that Kent needs for the knowledge bases kbs,
+// to be merged into the file.
+func kentSettingsJSON(kbs []string, extraEnv [][2]string) string {
 	q := func(s string) string { b, _ := json.Marshal(s); return string(b) }
 	list := func(xs []string, indent string) string {
 		var parts []string
@@ -220,16 +316,16 @@ func kentSettingsJSON(kb string, extraEnv [][2]string) string {
 		return strings.Join(parts, ",\n")
 	}
 	var env []string
-	env = append(env, "    "+q(kbEnv)+": "+q(settingPath(kb)))
+	env = append(env, "    "+q(kbEnv)+": "+q(kbListValue(kbs)))
 	for _, kv := range extraEnv {
 		env = append(env, "    "+q(kv[0])+": "+q(kv[1]))
 	}
 	return "{\n" +
 		"  \"env\": {\n" + strings.Join(env, ",\n") + "\n  },\n" +
 		"  \"permissions\": {\n" +
-		"    \"additionalDirectories\": [\n" + list([]string{settingPath(kb)}, "      ") + "\n    ],\n" +
-		"    \"allow\": [\n" + list(kentAllow(kb), "      ") + "\n    ],\n" +
-		"    \"deny\": [\n" + list(kentDeny(kb), "      ") + "\n    ]\n" +
+		"    \"additionalDirectories\": [\n" + list(settingPaths(kbs), "      ") + "\n    ],\n" +
+		"    \"allow\": [\n" + list(allAllow(kbs), "      ") + "\n    ],\n" +
+		"    \"deny\": [\n" + list(allDeny(kbs), "      ") + "\n    ]\n" +
 		"  },\n" +
 		"  \"hooks\": {\n" +
 		"    \"SessionStart\": [\n" +
@@ -431,26 +527,65 @@ func (r *report) todos() []string {
 	return out
 }
 
-// chooseKB is the knowledge base setup is about: --kb, else KENT_KB, else the one the project's settings
-// name (they apply to a running conversation's commands, but setup may be checking a file just written).
-func chooseKB(arg string, sf settingsFile) (path, how string) {
+// kbChoice is one knowledge base setup is about, and where it was named.
+type kbChoice struct{ path, how string }
+
+// chooseKBs are the knowledge bases setup is about: those KENT_KB names, else those the project's settings
+// name (they apply to a running conversation's commands, but setup may be checking a file just written),
+// and the one --kb names when it is not among them, which the project is to refer to as well (S-ZBVAHS).
+func chooseKBs(arg string, sf settingsFile) []kbChoice {
 	// resolved as kb finds the knowledge base when it runs, so that the paths setup writes into the
 	// permissions are the ones the session-start text gives
+	var out []kbChoice
 	switch {
-	case arg != "":
-		return dyn.Resolve(arg), "from --kb"
 	case os.Getenv(kbEnv) != "":
-		return dyn.Resolve(os.Getenv(kbEnv)), "from " + kbEnv
+		for _, f := range kbset.SplitList(os.Getenv(kbEnv)) {
+			out = append(out, kbChoice{dyn.Resolve(f), "from " + kbEnv})
+		}
 	case sf.env[kbEnv] != "":
-		return dyn.Resolve(sf.env[kbEnv]), "from " + kbEnv + " in " + settingsRel
+		for _, f := range kbset.SplitList(sf.env[kbEnv]) {
+			out = append(out, kbChoice{dyn.Resolve(f), "from " + kbEnv + " in " + settingsRel})
+		}
 	}
-	return "", ""
+	if arg != "" {
+		p := dyn.Resolve(arg)
+		if kbset.IDRE.MatchString(strings.ToUpper(strings.TrimSpace(arg))) {
+			var have []string
+			for _, c := range out {
+				have = append(have, c.path)
+			}
+			if f, _ := kbset.Locate(arg, have); f != "" {
+				p = dyn.Resolve(f)
+			}
+		}
+		for _, c := range out {
+			if samePath(c.path, p) {
+				return out
+			}
+		}
+		how := "from --kb"
+		if len(out) > 0 {
+			how = "from --kb, beside the knowledge base(s) " + kbEnv + " names"
+		}
+		out = append(out, kbChoice{p, how})
+	}
+	return out
+}
+
+// choicePaths are the folders of choices.
+func choicePaths(cs []kbChoice) []string {
+	var out []string
+	for _, c := range cs {
+		out = append(out, c.path)
+	}
+	return out
 }
 
 func buildReport(project, kbArg string) report {
 	var r report
 	sf := readSettings(project)
-	kb, kbHow := chooseKB(kbArg, sf)
+	choices := chooseKBs(kbArg, sf)
+	kbs := choicePaths(choices)
 
 	r.section("Kent")
 	launched := os.Getenv("KENT_LAUNCHED")
@@ -461,7 +596,7 @@ func buildReport(project, kbArg string) report {
 	if vs := installedVersions(); len(vs) > 0 {
 		r.item("Installed: %s.", strings.Join(vs, ", "))
 	}
-	if kb == "" {
+	if len(kbs) == 0 {
 		// the id that does not depend on the knowledge base, so setup does not ask for one already set
 		if u, source := userSource("", ""); u != "" {
 			r.item("The human would be recorded as %s (%s), unless ~/.kenttheclerk.json names another id "+
@@ -547,8 +682,8 @@ func buildReport(project, kbArg string) report {
 			"those lines, and the project's settings move into %s.", strings.Join(files, " and "), settingsRel)
 	}
 
-	r.section("Knowledge base")
-	if kb == "" {
+	if len(kbs) == 0 {
+		r.section("Knowledge base")
 		r.item("None chosen: %s is not set, and no --kb was given.", kbEnv)
 		// a knowledge base already kept inside the code repository, found by its shape, not its name
 		where := project
@@ -584,22 +719,38 @@ func buildReport(project, kbArg string) report {
 			r.need(1, "Ask the human whether this project uses a new knowledge base or an existing one, and where it "+
 				"is or should go; then run kb setup --report --kb <folder>.")
 		}
-	} else {
-		r.item("%s (%s).", kb, kbHow)
-		kbReport(&r, kb)
+	}
+	ids := map[string]string{}
+	for _, c := range choices {
+		kb := c.path
+		if len(kbs) == 1 {
+			r.section("Knowledge base")
+		} else {
+			r.section("Knowledge base: " + kb)
+		}
+		r.item("%s (%s).", kb, c.how)
+		kbReport(&r, kb, len(kbs) > 1)
 		// the commit setting matters only for a knowledge base inside a code repository (S-DQES)
 		if pr := offerCommitProblem(sf.env[offerCommitEnv]); pr != "" && readGitPlace(kb).kind == inCodeRepo {
 			r.need(9, "In %s, %s.", settingsRel, pr)
 		}
-		if sf.exists && sf.err == nil {
-			if v := sf.env[kbEnv]; v != "" && !samePath(dyn.Resolve(v), kb) {
-				r.need(1, "%s names %s, not %s. A project refers to at most one knowledge base; "+
-					"ask the human which one this project uses.", settingsRel, v, kb)
+		if id, ok, _ := kbset.ReadID(kb); ok {
+			if other, dup := ids[id]; dup {
+				r.need(1, "%s and %s have the same id, %s, so they are copies of one knowledge base: ask the human "+
+					"which one this project uses.", other, kb, id)
 			}
+			ids[id] = kb
+		}
+	}
+	if len(kbs) > 1 {
+		r.item("This project refers to %d knowledge bases; each session is on the record in at most one of them, "+
+			"chosen when it goes on the record.", len(kbs))
+		if pinsDiffer(kbs) {
+			r.item("Their pins differ, so the agent passes --kb on every command; the session-start text says so.")
 		}
 	}
 
-	if kb != "" {
+	if len(kbs) > 0 {
 		r.section("Settings for this project")
 		var extra [][2]string
 		for _, k := range []string{askModeEnv, perTurnEnv, offerCommitEnv} {
@@ -609,22 +760,24 @@ func buildReport(project, kbArg string) report {
 		}
 		var missing []string
 		if sf.err == nil {
-			if !samePath(dyn.Resolve(sf.env[kbEnv]), kb) || sf.env[kbEnv] == "" {
-				missing = append(missing, kbEnv)
+			if !sameList(kbset.SplitList(sf.env[kbEnv]), kbs) {
+				missing = append(missing, kbEnv+", naming "+map[bool]string{true: "the knowledge base", false: "every knowledge base"}[len(kbs) == 1])
 			}
-			found := false
-			for _, d := range sf.dirs {
-				if samePath(dyn.Resolve(d), kb) {
-					found = true
+			for _, kb := range kbs {
+				found := false
+				for _, d := range sf.dirs {
+					if samePath(dyn.Resolve(d), kb) {
+						found = true
+					}
+				}
+				if !found {
+					missing = append(missing, kb+" in additionalDirectories")
 				}
 			}
-			if !found {
-				missing = append(missing, "the knowledge base in additionalDirectories")
-			}
-			for _, a := range missingFrom(sf.allow, kentAllow(kb)) {
+			for _, a := range missingFrom(sf.allow, allAllow(kbs)) {
 				missing = append(missing, "allow "+a)
 			}
-			for _, d := range missingFrom(sf.deny, kentDeny(kb)) {
+			for _, d := range missingFrom(sf.deny, allDeny(kbs)) {
 				missing = append(missing, "deny "+d)
 			}
 			if !sf.hasHook {
@@ -635,7 +788,7 @@ func buildReport(project, kbArg string) report {
 			r.item("%s has everything Kent needs.", settingsRel)
 		} else {
 			r.lines = append(r.lines, "What Kent needs in "+settingsRel+", to merge into what is there:", "",
-				"```json", kentSettingsJSON(kb, extra), "```")
+				"```json", kentSettingsJSON(kbs, extra), "```")
 			if len(missing) > 0 {
 				r.lines = append(r.lines, "", "Missing from the file now:")
 				for _, m := range missing {
@@ -648,9 +801,28 @@ func buildReport(project, kbArg string) report {
 	return r
 }
 
-// kbReport describes the knowledge base folder: whether it is one, its git repository, its pin and who
-// would be recorded.
-func kbReport(r *report, kb string) {
+// sameList is whether the folders named in have are the folders want, in any order.
+func sameList(have, want []string) bool {
+	if len(have) != len(want) {
+		return false
+	}
+	for _, w := range want {
+		found := false
+		for _, h := range have {
+			if samePath(dyn.Resolve(h), w) {
+				found = true
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// kbReport describes the knowledge base folder: whether it is one, its id, its git repository, its pin and
+// who would be recorded. several is whether the project refers to more than one, when each needs an id.
+func kbReport(r *report, kb string, several bool) {
 	st, err := os.Stat(kb)
 	switch {
 	case err != nil:
@@ -675,6 +847,21 @@ func kbReport(r *report, kb string) {
 	r.item("A knowledge base: %d attested statement(s), %d agent statement(s), %d evidence file(s).",
 		countFiles(filepath.Join(kb, "attested"), "S-*.md"), countFiles(filepath.Join(kb, "agent"), "A-*.md"),
 		countFiles(filepath.Join(kb, "evidence"), "*.jsonl"))
+
+	switch id, ok, err := kbset.ReadID(kb); {
+	case err != nil:
+		r.item("Its id cannot be read: %v.", err)
+		r.need(1, "The knowledge base's id cannot be read (%s); show the human %s. An id never changes, so "+
+			"the one to keep is the one other knowledge bases refer to.", err, kbset.IDPath(kb))
+	case ok:
+		r.item("Its id is %s.", id)
+	case several:
+		r.item("It has no id yet.")
+		r.need(3, "Give %s an id with kb id --create --kb %s, and commit %s: this project refers to several "+
+			"knowledge bases, and a reference from one into another carries the id.", kb, kb, kbset.IDFile)
+	default:
+		r.item("It has no id yet; kb id --create gives it one, needed once another knowledge base is to refer to it.")
+	}
 
 	place := readGitPlace(kb)
 	r.item("%s", place.summary())
@@ -806,7 +993,7 @@ func kbReport(r *report, kb string) {
 // ---------------------------------------------------------------- kb setup
 
 // createKB makes a new knowledge base in dir: the folder and its attested/ and evidence/ folders, which is
-// how kb finds a knowledge base. Whether it goes in git is a separate question (S-0130), and the agent runs
+// how kb finds a knowledge base, and its id (S-Y17H90). Whether it goes in git is a separate question (S-0130), and the agent runs
 // git itself rather than through kb.
 func createKB(dir string) {
 	if st, err := os.Stat(dir); err == nil {
@@ -825,7 +1012,12 @@ func createKB(dir string) {
 		}
 	}
 	writeGitkeeps(dir)
-	println("created the knowledge base " + dir + ", with attested/ and evidence/, each with an empty .gitkeep")
+	id := newKBID()
+	if err := os.WriteFile(kbset.IDPath(dir), []byte(id+"\n"), 0o666); err != nil {
+		die(fmt.Sprintf("cannot write %s: %v", kbset.IDPath(dir), err))
+	}
+	println("created the knowledge base " + dir + ", with attested/ and evidence/, each with an empty .gitkeep, " +
+		"and its id, " + id + ", in " + kbset.IDFile)
 }
 
 // writeGitkeeps writes an empty .gitkeep in attested/ and evidence/ where they are empty, since git keeps
@@ -852,7 +1044,7 @@ func runSetup(ns argparse.Namespace) int {
 		project, _ = os.Getwd()
 	}
 	project = absPath(project)
-	kbArg, _ := ns.Str("kb")
+	kbArg := kbFlag
 	create, _ := ns.Str("create")
 	acted := false
 	if create != "" {
@@ -864,9 +1056,14 @@ func runSetup(ns argparse.Namespace) int {
 		acted = true
 	}
 	if ns.Bool("gitkeep") {
-		kb, _ := chooseKB(kbArg, readSettings(project))
+		kb := ""
+		if kbArg != "" {
+			kb = dyn.Resolve(kbArg)
+		} else if cs := chooseKBs("", readSettings(project)); len(cs) == 1 {
+			kb = cs[0].path
+		}
 		if kb == "" || !isKBFolder(kb) {
-			die("--gitkeep needs a knowledge base: name it with --kb")
+			die("--gitkeep needs one knowledge base: name it with --kb")
 		}
 		writeGitkeeps(kb)
 		println("wrote an empty .gitkeep in " + kb + "'s attested/ and evidence/ where there was none")
@@ -899,7 +1096,6 @@ func runSetup(ns argparse.Namespace) int {
 
 func addSetupParsers(sub *argparse.Parser) {
 	p := sub.AddParser("setup", "set Kent up in this project: a runbook for the agent, and what is there now")
-	p.Option("--kb", "the knowledge base's folder, when it is not yet in the project's settings", nil, false)
 	p.Option("--project", "the code project's folder (default: CLAUDE_PROJECT_DIR, else the current folder)", nil, false)
 	p.Flag("--report", "print only what setup finds, without the runbook")
 	p.Option("--create", "create a new knowledge base in this folder (new or empty), then report", nil, false)
