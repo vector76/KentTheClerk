@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"kenttheclerk/internal/dyn"
 	"kenttheclerk/internal/kbset"
 )
 
@@ -194,8 +195,9 @@ func TestStmtRefsSkipsOtherKB(t *testing.T) {
 
 // TestSetupSeveral: setup's settings name every knowledge base, and ask for an id on each.
 func TestSetupSeveral(t *testing.T) {
-	a := newTestKB(t)
-	b := emptyKB(t)
+	// kb names a folder as dyn.Resolve gives it, the long form of a short 8.3 temporary path on Windows
+	a := dyn.Resolve(newTestKB(t))
+	b := dyn.Resolve(emptyKB(t))
 	t.Setenv(kbEnv, a)
 	out := mustRun(t, "setup", "--report", "--kb", b, "--project", t.TempDir())
 	if !strings.Contains(out, kbListValue([]string{a, b})) || !strings.Contains(out, "kb id --create --kb") {

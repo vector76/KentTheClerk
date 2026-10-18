@@ -301,8 +301,9 @@ func TestResolve(t *testing.T) {
 	g("checkout", "-q", "main")
 	set(statementText("The text.", []any{author}, "superseded_by", "S-P3KB"))
 	g("commit", "-q", "-am", "supersede")
-	if _, st := git(root, "merge", "-q", "other"); st == 0 {
-		t.Fatalf("git merged without a conflict")
+	// 1 is a merge that stopped on a conflict; anything else, such as 128 for a missing identity, is not
+	if out, st := git(root, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "other"); st != 1 {
+		t.Fatalf("git merge: %d, want 1 for a conflict: %s", st, out)
 	}
 	t.Setenv(kbEnv, root)
 	if code := Main([]string{"resolve", "attested/S-0001-not-conflicted.md"}); code == 0 {
