@@ -209,7 +209,9 @@ func TestQuoteBoolLike(t *testing.T) {
 // TestResolvePathForms: kb resolve takes a file relative to the current folder, or with a drive letter in
 // another case.
 func TestResolvePathForms(t *testing.T) {
-	root := t.TempDir()
+	// resolved as runResolve's root is: on macOS the temporary folder is under /var, a symlink to
+	// /private/var, and the current folder is read back in the resolved form
+	root := dyn.Resolve(t.TempDir())
 	conflicted := map[string]bool{"attested/S-7K2M-a.md": true}
 	if r, ok := askedFile(root, filepath.Join(root, "attested", "S-7K2M-a.md"), conflicted); !ok || r != "attested/S-7K2M-a.md" {
 		t.Errorf("absolute: %q %v", r, ok)
