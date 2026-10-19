@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
+
 	kent "kenttheclerk"
 	"kenttheclerk/internal/dyn"
 	"kenttheclerk/internal/kbset"
@@ -99,6 +101,11 @@ var (
 	Stdout io.Writer = os.Stdout
 	Stderr io.Writer = os.Stderr
 )
+
+// stdoutIsTerminal reports whether the process's stdout is a terminal: the one place kb asks, so that
+// what it prints for a terminal and for a pipe or file is decided against the same answer. Tests that
+// run a command as if its output went to a terminal replace it.
+var stdoutIsTerminal = func() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
 
 func outf(format string, a ...any) { fmt.Fprintf(Stdout, format, a...) }
 
