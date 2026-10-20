@@ -147,6 +147,28 @@ func TestXrefRealignmentNoProgress(t *testing.T) {
 	wantErrClass(t, err, errMalformed)
 }
 
+// An xref table entry that cannot be parsed is recovered from the object's
+// own "num gen obj" header, and filed under that generation at that offset.
+func TestUnparsableXrefEntryFiledAtRecoveredOffset(t *testing.T) {
+	data := simplePDF()
+	start := bytes.Index(data, []byte("\n4 0 obj")) + 1
+	entry := []byte(fmt.Sprintf("%010d 00000 n \n", start))
+	if bytes.Count(data, entry) != 1 {
+		t.Fatalf("xref entry %q not found once", entry)
+	}
+	data = bytes.Replace(data, entry, []byte("xxxxxxxxxx 00000 n \n"), 1)
+	d, err := openDocument(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if off, ok := d.xref[0][4]; !ok || off != start {
+		t.Errorf("object 4 in generation 0: offset %d (present %v), want %d", off, ok, start)
+	}
+	if _, ok := d.xref[start]; ok {
+		t.Errorf("the xref has a generation %d, the object's offset", start)
+	}
+}
+
 func formChain(depth int, fanout bool) []byte {
 	objs := []pdfObj{objCatalog, objPages,
 		pageObj("", "<< /Font << /F1 5 0 R >> /XObject << /X 10 0 R >> >>"),

@@ -613,9 +613,10 @@ func (d *Document) readStandardXrefTable(p *parser) (bool, error) {
 					recovery = loadRecoveryCache(d.data)
 				}
 				if rc, ok := recovery[n]; ok {
-					// a recovered (object start, generation) pair is used
-					// as (generation, offset); the output depends on the swap.
-					generation, offset, typ = rc[0], rc[1], "n"
+					// a recovered (object start, generation) pair is filed
+					// as (offset, generation), so the object is found where
+					// it is rather than only by a later search of the file.
+					offset, generation, typ = rc[0], rc[1], "n"
 				} else {
 					generation, offset, typ = 65535, -1, "f"
 				}
