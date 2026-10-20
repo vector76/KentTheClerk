@@ -31,9 +31,10 @@ func openVersionProcess(r *launcherProcess, pid int) (*versionProcess, error) {
 	}
 	same, err := runsProgram(h, r.versionExe)
 	if err != nil {
-		// a process that has ended may no longer say what it ran; one still running must, or it could be
-		// the version and would be taken for one that has ended
-		ev, _ := windows.WaitForSingleObject(h, 0)
+		// a process that is ending may no longer say what it ran: Windows can refuse while the exit is
+		// still under way, before the process is signalled. So give it a moment to end. One that goes on
+		// running must say, or it could be the version and would be taken for one that has ended.
+		ev, _ := windows.WaitForSingleObject(h, uint32(exitingGrace/time.Millisecond))
 		windows.CloseHandle(h)
 		if ev == windows.WAIT_OBJECT_0 {
 			return &versionProcess{pid: pid}, nil
@@ -47,20 +48,24 @@ func openVersionProcess(r *launcherProcess, pid int) (*versionProcess, error) {
 	return &versionProcess{pid: pid, h: h}, nil
 }
 
+// exitingGrace is how long a process that won't say what it runs is given to end.
+const exitingGrace = 5 * time.Second
+
 // runsProgram says whether the process h runs the program exe.
 func runsProgram(h windows.Handle, exe string) (bool, error) {
 	buf := make([]uint16, windows.MAX_LONG_PATH)
 	n := uint32(len(buf))
 	if err := windows.QueryFullProcessImageName(h, 0, &buf[0], &n); err != nil {
-		return false, err
+		return false, fmt.Errorf("reading its program's path: %v", err)
 	}
-	got, err := os.Stat(windows.UTF16ToString(buf[:n]))
+	image := windows.UTF16ToString(buf[:n])
+	got, err := os.Stat(image)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("reading its program %s: %v", image, err)
 	}
 	want, err := os.Stat(exe)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("reading the version's program %s: %v", exe, err)
 	}
 	return os.SameFile(got, want), nil
 }
