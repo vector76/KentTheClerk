@@ -343,3 +343,40 @@ func TestIndexAndServeShowContext(t *testing.T) {
 		t.Errorf("the page of S-0002 does not show what it is context for")
 	}
 }
+
+// Markup in indexed text reaches a search page as text: the snippets of statements and of evidence turns
+// are HTML-escaped, and only the match itself is wrapped in <mark>.
+func TestSearchSnippetsEscapeMarkupAndKeepMatchHighlighted(t *testing.T) {
+	root := newTestKB(t)
+	planted := `xyzzy <img src=x onerror=alert(1)> & "q" xyzzy`
+	doc := filepath.Join(t.TempDir(), "planted.txt")
+	if err := os.WriteFile(doc, []byte(planted+"\n"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, "ingest", doc, "--user", "alice")
+	a := writeDraft(t, root, "choice", "title: Choice\nanswers: a test choice", planted)
+	mustRun(t, "record", a, "--turn", turnPtr(6))
+
+	rec := httptest.NewRecorder()
+	(&kbServer{root}).ServeHTTP(rec, httptest.NewRequest("GET", "/search?q=xyzzy", nil))
+	page := rec.Body.String()
+	for _, section := range []string{"statements", "evidence"} {
+		start := strings.Index(page, "<h2>"+section+"</h2>")
+		if start < 0 {
+			t.Fatalf("the search page has no %s section:\n%s", section, page)
+		}
+		part := page[start+len("<h2>"+section+"</h2>"):]
+		if end := strings.Index(part, "<h2>"); end >= 0 {
+			part = part[:end]
+		}
+		if strings.Contains(part, "<img") {
+			t.Errorf("the %s snippet carries raw markup from the indexed text:\n%s", section, part)
+		}
+		if !strings.Contains(part, "&lt;img src=x onerror=alert(1)&gt;") || !strings.Contains(part, "&amp;") {
+			t.Errorf("the %s snippet does not show the indexed text escaped:\n%s", section, part)
+		}
+		if !strings.Contains(part, "<mark>xyzzy</mark>") {
+			t.Errorf("the %s snippet does not highlight the match:\n%s", section, part)
+		}
+	}
+}

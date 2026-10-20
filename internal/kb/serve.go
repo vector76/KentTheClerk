@@ -503,22 +503,33 @@ func tryQuery(db *sql.DB, q string, args ...any) (rows []row, err error) {
 	return query(db, q, args...), nil
 }
 
+// snipOpen and snipClose are what snippet() puts around a match: Unicode noncharacters, which text does
+// not carry (private-use characters can come out of a PDF's symbol fonts), so the snippet can be
+// HTML-escaped as text and the markers then turned into <mark> and </mark>.
+const snipOpen, snipClose = "\uFDD0", "\uFDD1"
+
+// snipHTML is an FTS5 snippet made with snipOpen and snipClose, as HTML: the indexed text escaped, the
+// matches marked.
+func snipHTML(v any) string {
+	return strings.NewReplacer(snipOpen, "<mark>", snipClose, "</mark>").Replace(esc(v))
+}
+
 func (h *kbServer) search(w http.ResponseWriter, db *sql.DB, q string) {
 	out := []string{`<h1>search</h1><form><input name="q" value="` + esc(q) + `" size="50"></form>`}
 	if q != "" {
 		out = append(out, "<h2>statements</h2>")
 		func() {
-			rows, err := tryQuery(db, "SELECT s.*, snippet(statements_fts, 2, '<mark>', '</mark>', '…', 16) AS snip FROM statements_fts "+
+			rows, err := tryQuery(db, "SELECT s.*, snippet(statements_fts, 2, '"+snipOpen+"', '"+snipClose+"', '…', 16) AS snip FROM statements_fts "+
 				"JOIN statements s ON s.id = statements_fts.id WHERE statements_fts MATCH ? ORDER BY rank LIMIT 25", q)
 			if err != nil {
 				out = append(out, `<p class="meta">query error: `+esc(err.Error())+`</p>`)
 				return
 			}
 			for _, r := range rows {
-				out = append(out, `<div class="stmt"><a href="/s/`+esc(r["id"])+`"><b>`+esc(r["id"])+`</b></a> `+esc(r["title"])+`<div class="meta">`+sqlStr(r["snip"])+`</div></div>`)
+				out = append(out, `<div class="stmt"><a href="/s/`+esc(r["id"])+`"><b>`+esc(r["id"])+`</b></a> `+esc(r["title"])+`<div class="meta">`+snipHTML(r["snip"])+`</div></div>`)
 			}
 			out = append(out, "<h2>evidence</h2>")
-			rows, err = tryQuery(db, "SELECT t.*, snippet(turns_fts, 1, '<mark>', '</mark>', '…', 16) AS snip FROM turns_fts "+
+			rows, err = tryQuery(db, "SELECT t.*, snippet(turns_fts, 1, '"+snipOpen+"', '"+snipClose+"', '…', 16) AS snip FROM turns_fts "+
 				"JOIN turns t ON t.uuid = turns_fts.uuid WHERE turns_fts MATCH ? ORDER BY rank LIMIT 25", q)
 			if err != nil {
 				out = append(out, `<p class="meta">query error: `+esc(err.Error())+`</p>`)
@@ -526,7 +537,7 @@ func (h *kbServer) search(w http.ResponseWriter, db *sql.DB, q string) {
 			}
 			for _, r := range rows {
 				out = append(out, `<div class="turn `+sqlStr(r["role"])+`"><div class="hd"><a href="/e/`+esc(r["session"])+`#`+esc(r["uuid"])+`">`+esc(r["label"])+`</a>`+
-					`<span>`+who(db, r["author"])+`</span></div>`+sqlStr(r["snip"])+`</div>`)
+					`<span>`+who(db, r["author"])+`</span></div>`+snipHTML(r["snip"])+`</div>`)
 			}
 		}()
 	}
