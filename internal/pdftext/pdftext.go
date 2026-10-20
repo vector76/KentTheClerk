@@ -26,6 +26,8 @@
 //   - Work budget: more than 250,000 form XObject executions, 50 million
 //     content operations or 50 million characters of text per document is
 //     an error (frames.go).
+//   - More than 8,388,607 entries in a document's cross-reference streams
+//     is an error, however small the compressed streams are.
 //
 // Known limitations:
 //   - Encrypted files (an /Encrypt entry) always fail, even RC4 or AES

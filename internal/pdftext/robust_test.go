@@ -267,6 +267,53 @@ func TestRootRecoveryLimit(t *testing.T) {
 	wantErrClass(t, err, errLimit)
 }
 
+// xrefStreamPDF builds the simple one-page document with a cross-reference
+// stream (/W [1 2 0]) of n entries in place of an xref table: the real
+// objects first, then entries of type fill up to n.
+func xrefStreamPDF(n int, fill byte) []byte {
+	var out bytes.Buffer
+	out.WriteString("%PDF-1.5\n")
+	objs := []pdfObj{objCatalog, objPages, pageObj("", ""), {4, streamObj(textA, "")}, objFont}
+	offs := map[int]int{}
+	for _, o := range objs {
+		offs[o.num] = out.Len()
+		fmt.Fprintf(&out, "%d 0 obj\n", o.num)
+		out.Write(o.body)
+		out.WriteString("\nendobj\n")
+	}
+	xref := out.Len()
+	entries := make([]byte, 0, 3*n)
+	entries = append(entries, 0, 0, 0)
+	for i := 1; i <= 5; i++ {
+		entries = append(entries, 1, byte(offs[i]>>8), byte(offs[i]))
+	}
+	entries = append(entries, 1, byte(xref>>8), byte(xref))
+	for i := 7; i < n; i++ {
+		entries = append(entries, fill, byte(offs[1]>>8), byte(offs[1]))
+	}
+	z := zlibBytes(zlibBytes(entries))
+	fmt.Fprintf(&out, "6 0 obj\n<< /Type /XRef /Size %d /W [1 2 0] /Root 1 0 R /Filter [/FlateDecode /FlateDecode] /Length %d >>\nstream\n", n, len(z))
+	out.Write(z)
+	fmt.Fprintf(&out, "\nendstream\nendobj\nstartxref\n%d\n%%%%EOF\n", xref)
+	return out.Bytes()
+}
+
+// A cross-reference stream compresses well, so a small file can declare
+// millions of objects; past the 8,388,607 indirect objects a PDF may have,
+// extraction fails instead of building tables of them all.
+func TestXrefStreamEntryLimit(t *testing.T) {
+	pages, err := extractTimed(t, xrefStreamPDF(10, 0), 2*time.Second)
+	if err != nil || len(pages) != 1 || pages[0] != "A" {
+		t.Fatalf("10 entries: %q %v", pages, err)
+	}
+	data := xrefStreamPDF(8_388_608, 1)
+	if len(data) > 100_000 {
+		t.Fatalf("test file is %d bytes", len(data))
+	}
+	_, err = extractTimed(t, data, 20*time.Second)
+	wantErrClass(t, err, errLimit)
+}
+
 func TestDeterministicAverageWidth(t *testing.T) {
 	// CID widths with floats and no space width: the default width is an
 	// average that must be summed in insertion order.

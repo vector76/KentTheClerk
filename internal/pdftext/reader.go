@@ -29,7 +29,9 @@ type Document struct {
 	frame int
 	// work done so far (see frames.go)
 	formRuns, operations, outputRunes int
-	xrefOrder                         []int // generations of xref in insertion order
+	// xrefStreamEntries counts the entries read from cross-reference streams
+	xrefStreamEntries int
+	xrefOrder         []int // generations of xref in insertion order
 	// searchCache memoizes searchObject
 	searchCache map[[2]int][]int
 }
@@ -805,6 +807,14 @@ func isDigits(b []byte) bool {
 	return true
 }
 
+// maxXrefStreamEntries bounds the entries read from all of a document's
+// cross-reference streams, at the 8,388,607 indirect objects a PDF may
+// have. A compressed stream of a few KB can otherwise declare tens of
+// millions of objects, each kept in the xref tables. Past it the whole
+// extraction fails, like the work budget (frames.go): the errors of
+// reading an xref stream are swallowed or turned into errMalformed.
+const maxXrefStreamEntries = 8_388_607
+
 // readXrefStream reads a cross-reference stream; p is positioned one byte
 // after the start of the object (it steps back one).
 func (d *Document) readXrefStream(p *parser) (*Stream, error) {
@@ -871,6 +881,12 @@ func (d *Document) readXrefStream(p *parser) (*Stream, error) {
 					index[i] = v
 				}
 				total += index[i]
+				if index[i] > 0 {
+					if index[i] > maxXrefStreamEntries-d.xrefStreamEntries {
+						panic(budgetError{fmt.Sprintf("more than %d cross-reference stream entries", maxXrefStreamEntries)})
+					}
+					d.xrefStreamEntries += index[i]
+				}
 			}
 		}
 	}
