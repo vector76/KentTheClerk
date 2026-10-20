@@ -251,19 +251,49 @@ func (h *kbServer) original(w http.ResponseWriter, name string) {
 	for _, mode := range []string{"on-record", "off-record"} {
 		p := filepath.Join(originalsDir(h.root, mode), name)
 		if dyn.IsFile(p) {
-			ctype := mimetypes.GuessType(name)
-			if ctype == "" {
-				ctype = "application/octet-stream"
-			}
+			ctype, download := originalType(name)
 			b, err := os.ReadFile(p)
 			if err != nil {
 				dyn.RaiseOS(err)
+			}
+			// an original is whatever bytes were brought in, so nothing in it may run in this server's
+			// origin: the sandbox gives it an origin of its own and no script, nosniff keeps the browser
+			// from rendering it as something other than the type sent
+			w.Header().Set("Content-Security-Policy", "sandbox")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			if download {
+				w.Header().Set("Content-Disposition", "attachment")
 			}
 			h.send(w, b, 200, ctype)
 			return
 		}
 	}
 	h.html(w, page("not found", "<h1>original not found</h1>"), 404)
+}
+
+// originalInline are the media types an original is shown under as it is: a browser shows them without
+// running anything of theirs in a page.
+var originalInline = map[string]bool{
+	"application/pdf": true,
+	"image/png":       true, "image/jpeg": true, "image/gif": true, "image/webp": true, "image/bmp": true, "image/avif": true,
+}
+
+// originalType is the content type an original is served under, and whether it goes as a download. A PDF
+// or a raster image is shown as it is; any text, and with it HTML, SVG, XML, JSON and script, is shown as
+// plain text, so it can be read but not run; anything else is downloaded rather than opened.
+func originalType(name string) (ctype string, download bool) {
+	t := dyn.Lower(strings.TrimSpace(strings.SplitN(mimetypes.GuessType(name), ";", 2)[0]))
+	switch {
+	case originalInline[t]:
+		return t, false
+	case strings.HasPrefix(t, "text/"), t == "application/xml", t == "application/json", t == "application/javascript",
+		t == "application/ecmascript", t == "application/x-javascript",
+		strings.HasSuffix(t, "+xml"), strings.HasSuffix(t, "+json"):
+		return "text/plain; charset=utf-8", false
+	case t == "":
+		return "application/octet-stream", true
+	}
+	return t, true
 }
 
 func (h *kbServer) overview(db *sql.DB) string {
