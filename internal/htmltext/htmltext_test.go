@@ -208,6 +208,36 @@ func TestTitleIsTheHeadTitleNotAnSVGLabel(t *testing.T) {
 	}
 }
 
+// TestHeadEndsWhereTheBodyBegins: a head whose end tag is left out ends at the first tag or
+// text that belongs in the body, as it does in a browser, and a <head> start tag after the
+// body has begun is ignored, so the text after either is kept; a complete head is still not
+// text.
+func TestHeadEndsWhereTheBodyBegins(t *testing.T) {
+	cases := []struct {
+		src       string
+		wantTitle string
+		wantHas   bool
+		wantLines []string
+	}{
+		{"<p>a</p><head><p>b</p>", "", false, []string{"a", "", "b"}},
+		{"visible<head>hidden", "", false, []string{"visiblehidden"}},
+		{"<html><head><title>T</title><meta charset=utf-8><body><p>text</p></body></html>",
+			"T", true, []string{"text"}},
+		{"<head><title>T</title><link rel=x><div>x</div></head><p>y</p>", "T", true, []string{"x", "", "y"}},
+		{"<head><title>T</title>Stray text<style>p{}</style></head><p>y</p>", "T", true, []string{"Stray text", "", "y"}},
+		{"<p>a</p><head><style>p{}</style></head><p>b</p>", "", false, []string{"a", "", "b"}},
+		{"<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>T</title>\n<script>x</script>\n</head>\n<body><p>x</p></body></html>",
+			"T", true, []string{"x"}},
+	}
+	for _, c := range cases {
+		lines, title, has, err := ExtractErr([]byte(c.src))
+		if err != nil || title != c.wantTitle || has != c.wantHas || !reflect.DeepEqual(lines, c.wantLines) {
+			t.Errorf("%q: got title %q %v, lines %q, %v; want title %q %v, lines %q",
+				c.src, title, has, lines, err, c.wantTitle, c.wantHas, c.wantLines)
+		}
+	}
+}
+
 // TestHeadingKeepsSpaceBetweenInlinePieces: whitespace between two pieces of heading text
 // that a tag or comment separates stays one space, and so does whitespace between pieces of
 // text after a heading that is never closed.

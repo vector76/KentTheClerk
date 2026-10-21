@@ -182,7 +182,7 @@
   "raw": "PC9ub3NjcmlwdD48L2hlYWQ+dmlzaWJsZTxoZWFkPmhpZGRlbg==",
   "want": {
    "lines": [
-    "visible"
+    "visiblehidden"
    ],
    "title": null
   }

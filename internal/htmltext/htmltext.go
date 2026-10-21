@@ -88,6 +88,10 @@ type htmlText struct {
 	// head counts the open head elements among the skip elements: a title in the head is
 	// the document's title, although the rest of the head is not text.
 	head int
+	// headDone is set once a head start tag no longer opens a head: a head has been opened, or
+	// a start tag other than html, a head end tag or text other than whitespace came first. A
+	// later head start tag is ignored, as browsers ignore it, so head is never more than 1.
+	headDone bool
 	// svg counts the open svg elements; a title inside one labels an image and is neither
 	// the document's title nor text.
 	svg     int
@@ -106,6 +110,36 @@ var blockTags = map[string]bool{
 
 var skipTags = map[string]bool{"script": true, "style": true, "noscript": true, "head": true, "template": true}
 
+// headTags are the elements a head may contain. Any other start tag, or text other than
+// whitespace, directly in a head whose end tag was left out ends the head there, as it does in
+// a browser, and what follows is the body's.
+var headTags = map[string]bool{
+	"base": true, "basefont": true, "bgsound": true, "link": true, "meta": true, "title": true,
+	"noscript": true, "noframes": true, "style": true, "script": true, "template": true,
+}
+
+// isHTMLSpace is HTML's whitespace: tab, line feed, form feed, carriage return and space.
+func isHTMLSpace(r rune) bool {
+	return r == '\t' || r == '\n' || r == '\f' || r == '\r' || r == ' '
+}
+
+func allHTMLSpace(s []rune) bool {
+	for _, r := range s {
+		if !isHTMLSpace(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// endOpenHead ends an open head when nothing else skipped is open inside it.
+func (h *htmlText) endOpenHead() {
+	if h.head > 0 && h.skip == h.head {
+		h.head--
+		h.skip--
+	}
+}
+
 func headingLevel(tag string) int {
 	if len(tag) == 2 && tag[0] == 'h' && tag[1] >= '1' && tag[1] <= '6' {
 		return int(tag[1] - '0')
@@ -114,6 +148,17 @@ func headingLevel(tag string) int {
 }
 
 func (h *htmlText) handleStarttag(tag string) {
+	switch {
+	case tag == "head":
+		if h.headDone {
+			return
+		}
+	case tag != "html" && !headTags[tag]:
+		h.endOpenHead()
+	}
+	if tag != "html" {
+		h.headDone = true
+	}
 	switch tag {
 	case "head":
 		h.head++
@@ -143,7 +188,12 @@ func (h *htmlText) handleStarttag(tag string) {
 func (h *htmlText) handleEndtag(tag string) {
 	switch tag {
 	case "head":
-		h.head = max(0, h.head-1)
+		// A head end tag ends only an open head; any other is ignored.
+		h.headDone = true
+		if h.head == 0 {
+			return
+		}
+		h.head--
 	case "svg":
 		h.svg = max(0, h.svg-1)
 	}
@@ -162,6 +212,11 @@ func (h *htmlText) handleEndtag(tag string) {
 }
 
 func (h *htmlText) handleData(data []rune) {
+	// Text other than whitespace outside every skipped element but a head begins the body.
+	if !h.inTitle && h.skip == h.head && !allHTMLSpace(data) {
+		h.endOpenHead()
+		h.headDone = true
+	}
 	// A title is the document's outside svg, when every open skip element is a head.
 	if h.inTitle && h.svg == 0 && h.skip <= h.head {
 		h.title = append(h.title, stripSpace(data)...)
