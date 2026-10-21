@@ -7,11 +7,13 @@ package htmltext
 
 import (
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
 // Extract turns raw bytes into lines (before chunking):
-// raw bytes -> decode (UTF-8 with optional BOM, invalid bytes as windows-1252) -> tokenize -> post-processing
+// raw bytes -> decode (UTF-8 with optional BOM, invalid bytes as windows-1252; UTF-16 after its
+// BOM) -> tokenize -> post-processing
 // -> lines. title is the text inside the first title element that has any, each piece stripped
 // of surrounding whitespace and whitespace between two pieces made one space, and hasTitle is
 // false when it is empty. A title in the head counts, and one inside svg, or inside a skipped
@@ -68,8 +70,15 @@ func run(p *parser) (err error) {
 // Latin-1, so a document in Latin-1 or windows-1252, or a UTF-8 one with a stray legacy byte
 // or a sequence cut short, keeps every character that is valid UTF-8, and 0x80-0x9F give the
 // euro sign, curly quotes and dashes rather than C1 control characters.
+//
+// A document that begins with a UTF-16 BOM, little-endian (FF FE) or big-endian (FE FF), is
+// read as UTF-16 instead, as browsers read it whatever else it declares; a surrogate without
+// its pair, and a last odd byte, become U+FFFD.
 func decode(raw []byte) []rune {
 	b := raw
+	if len(b) >= 2 && (b[0] == 0xFF && b[1] == 0xFE || b[0] == 0xFE && b[1] == 0xFF) {
+		return decodeUTF16(b[2:], b[0] == 0xFE)
+	}
 	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
 		b = b[3:]
 	}
@@ -89,6 +98,23 @@ func decode(raw []byte) []rune {
 		}
 		out = append(out, r)
 		b = b[n:]
+	}
+	return out
+}
+
+// decodeUTF16 reads b, the bytes after the BOM, as UTF-16 code units in the byte order given.
+func decodeUTF16(b []byte, bigEndian bool) []rune {
+	units := make([]uint16, 0, len(b)/2)
+	for i := 0; i+1 < len(b); i += 2 {
+		if bigEndian {
+			units = append(units, uint16(b[i])<<8|uint16(b[i+1]))
+		} else {
+			units = append(units, uint16(b[i])|uint16(b[i+1])<<8)
+		}
+	}
+	out := utf16.Decode(units)
+	if len(b)%2 == 1 {
+		out = append(out, utf8.RuneError)
 	}
 	return out
 }

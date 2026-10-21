@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 type result struct {
@@ -338,6 +339,47 @@ func TestLegacyBytes80To9FReadAsWindows1252(t *testing.T) {
 		if err != nil || !reflect.DeepEqual(lines, c.wantLines) || title != c.wantTitle {
 			t.Errorf("%q: got lines %q, title %q, %v; want lines %q, title %q",
 				c.src, lines, title, err, c.wantLines, c.wantTitle)
+		}
+	}
+}
+
+// utf16WithBOM encodes s as UTF-16 with a leading byte order mark, little- or big-endian.
+func utf16WithBOM(s string, bigEndian bool) []byte {
+	units := append([]uint16{0xFEFF}, utf16.Encode([]rune(s))...)
+	b := make([]byte, 0, 2*len(units))
+	for _, u := range units {
+		if bigEndian {
+			b = append(b, byte(u>>8), byte(u))
+		} else {
+			b = append(b, byte(u), byte(u>>8))
+		}
+	}
+	return b
+}
+
+// TestUTF16DocumentWithBOMIsDecodedAsUTF16: a document that begins with the UTF-16
+// byte order mark, little- or big-endian, as Windows "Unicode" saves are, is read as UTF-16,
+// so its markup is markup and its text is text, characters outside the BMP included, rather
+// than every character followed or preceded by a NUL. A last odd byte, or a surrogate
+// without its pair, becomes U+FFFD, as browsers decode UTF-16.
+func TestUTF16DocumentWithBOMIsDecodedAsUTF16(t *testing.T) {
+	cases := []struct {
+		raw       []byte
+		wantLines []string
+		wantTitle string
+	}{
+		{[]byte("\xff\xfe<\x00p\x00>\x00x\x00"), []string{"x"}, ""},
+		{[]byte("\xfe\xff\x00<\x00p\x00>\x00x"), []string{"x"}, ""},
+		{utf16WithBOM("<title>Café</title><p>€ 😀 ok</p>", false), []string{"€ 😀 ok"}, "Café"},
+		{utf16WithBOM("<title>Café</title><p>€ 😀 ok</p>", true), []string{"€ 😀 ok"}, "Café"},
+		{[]byte("\xff\xfe<\x00p\x00>\x00x\x00y"), []string{"x�"}, ""},
+		{[]byte("\xff\xfe<\x00p\x00>\x00x\x00\x00\xd8y\x00"), []string{"x�y"}, ""},
+	}
+	for _, c := range cases {
+		lines, title, _, err := ExtractErr(c.raw)
+		if err != nil || !reflect.DeepEqual(lines, c.wantLines) || title != c.wantTitle {
+			t.Errorf("%q: got lines %q, title %q, %v; want lines %q, title %q",
+				c.raw, lines, title, err, c.wantLines, c.wantTitle)
 		}
 	}
 }
