@@ -364,3 +364,32 @@ func TestFoundKBTravels(t *testing.T) {
 		t.Errorf("a knowledge base with its own repository was said to travel with the code:\n%s", todo)
 	}
 }
+
+// TestExcludeLineForProjectInSubfolder: for a project in a subfolder of its repository, the line setup gives
+// for .git/info/exclude names the settings file from the repository's top, where git anchors it.
+func TestExcludeLineForProjectInSubfolder(t *testing.T) {
+	isolateHome(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv(kbEnv, "")
+	top := t.TempDir()
+	if _, st := git(top, "init", "-q"); st != 0 {
+		t.Skip("git is not available")
+	}
+	project := filepath.Join(top, "app")
+	os.MkdirAll(filepath.Join(project, ".claude"), 0o755)
+	os.WriteFile(filepath.Join(project, ".claude", "settings.local.json"), []byte("{}\n"), 0o644)
+	want := "/app/.claude/settings.local.json"
+	r := buildReport(project, "")
+	todo := joined(r.todos())
+	if !strings.Contains(todo, "the line "+want+" for .git/info/exclude") {
+		t.Fatalf("the .git/info/exclude line does not name %s:\n%s", want, todo)
+	}
+	// the line given does keep the file out of git
+	os.MkdirAll(filepath.Join(top, ".git", "info"), 0o755)
+	os.WriteFile(filepath.Join(top, ".git", "info", "exclude"), []byte(want+"\n"), 0o644)
+	r = buildReport(project, "")
+	if todo := joined(r.todos()); strings.Contains(todo, ".git/info/exclude") {
+		t.Errorf("with %s in .git/info/exclude, the settings file is still not ignored:\n%s", want, todo)
+	}
+}

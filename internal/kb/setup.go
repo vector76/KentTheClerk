@@ -676,10 +676,15 @@ func buildReport(project, kbArg string) report {
 			r.item("git ignores %s (%s).", settingsRel, by)
 		} else {
 			r.item("git does not ignore %s.", settingsRel)
+			// .git/info/exclude anchors a leading / at the repository's top, so the line names the file from
+			// there, through the project's folder when it is a subfolder of the repository
+			prefix, _ := git(project, "rev-parse", "--show-prefix")
+			prefix = strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`).Replace(prefix)
 			r.need(6, "Keep %s out of git without a committed change. Offer to add the line %s to the global "+
 				"git ignore file, %s, as Claude Code itself does; it keeps the file out of every project. If the "+
-				"human declines, give them the line /%s for .git/info/exclude to add themselves: Claude Code does "+
-				"not let the agent write in .git/.", settingsRel, globalIgnoreLine, globalIgnorePath(project), settingsRel)
+				"human declines, give them the line /%s%s for .git/info/exclude to add themselves: Claude Code does "+
+				"not let the agent write in .git/.", settingsRel, globalIgnoreLine, globalIgnorePath(project), prefix,
+				settingsRel)
 		}
 	}
 	if files := oldBlockFiles(project); len(files) > 0 {
