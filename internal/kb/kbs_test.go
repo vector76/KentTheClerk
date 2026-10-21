@@ -209,3 +209,30 @@ func TestSetupSeveral(t *testing.T) {
 		t.Fatalf("session-start with two:\n%s", out)
 	}
 }
+
+// TestSetupReportReadsSettingsFileOverStartingKENTKB: once the settings file names a second knowledge base,
+// kb setup --report is about both, though the conversation's KENT_KB still holds the one it started with,
+// and it does not ask for the settings to be merged back to that one.
+func TestSetupReportReadsSettingsFileOverStartingKENTKB(t *testing.T) {
+	isolateHome(t)
+	a := dyn.Resolve(newTestKB(t))
+	b := dyn.Resolve(emptyKB(t))
+	t.Setenv(kbEnv, a)
+	project := t.TempDir()
+	os.MkdirAll(filepath.Join(project, ".claude"), 0o755)
+	text := kentSettingsJSON([]string{a, b}, nil)
+	if err := os.WriteFile(filepath.Join(project, filepath.FromSlash(settingsRel)), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := buildReport(project, "")
+	lines := joined(r.lines)
+	if !strings.Contains(lines, "## Knowledge base: "+b) {
+		t.Errorf("the report is not about %s, which the settings file names:\n%s", b, lines)
+	}
+	if strings.Contains(lines, kbEnv+", naming") {
+		t.Errorf("the report says the settings file's %s is missing:\n%s", kbEnv, lines)
+	}
+	if todo := joined(r.todos()); strings.Contains(todo, "Merge what Kent needs") {
+		t.Errorf("the report asks to merge settings the file already has:\n%s", todo)
+	}
+}

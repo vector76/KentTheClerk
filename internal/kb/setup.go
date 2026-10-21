@@ -536,21 +536,22 @@ func (r *report) todos() []string {
 // kbChoice is one knowledge base setup is about, and where it was named.
 type kbChoice struct{ path, how string }
 
-// chooseKBs are the knowledge bases setup is about: those KENT_KB names, else those the project's settings
-// name (they apply to a running conversation's commands, but setup may be checking a file just written),
-// and the one --kb names when it is not among them, which the project is to refer to as well (S-ZBVAHS).
+// chooseKBs are the knowledge bases setup is about: those the project's settings name in KENT_KB, else those
+// KENT_KB names in the environment, and the one --kb names when it is not among them, which the project is
+// to refer to as well (S-ZBVAHS). The file comes first: setup may be checking a file just written, while the
+// environment a conversation's commands see may still hold the value the conversation started with.
 func chooseKBs(arg string, sf settingsFile) []kbChoice {
 	// resolved as kb finds the knowledge base when it runs, so that the paths setup writes into the
 	// permissions are the ones the session-start text gives
 	var out []kbChoice
 	switch {
-	case os.Getenv(kbEnv) != "":
-		for _, f := range kbset.SplitList(os.Getenv(kbEnv)) {
-			out = append(out, kbChoice{dyn.Resolve(f), "from " + kbEnv})
-		}
 	case sf.env[kbEnv] != "":
 		for _, f := range kbset.SplitList(sf.env[kbEnv]) {
 			out = append(out, kbChoice{dyn.Resolve(f), "from " + kbEnv + " in " + settingsRel})
+		}
+	case os.Getenv(kbEnv) != "":
+		for _, f := range kbset.SplitList(os.Getenv(kbEnv)) {
+			out = append(out, kbChoice{dyn.Resolve(f), "from " + kbEnv})
 		}
 	}
 	if arg != "" {
@@ -640,6 +641,17 @@ func buildReport(project, kbArg string) report {
 	if sf.exists && sf.err == nil {
 		if v := sf.env[kbEnv]; v != "" {
 			r.item("It sets %s to %s.", kbEnv, v)
+			if e := os.Getenv(kbEnv); e != "" {
+				var fromFile []string
+				for _, f := range kbset.SplitList(v) {
+					fromFile = append(fromFile, dyn.Resolve(f))
+				}
+				if !sameList(kbset.SplitList(e), fromFile) {
+					r.item("This command sees %s set to %s instead, which is what kb uses here: either the file "+
+						"changed after the conversation started, and a new conversation takes it up, or %s is set "+
+						"outside the file, user-wide, which it must not be.", kbEnv, e, kbEnv)
+				}
+			}
 		} else {
 			r.item("It does not set %s.", kbEnv)
 		}
