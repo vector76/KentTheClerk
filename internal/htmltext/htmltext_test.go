@@ -179,6 +179,32 @@ func TestExtractSimple(t *testing.T) {
 	}
 }
 
+// TestHeadingKeepsSpaceBetweenInlinePieces: whitespace between two pieces of heading text
+// that a tag or comment separates stays one space, and so does whitespace between pieces of
+// text after a heading that is never closed.
+func TestHeadingKeepsSpaceBetweenInlinePieces(t *testing.T) {
+	cases := []struct {
+		src  string
+		want []string
+	}{
+		{"<h1>Quarterly <em>Report</em></h1>", []string{"# Quarterly Report"}},
+		{"<h2>Do <code>not</code> run</h2>", []string{"## Do not run"}},
+		{"<h2>Using <code>kb ingest</code></h2>", []string{"## Using kb ingest"}},
+		{"<h2>Heading with <!-- c --> inside &amp; <span>span</span></h2>", []string{"## Heading with inside & span"}},
+		{"<h1>  Title <b>bold</b>  </h1>", []string{"# Title bold"}},
+		{"<h3>a<i> b </i>c</h3>", []string{"### a b c"}},
+		{"<h3><b>x</b>y</h3>", []string{"### xy"}},
+		{"<h2>a <td>b</td></h2>", []string{"## a | b"}},
+		{"<h2>x <p>Hello <b>world</b></p>", []string{"## x", "", "Hello world"}},
+	}
+	for _, c := range cases {
+		lines, _, _, err := ExtractErr([]byte(c.src))
+		if err != nil || !reflect.DeepEqual(lines, c.want) {
+			t.Errorf("%q: got %q, %v; want %q", c.src, lines, err, c.want)
+		}
+	}
+}
+
 // TestDeepInputs: these inputs used to overflow the goroutine stack (fatal, unrecoverable)
 // in the recursive matcher.
 func TestDeepInputs(t *testing.T) {

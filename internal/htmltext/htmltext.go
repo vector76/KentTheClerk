@@ -1,6 +1,8 @@
 // Package htmltext is the html-v1 text extraction: it turns an HTML document into lines of
 // text and a title, with a tolerant tokenizer. Its output for every input, malformed markup
-// included, is fixed byte for byte, since ingested projections are frozen.
+// included, is fixed byte for byte within a system version, since ingested projections are
+// frozen; a version that fixes a defect in it may change it, and each ingest records the
+// system version it was made under, which tells the outputs apart.
 package htmltext
 
 import (
@@ -83,6 +85,9 @@ type htmlText struct {
 	inTitle bool
 	skip    int
 	heading bool
+	// headingSpace is set while in a heading when whitespace has followed the last heading
+	// text written; it becomes one space before the next heading text.
+	headingSpace bool
 }
 
 var blockTags = map[string]bool{
@@ -110,6 +115,7 @@ func (h *htmlText) handleStarttag(tag string) {
 	case headingLevel(tag) > 0:
 		h.out = append(h.out, []rune("\n\n"+strings.Repeat("#", headingLevel(tag))+" ")...)
 		h.heading = true
+		h.headingSpace = false
 	case tag == "td" || tag == "th":
 		h.out = append(h.out, []rune(" | ")...)
 	case blockTags[tag]:
@@ -130,6 +136,7 @@ func (h *htmlText) handleEndtag(tag string) {
 	case headingLevel(tag) > 0:
 		h.out = append(h.out, '\n', '\n')
 		h.heading = false
+		h.headingSpace = false
 	case blockTags[tag]:
 		h.out = append(h.out, '\n', '\n')
 	}
@@ -144,7 +151,19 @@ func (h *htmlText) handleData(data []rune) {
 		return
 	}
 	if h.heading {
-		h.out = append(h.out, stripSpace(data)...)
+		// Each piece is stripped of surrounding whitespace, and whitespace between two
+		// pieces becomes one space, unless what was written last already ends in whitespace
+		// (the heading marker, a cell separator, a break).
+		text := stripSpace(data)
+		if len(text) == 0 {
+			h.headingSpace = h.headingSpace || len(data) > 0
+			return
+		}
+		if (h.headingSpace || isSpace(data[0])) && len(h.out) > 0 && !isSpace(h.out[len(h.out)-1]) {
+			h.out = append(h.out, ' ')
+		}
+		h.out = append(h.out, text...)
+		h.headingSpace = isSpace(data[len(data)-1])
 		return
 	}
 	// every run of whitespace becomes one space

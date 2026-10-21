@@ -78,11 +78,11 @@
   "raw": "PGgxPlRpdGxlIDxiPmJvbGQ8L2I+ICA8L2gxPjxoMj4gIFN1Ygo8L2gyPjxoMz5hPGk+IGIgPC9pPmM8L2gzPjxoNj5zaXg8L2g2PjxoNz5zZXZlbjwvaDc+",
   "want": {
    "lines": [
-    "# Titlebold",
+    "# Title bold",
     "",
     "## Sub",
     "",
-    "### abc",
+    "### a b c",
     "",
     "###### six",
     "",
@@ -934,7 +934,7 @@
    "lines": [
     "Home | X",
     "",
-    "# QuarterlyReport",
+    "# Quarterly Report",
     "",
     "Revenue was $1.2M, up 5%.",
     "",
@@ -1165,7 +1165,7 @@
     "",
     "| 3",
     "",
-    "## Heading withinside \u0026span",
+    "## Heading with inside \u0026 span",
     "",
     "one",
     "",
