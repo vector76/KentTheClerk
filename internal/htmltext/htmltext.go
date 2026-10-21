@@ -293,7 +293,9 @@ func (h *htmlText) handleData(data []rune) {
 	if h.heading {
 		// Each piece is stripped of surrounding whitespace, and whitespace between two
 		// pieces becomes one space, unless what was written last already ends in whitespace
-		// (the heading marker, a cell separator, a break).
+		// (the heading marker, a cell separator, a break). Inside a piece, every run of
+		// whitespace becomes one space, as in body text, so a heading wrapped in the source
+		// stays one line.
 		text := stripSpace(data)
 		if len(text) == 0 {
 			h.headingSpace = h.headingSpace || len(data) > 0
@@ -302,7 +304,16 @@ func (h *htmlText) handleData(data []rune) {
 		if (h.headingSpace || isSpace(data[0])) && len(h.out) > 0 && !isSpace(h.out[len(h.out)-1]) {
 			h.out = append(h.out, ' ')
 		}
-		h.out = append(h.out, text...)
+		for i := 0; i < len(text); i++ {
+			if isSpace(text[i]) {
+				for i+1 < len(text) && isSpace(text[i+1]) {
+					i++
+				}
+				h.out = append(h.out, ' ')
+				continue
+			}
+			h.out = append(h.out, text[i])
+		}
 		h.headingSpace = isSpace(data[len(data)-1])
 		return
 	}

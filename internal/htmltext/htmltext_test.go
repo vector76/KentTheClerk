@@ -295,6 +295,34 @@ func TestHeadingKeepsSpaceBetweenInlinePieces(t *testing.T) {
 	}
 }
 
+// TestHeadingWrappedInSourceStaysOneLine: whitespace inside a piece of heading text, a line
+// break in the source or from a character reference included, becomes one space as it does in
+// body text, so a heading wrapped in the source is still one line, and no line separator or
+// other control whitespace stays inside it.
+func TestHeadingWrappedInSourceStaysOneLine(t *testing.T) {
+	cases := []struct {
+		src  string
+		want []string
+	}{
+		{"<h2>A\nB</h2>", []string{"## A B"}},
+		{"<h2>A long heading\n    that wraps</h2>", []string{"## A long heading that wraps"}},
+		{"<h2>A&#10;B</h2>", []string{"## A B"}},
+		{"<h2>A&#13;&#10;B</h2>", []string{"## A B"}},
+		{"<h2>A\r\nB</h2>", []string{"## A B"}},
+		{"<h2>A\vB\fC</h2>", []string{"## A B C"}},
+		{"<h2>A B C\u0085D</h2>", []string{"## A B C D"}},
+		{"<h2>A  \t B</h2>", []string{"## A B"}},
+		{"<h1>Long\n  <em>title</em>\n  here</h1>", []string{"# Long title here"}},
+		{"<h2>x <p>Hello\n  world</p>", []string{"## x", "", "Hello world"}},
+	}
+	for _, c := range cases {
+		lines, _, _, err := ExtractErr([]byte(c.src))
+		if err != nil || !reflect.DeepEqual(lines, c.want) {
+			t.Errorf("%q: got %q, %v; want %q", c.src, lines, err, c.want)
+		}
+	}
+}
+
 // TestStrayByteLeavesTheRestOfTheUTF8Text: a byte that is not valid UTF-8, such as a stray
 // legacy byte pasted into a UTF-8 page or a sequence cut short at the end, is read alone, and
 // the characters around it that are valid UTF-8 keep their meaning, a leading BOM included.
