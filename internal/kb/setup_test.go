@@ -171,3 +171,35 @@ func TestSetupWantsUnionMerge(t *testing.T) {
 		t.Fatalf("setup still asks for merge=union:\n%s", todo)
 	}
 }
+
+// TestSetupReportsUserFilesThatAreNotUTF8 checks that a user table or override log holding a byte that is
+// not UTF-8 is reported by kb setup as unreadable, naming the file, instead of ending the report.
+func TestSetupReportsUserFilesThatAreNotUTF8(t *testing.T) {
+	for file, other := range map[string]string{"users.jsonl": "overrides.jsonl", "overrides.jsonl": "users.jsonl"} {
+		t.Run(file, func(t *testing.T) {
+			root := newTestKB(t)
+			t.Setenv("KB_USER", "alice")
+			p := filepath.Join(root, file)
+			old, _ := os.ReadFile(p)
+			if err := os.WriteFile(p, append(old, []byte("{\"x\": \"caf\xff\"}\n")...), 0o666); err != nil {
+				t.Fatal(err)
+			}
+			var r report
+			func() {
+				defer func() {
+					if e := recover(); e != nil {
+						t.Fatalf("kb setup's report stopped at %s instead of reporting it: %v", file, e)
+					}
+				}()
+				kbReport(&r, root, false)
+			}()
+			todo := strings.Join(r.todos(), "\n")
+			if !strings.Contains(todo, file) || !strings.Contains(todo, "cannot be read") {
+				t.Fatalf("setup did not report %s as unreadable:\n%s", file, todo)
+			}
+			if strings.Contains(todo, other) {
+				t.Fatalf("setup blamed %s too when only %s is not UTF-8:\n%s", other, file, todo)
+			}
+		})
+	}
+}

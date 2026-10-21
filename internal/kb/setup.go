@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	kent "kenttheclerk"
 	"kenttheclerk/internal/argparse"
@@ -976,7 +977,7 @@ func kbReport(r *report, kb string, several bool) {
 		r.item("Not pinned.")
 	}
 
-	people, problem := describeUsers(kb)
+	people, problem := reportUsers(kb)
 	for _, l := range people {
 		if strings.HasPrefix(l, "  ") {
 			r.lines = append(r.lines, l)
@@ -993,6 +994,34 @@ func kbReport(r *report, kb string, several bool) {
 	case problem != "":
 		r.need(4, "Add the human to the knowledge base's user table, as the runbook says: %s.", problem)
 	}
+}
+
+// reportUsers is describeUsers for kb setup's report, which is printed only once it is whole: a user table
+// or override log that cannot even be decoded as text is reported as unreadable, naming the file, rather
+// than ending kb setup before it says anything.
+func reportUsers(kb string) (lines []string, problem string) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		e, ok := r.(*dyn.Exception)
+		if !ok {
+			panic(r)
+		}
+		what := "the user table " + usersName + " or the override log " + overrideLogName
+		for _, f := range []struct{ path, what string }{
+			{usersPath(kb), "the user table " + usersName},
+			{overrideLogPath(kb), "the override log " + overrideLogName},
+		} {
+			if b, err := os.ReadFile(f.path); err == nil && !utf8.Valid(b) {
+				what = f.what
+				break
+			}
+		}
+		lines, problem = nil, fmt.Sprintf("%s cannot be read (%s: %s), so kb records nothing anyone does", what, e.Type, e.Msg)
+	}()
+	return describeUsers(kb)
 }
 
 // ---------------------------------------------------------------- kb setup
