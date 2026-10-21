@@ -273,10 +273,13 @@ func kentAllow(kb string) []string {
 	return allow
 }
 
-// kentDeny also keeps the agent from running kb merge-driver, which git runs itself during a merge.
+// kentDeny keeps the agent's edit tools off every file Kent Rule 1 says only kb writes: the record's
+// folders, the override log, and the user table and its log. It also keeps the agent from running
+// kb merge-driver, which git runs itself during a merge.
 func kentDeny(kb string) []string {
 	pp := permPath(kb)
 	return []string{"Edit(" + pp + "/attested/**)", "Edit(" + pp + "/evidence/**)", "Edit(" + pp + "/agent/**)",
+		"Edit(" + pp + "/" + overrideLogName + ")", "Edit(" + pp + "/" + usersName + ")", "Edit(" + pp + "/" + usersLogName + ")",
 		"Bash(kb merge-driver)", "Bash(kb merge-driver *)", "PowerShell(kb merge-driver)", "PowerShell(kb merge-driver *)"}
 }
 

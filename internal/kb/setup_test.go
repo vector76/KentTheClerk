@@ -72,6 +72,23 @@ func TestKentSettingsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestDenyRulesCoverOverrideLogAndUserTable checks that the deny rules keep the agent's edit tools off
+// every file Kent Rule 1 says only kb writes: the record's folders, the override log, and the user table
+// and its log.
+func TestDenyRulesCoverOverrideLogAndUserTable(t *testing.T) {
+	kb := t.TempDir()
+	pp := permPath(kb)
+	deny := kentDeny(kb)
+	for _, rule := range []string{
+		"Edit(" + pp + "/attested/**)", "Edit(" + pp + "/evidence/**)", "Edit(" + pp + "/agent/**)",
+		"Edit(" + pp + "/overrides.jsonl)", "Edit(" + pp + "/users.jsonl)", "Edit(" + pp + "/users-log.jsonl)",
+	} {
+		if m := missingFrom(deny, []string{rule}); len(m) != 0 {
+			t.Errorf("the deny rules lack %s: %q", rule, deny)
+		}
+	}
+}
+
 // TestSessionStartFits checks that what the hook prints stays under Claude Code's limit, with room for
 // the facts kb adds about the project.
 func TestSessionStartFits(t *testing.T) {
