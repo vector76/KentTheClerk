@@ -974,7 +974,7 @@
   "raw": "PHA+Y2Fm6SBuYe92ZSCgbmJzcKAghW5lbDwvcD4=",
   "want": {
    "lines": [
-    "café naïve nbsp nel"
+    "café naïve nbsp …nel"
    ],
    "title": null
   }
@@ -994,7 +994,7 @@
   "raw": "PHA+7aCAeDwvcD4=",
   "want": {
    "lines": [
-    "í x"
+    "í €x"
    ],
    "title": null
   }
@@ -1137,11 +1137,11 @@
    "lines": [
     "# Willkommen im Café",
     "",
-    "Preise in : Kaffee 2,50  – Kuchen 3,20 ",
+    "Preise in €: Kaffee 2,50 € – Kuchen 3,20 €",
     "",
     "«Zitat» – ’quote’ © 1998"
    ],
-   "title": "Café München  Menü"
+   "title": "Café München – Menü"
   }
  },
  {

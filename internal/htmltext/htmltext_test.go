@@ -316,6 +316,32 @@ func TestStrayByteLeavesTheRestOfTheUTF8Text(t *testing.T) {
 	}
 }
 
+// TestLegacyBytes80To9FReadAsWindows1252: a byte read alone because it is not valid UTF-8 is
+// read as windows-1252, as browsers read legacy pages, so 0x80-0x9F give the euro sign, curly
+// quotes, dashes and the rest of that range instead of invisible C1 control characters, in
+// text and in the title alike.
+func TestLegacyBytes80To9FReadAsWindows1252(t *testing.T) {
+	cases := []struct {
+		src       string
+		wantLines []string
+		wantTitle string
+	}{
+		{"<p>\x80 \x93q\x94</p>", []string{"€ “q”"}, ""},
+		{"<p>a \x96 b \x97 c\x85</p>", []string{"a – b — c…"}, ""},
+		{"<p>\x82\x84\x8a\x8c\x8e\x91\x92\x95\x98\x99\x9a\x9b\x9c\x9e\x9f\x83\x86\x87\x88\x89\x8b</p>",
+			[]string{"‚„ŠŒŽ‘’•˜™š›œžŸƒ†‡ˆ‰‹"}, ""},
+		{"<p>caf\xc3\xa9 it\x92s 5\x80</p>", []string{"café it’s 5€"}, ""},
+		{"<title>Caf\xe9 \x96 Men\xfc</title><p>x</p>", []string{"x"}, "Café – Menü"},
+	}
+	for _, c := range cases {
+		lines, title, _, err := ExtractErr([]byte(c.src))
+		if err != nil || !reflect.DeepEqual(lines, c.wantLines) || title != c.wantTitle {
+			t.Errorf("%q: got lines %q, title %q, %v; want lines %q, title %q",
+				c.src, lines, title, err, c.wantLines, c.wantTitle)
+		}
+	}
+}
+
 // TestDeepInputs: these inputs used to overflow the goroutine stack (fatal, unrecoverable)
 // in the recursive matcher.
 func TestDeepInputs(t *testing.T) {

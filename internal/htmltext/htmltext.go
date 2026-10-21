@@ -11,7 +11,7 @@ import (
 )
 
 // Extract turns raw bytes into lines (before chunking):
-// raw bytes -> decode (UTF-8 with optional BOM, invalid bytes as Latin-1) -> tokenize -> post-processing
+// raw bytes -> decode (UTF-8 with optional BOM, invalid bytes as windows-1252) -> tokenize -> post-processing
 // -> lines. title is the text inside the first title element that has any, each piece stripped
 // of surrounding whitespace and whitespace between two pieces made one space, and hasTitle is
 // false when it is empty. A title in the head counts, and one inside svg, or inside a skipped
@@ -64,9 +64,10 @@ func run(p *parser) (err error) {
 }
 
 // decode reads raw as UTF-8 after dropping one leading BOM. Each byte that does not begin a
-// valid UTF-8 sequence is read alone as Latin-1, so a document in Latin-1, or a UTF-8 one
-// with a stray legacy byte or a sequence cut short, keeps every character that is valid
-// UTF-8.
+// valid UTF-8 sequence is read alone as windows-1252, as browsers read a page labelled
+// Latin-1, so a document in Latin-1 or windows-1252, or a UTF-8 one with a stray legacy byte
+// or a sequence cut short, keeps every character that is valid UTF-8, and 0x80-0x9F give the
+// euro sign, curly quotes and dashes rather than C1 control characters.
 func decode(raw []byte) []rune {
 	b := raw
 	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
@@ -80,6 +81,11 @@ func decode(raw []byte) []rune {
 		r, n := utf8.DecodeRune(b)
 		if r == utf8.RuneError && n == 1 {
 			r = rune(b[0])
+			if b[0] >= 0x80 && b[0] <= 0x9F {
+				// The windows-1252 table numeric references use; its five undefined bytes
+				// keep their own code point.
+				r = invalidCharrefs[int(b[0])]
+			}
 		}
 		out = append(out, r)
 		b = b[n:]
