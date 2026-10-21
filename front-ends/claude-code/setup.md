@@ -219,7 +219,8 @@ anything turns out different from what you described.
      a message, `commit --no-edit`, `push`, `push -u origin HEAD`, and finishing a rebase without an
      editor. Anything else asks, `log`, `diff` and `show` included, since some of git's options write
      files or run programs. If it moves into git later, run `kb setup` again.
-   - The `deny` rules stop the agent from editing the record's files by hand, so only `kb` writes there.
+   - The `deny` rules stop the agent from editing the record's files by hand, so only `kb` writes there,
+     and from running `kb merge-driver`, which git runs itself during a merge.
    - `hooks.SessionStart` runs `kb session-start` whenever a conversation starts, is resumed, cleared or
      compacted. It prints Kent's instructions into the agent's context, from the version of Kent that
      runs, so nothing of Kent goes into CLAUDE.md.

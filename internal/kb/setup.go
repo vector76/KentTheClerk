@@ -273,9 +273,11 @@ func kentAllow(kb string) []string {
 	return allow
 }
 
+// kentDeny also keeps the agent from running kb merge-driver, which git runs itself during a merge.
 func kentDeny(kb string) []string {
 	pp := permPath(kb)
-	return []string{"Edit(" + pp + "/attested/**)", "Edit(" + pp + "/evidence/**)", "Edit(" + pp + "/agent/**)"}
+	return []string{"Edit(" + pp + "/attested/**)", "Edit(" + pp + "/evidence/**)", "Edit(" + pp + "/agent/**)",
+		"Bash(kb merge-driver)", "Bash(kb merge-driver *)", "PowerShell(kb merge-driver)", "PowerShell(kb merge-driver *)"}
 }
 
 // kbListValue is KENT_KB's value for the knowledge bases kbs, separated as PATH separates folders.

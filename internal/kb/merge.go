@@ -354,6 +354,17 @@ func writeRecordFile(path, kind, text string) {
 
 // ---------------------------------------------------------------- kb merge-driver
 
+// isGitMergeTemp says whether p is one of the temporary files git makes for a merge driver: a regular file
+// whose name starts .merge_file_, in the folder git runs the driver in, which git names without a folder.
+// The driver writes over ours, and this keeps it from writing over any other file.
+func isGitMergeTemp(p string) bool {
+	if p != filepath.Base(p) || !strings.HasPrefix(p, ".merge_file_") {
+		return false
+	}
+	fi, err := os.Lstat(p)
+	return err == nil && fi.Mode().IsRegular()
+}
+
 // runMergeDriver is what git runs to merge a file .gitattributes sends to the driver: it writes the merged
 // file over ours and exits 0, or leaves git's text merge there, with its conflict markers, and exits 1. A
 // file kb does not merge, as a README among the statements, gets git's own text merge and its result.
@@ -362,6 +373,12 @@ func runMergeDriver(ns argparse.Namespace) int {
 	ours, _ := ns.Str("ours")
 	theirs, _ := ns.Str("theirs")
 	path, _ := ns.Str("path")
+	for _, p := range []string{base, ours, theirs} {
+		if !isGitMergeTemp(p) {
+			die(fmt.Sprintf("kb merge-driver merges only the temporary files git gives it during a merge, "+
+				"never %s: git runs it, never a person or an agent", p))
+		}
+	}
 	read := func(p string) string { b, _ := os.ReadFile(p); return string(b) }
 	o, a, b := read(base), read(ours), read(theirs)
 	kind := recordFileKind(path)

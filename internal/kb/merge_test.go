@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -253,8 +254,10 @@ func TestRecordFileKind(t *testing.T) {
 func TestMergeDriver(t *testing.T) {
 	dir := t.TempDir()
 	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
+	// git runs the driver at the top of the working tree, on temporary files it names there
+	t.Chdir(dir)
 	write := func(name, text string) string {
-		p := filepath.Join(dir, name)
+		p := ".merge_file_" + name
 		os.WriteFile(p, []byte(text), 0o644)
 		return p
 	}
@@ -276,6 +279,34 @@ func TestMergeDriver(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(ours); !strings.Contains(string(b), "<<<<<<< HEAD") || !strings.Contains(string(b), ">>>>>>> feature") {
 		t.Errorf("the conflict does not carry git's labels:\n%s", b)
+	}
+}
+
+// TestMergeDriverWritesOnlyGitsTemporaryFiles: run by hand on a record file and a draft, with no path, the
+// driver would write the draft over the statement; it refuses, and the agent's settings deny running it.
+func TestMergeDriverWritesOnlyGitsTemporaryFiles(t *testing.T) {
+	root := newTestKB(t)
+	attestOne(t, root)
+	stmt := statementPath(root, "S-0001")
+	forged := filepath.Join(root, "off-record", "drafts", "forged.md")
+	os.WriteFile(forged, []byte("Forged text.\n"), 0o644)
+	gitConfig := filepath.Join(root, ".git", "config")
+	os.MkdirAll(filepath.Dir(gitConfig), 0o777)
+	os.WriteFile(gitConfig, []byte("[core]\n"), 0o644)
+	for _, target := range []string{stmt, gitConfig} {
+		before, _ := os.ReadFile(target)
+		out, code := kbRun(t, "merge-driver", target, target, forged)
+		if after, _ := os.ReadFile(target); code == 0 || string(after) != string(before) {
+			t.Errorf("kb merge-driver run by hand on %s exited %d and left:\n%s\n%s", target, code, after, out)
+		}
+	}
+	deny := kentDeny(root)
+	for _, shell := range []string{"Bash", "PowerShell"} {
+		for _, rule := range []string{shell + "(kb merge-driver)", shell + "(kb merge-driver *)"} {
+			if !slices.Contains(deny, rule) {
+				t.Errorf("the deny rules lack %s: %q", rule, deny)
+			}
+		}
 	}
 }
 
@@ -492,8 +523,10 @@ func TestDriverLineEndings(t *testing.T) {
 	dir := t.TempDir()
 	author := attestation("jamie", "2026-10-16T10:00:00+00:00", "proposed-and-agreed")
 	crlf := func(s string) string { return strings.ReplaceAll(s, "\n", "\r\n") }
+	// git runs the driver at the top of the working tree, on temporary files it names there
+	t.Chdir(dir)
 	write := func(name, text string) string {
-		p := filepath.Join(dir, name)
+		p := ".merge_file_" + name
 		os.WriteFile(p, []byte(text), 0o644)
 		return p
 	}
@@ -522,8 +555,10 @@ func TestDriverLineEndings(t *testing.T) {
 // merge: merged when it can be, conflicted when not.
 func TestDriverOtherFile(t *testing.T) {
 	dir := t.TempDir()
+	// git runs the driver at the top of the working tree, on temporary files it names there
+	t.Chdir(dir)
 	write := func(name, text string) string {
-		p := filepath.Join(dir, name)
+		p := ".merge_file_" + name
 		os.WriteFile(p, []byte(text), 0o644)
 		return p
 	}
