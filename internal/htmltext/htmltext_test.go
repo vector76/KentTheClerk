@@ -294,6 +294,28 @@ func TestHeadingKeepsSpaceBetweenInlinePieces(t *testing.T) {
 	}
 }
 
+// TestStrayByteLeavesTheRestOfTheUTF8Text: a byte that is not valid UTF-8, such as a stray
+// legacy byte pasted into a UTF-8 page or a sequence cut short at the end, is read alone, and
+// the characters around it that are valid UTF-8 keep their meaning, a leading BOM included.
+func TestStrayByteLeavesTheRestOfTheUTF8Text(t *testing.T) {
+	cases := []struct {
+		src  string
+		want string // the start of the first line
+	}{
+		{"<p>caf\xc3\xa9 \xe9t\xe9</p>", "café été"},
+		{"\xef\xbb\xbf<p>caf\xc3\xa9 \xe9</p>", "café é"},
+		{"\xef\xbb\xbf<p>caf\xe9</p>", "café"},
+		{"<p>caf\xc3\xa9 \xe2\x80\x94 it\x92s</p>", "café — it"},
+		{"<p>na\xc3\xafve \xe2\x80", "naïve "},
+	}
+	for _, c := range cases {
+		lines, _, _, err := ExtractErr([]byte(c.src))
+		if err != nil || len(lines) == 0 || !strings.HasPrefix(lines[0], c.want) {
+			t.Errorf("%q: got %q, %v; want a first line starting %q", c.src, lines, err, c.want)
+		}
+	}
+}
+
 // TestDeepInputs: these inputs used to overflow the goroutine stack (fatal, unrecoverable)
 // in the recursive matcher.
 func TestDeepInputs(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 )
 
 // Extract turns raw bytes into lines (before chunking):
-// raw bytes -> decode (UTF-8 with optional BOM, else Latin-1) -> tokenize -> post-processing
+// raw bytes -> decode (UTF-8 with optional BOM, invalid bytes as Latin-1) -> tokenize -> post-processing
 // -> lines. title is the text inside the first title element that has any, each piece stripped
 // of surrounding whitespace and whitespace between two pieces made one space, and hasTitle is
 // false when it is empty. A title in the head counts, and one inside svg, or inside a skipped
@@ -63,8 +63,10 @@ func run(p *parser) (err error) {
 	return nil
 }
 
-// decode reads raw as UTF-8 after dropping one leading BOM, or, when that is not valid
-// UTF-8, reads all of raw (BOM bytes included) as Latin-1.
+// decode reads raw as UTF-8 after dropping one leading BOM. Each byte that does not begin a
+// valid UTF-8 sequence is read alone as Latin-1, so a document in Latin-1, or a UTF-8 one
+// with a stray legacy byte or a sequence cut short, keeps every character that is valid
+// UTF-8.
 func decode(raw []byte) []rune {
 	b := raw
 	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
@@ -73,9 +75,14 @@ func decode(raw []byte) []rune {
 	if utf8.Valid(b) {
 		return []rune(string(b))
 	}
-	out := make([]rune, len(raw))
-	for i, c := range raw {
-		out[i] = rune(c)
+	out := make([]rune, 0, len(b))
+	for len(b) > 0 {
+		r, n := utf8.DecodeRune(b)
+		if r == utf8.RuneError && n == 1 {
+			r = rune(b[0])
+		}
+		out = append(out, r)
+		b = b[n:]
 	}
 	return out
 }
