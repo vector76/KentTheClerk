@@ -208,6 +208,36 @@ func TestTitleIsTheHeadTitleNotAnSVGLabel(t *testing.T) {
 	}
 }
 
+// TestTitlePiecesKeepTheSpaceBetweenThemAndTheFirstTitleWins: whitespace between pieces of
+// title text that a tag or a lone "<" separates becomes one space, as in a heading, instead of
+// the pieces running together; and the first title is the document's, so a later title
+// element is not appended to it.
+func TestTitlePiecesKeepTheSpaceBetweenThemAndTheFirstTitleWins(t *testing.T) {
+	cases := []struct {
+		src       string
+		wantTitle string
+		wantLines []string
+	}{
+		{"<title>a <b>b</b></title>", "a b", []string{""}},
+		{"<title>a<b> b</b></title>", "a b", []string{""}},
+		{"<title>a <!-- c --> b</title>", "a b", []string{""}},
+		{"<title>a<b>b</b>c</title>", "abc", []string{""}},
+		{"<title>a < b</title>", "a < b", []string{""}},
+		{"<title> My  Page </title>", "My  Page", []string{""}},
+		{"<body><title>A</title>text<title> B </title></body>", "A", []string{"text"}},
+		{"<head><title>Docs</title></head><body><title>Other</title><p>x</p></body>", "Docs", []string{"x"}},
+		{"<title> </title><title>T</title>", "T", []string{""}},
+		{"<title>A <title>B</title>", "A B", []string{""}},
+	}
+	for _, c := range cases {
+		lines, title, has, err := ExtractErr([]byte(c.src))
+		if err != nil || title != c.wantTitle || !has || !reflect.DeepEqual(lines, c.wantLines) {
+			t.Errorf("%q: got title %q %v, lines %q, %v; want title %q, lines %q",
+				c.src, title, has, lines, err, c.wantTitle, c.wantLines)
+		}
+	}
+}
+
 // TestHeadEndsWhereTheBodyBegins: a head whose end tag is left out ends at the first tag or
 // text that belongs in the body, as it does in a browser, and a <head> start tag after the
 // body has begun is ignored, so the text after either is kept; a complete head is still not

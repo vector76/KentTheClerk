@@ -12,9 +12,10 @@ import (
 
 // Extract turns raw bytes into lines (before chunking):
 // raw bytes -> decode (UTF-8 with optional BOM, else Latin-1) -> tokenize -> post-processing
-// -> lines. title is the text inside title elements, each piece stripped of surrounding
-// whitespace and the pieces joined, and hasTitle is false when it is empty. A title in the
-// head counts, and one inside svg, or inside a skipped element other than the head, does not.
+// -> lines. title is the text inside the first title element that has any, each piece stripped
+// of surrounding whitespace and whitespace between two pieces made one space, and hasTitle is
+// false when it is empty. A title in the head counts, and one inside svg, or inside a skipped
+// element other than the head, does not.
 //
 // For the inputs on which extraction fails (see ExtractErr), Extract panics with the
 // *AssertionError or *ValueError.
@@ -84,7 +85,13 @@ type htmlText struct {
 	out     []rune
 	title   []rune // empty means no title
 	inTitle bool
-	skip    int
+	// titleSpace is set while in a title when whitespace has followed the last title text
+	// taken; it becomes one space before the next title text.
+	titleSpace bool
+	// titleDone is set when a title element that gave the title text ends; later title
+	// elements are not the document's title.
+	titleDone bool
+	skip      int
 	// head counts the open head elements among the skip elements: a title in the head is
 	// the document's title, although the rest of the head is not text.
 	head int
@@ -169,6 +176,11 @@ func (h *htmlText) handleStarttag(tag string) {
 	case skipTags[tag]:
 		h.skip++
 	case tag == "title":
+		// A title start tag inside an open title is one more tag between two pieces, so the
+		// whitespace before it still counts.
+		if !h.inTitle {
+			h.titleSpace = false
+		}
 		h.inTitle = true
 	case headingLevel(tag) > 0:
 		h.out = append(h.out, []rune("\n\n"+strings.Repeat("#", headingLevel(tag))+" ")...)
@@ -202,6 +214,7 @@ func (h *htmlText) handleEndtag(tag string) {
 		h.skip = max(0, h.skip-1)
 	case tag == "title":
 		h.inTitle = false
+		h.titleDone = h.titleDone || len(h.title) > 0
 	case headingLevel(tag) > 0:
 		h.out = append(h.out, '\n', '\n')
 		h.heading = false
@@ -219,7 +232,20 @@ func (h *htmlText) handleData(data []rune) {
 	}
 	// A title is the document's outside svg, when every open skip element is a head.
 	if h.inTitle && h.svg == 0 && h.skip <= h.head {
-		h.title = append(h.title, stripSpace(data)...)
+		if !h.titleDone {
+			// As in a heading, each piece is stripped of surrounding whitespace, and
+			// whitespace between two pieces becomes one space.
+			text := stripSpace(data)
+			if len(text) == 0 {
+				h.titleSpace = h.titleSpace || len(data) > 0
+				return
+			}
+			if (h.titleSpace || isSpace(data[0])) && len(h.title) > 0 {
+				h.title = append(h.title, ' ')
+			}
+			h.title = append(h.title, text...)
+			h.titleSpace = isSpace(data[len(data)-1])
+		}
 		return
 	}
 	if h.skip > 0 || h.inTitle {
