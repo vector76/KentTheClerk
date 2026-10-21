@@ -708,7 +708,7 @@
   "raw": "JmFtcDsgJmx0OyAmZ3Q7ICZxdW90OyAmYXBvczsgJm5ic3A7ICZjb3B5ICZjb3B5eCAmbm90aW47ICZub3RpdDsgJmFtcA==",
   "want": {
    "lines": [
-    ""
+    "\u0026 \u003c \u003e \" ' © ©x ∉ ¬it; \u0026"
    ],
    "title": null
   }
@@ -748,7 +748,7 @@
   "raw": "c29tZSB0ZXh0ICZhbXA=",
   "want": {
    "lines": [
-    ""
+    "some text \u0026"
    ],
    "title": null
   }
@@ -778,7 +778,9 @@
   "raw": "PHA+eDwvcD50YWlsICZjb3B5",
   "want": {
    "lines": [
-    "x"
+    "x",
+    "",
+    "tail ©"
    ],
    "title": null
   }
@@ -798,7 +800,7 @@
   "raw": "JmFtcGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6MDEyMw==",
   "want": {
    "lines": [
-    ""
+    "\u0026abcdefghijklmnopqrstuvwxyz0123"
    ],
    "title": null
   }

@@ -384,6 +384,29 @@ func TestUTF16DocumentWithBOMIsDecodedAsUTF16(t *testing.T) {
 	}
 }
 
+// TestFinalTextWithAmpersandNearTheEndIsKept: a document that ends in text, with no closing
+// tag or newline after it, keeps that text when an '&' near its end has no whitespace or ';'
+// after it, such as "AT&T" or "&copy": the reference is unescaped where it is complete and the
+// rest is kept as it is, instead of the whole final run being lost.
+func TestFinalTextWithAmpersandNearTheEndIsKept(t *testing.T) {
+	cases := []struct {
+		src  string
+		want []string
+	}{
+		{"<p>x</p>tail &copy", []string{"x", "", "tail ©"}},
+		{"some text &amp", []string{"some text &"}},
+		{"<p>Contact AT&T", []string{"Contact AT&T"}},
+		{"<h1>Lab</h1>R&D", []string{"# Lab", "", "R&D"}},
+		{"x &", []string{"x &"}},
+	}
+	for _, c := range cases {
+		lines, _, _, err := ExtractErr([]byte(c.src))
+		if err != nil || !reflect.DeepEqual(lines, c.want) {
+			t.Errorf("%q: got %q, %v; want %q", c.src, lines, err, c.want)
+		}
+	}
+}
+
 // TestDeepInputs: these inputs used to overflow the goroutine stack (fatal, unrecoverable)
 // in the recursive matcher.
 func TestDeepInputs(t *testing.T) {

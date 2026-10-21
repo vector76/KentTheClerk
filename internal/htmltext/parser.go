@@ -8,8 +8,8 @@ import (
 
 // The tokenizer: a tolerant HTML tokenizer that unescapes character references in text and
 // runs over the whole input once. Whatever it holds back at the end of the input is dropped:
-// an incomplete tag, comment or declaration, or the final run of text when a '&' among its
-// last 34 characters is followed by no whitespace or ';'. Comments, declarations and
+// an incomplete tag, comment or declaration. Text at the end of the input is kept, with its
+// character references unescaped, wherever an '&' falls in it. Comments, declarations and
 // processing instructions are skipped without output.
 
 // AssertionError is the error extraction stops with for markup the declaration scanner
@@ -46,17 +46,8 @@ func (p *parser) goahead() {
 		if p.cdata == "" {
 			j = indexRune(raw, '<', i)
 			if j < 0 {
-				start := max(i, n-34)
-				amppos := -1
-				for q := n - 1; q >= start; q-- {
-					if raw[q] == '&' {
-						amppos = q
-						break
-					}
-				}
-				if amppos >= 0 && !hasSpaceOrSemi(raw[amppos:]) {
-					break // the reference may be incomplete: hold the text back (dropped)
-				}
+				// The input is whole, so the text runs to its end, a character reference
+				// near the end included.
 				j = n
 			}
 		} else {
@@ -101,15 +92,6 @@ func (p *parser) goahead() {
 		}
 		i = k
 	}
-}
-
-func hasSpaceOrSemi(s []rune) bool {
-	for _, r := range s {
-		if r == ';' || isSpace(r) {
-			return true
-		}
-	}
-	return false
 }
 
 func (p *parser) parseHTMLDeclaration(i int) int {
