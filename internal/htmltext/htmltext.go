@@ -13,7 +13,8 @@ import (
 // Extract turns raw bytes into lines (before chunking):
 // raw bytes -> decode (UTF-8 with optional BOM, else Latin-1) -> tokenize -> post-processing
 // -> lines. title is the text inside title elements, each piece stripped of surrounding
-// whitespace and the pieces joined, and hasTitle is false when it is empty.
+// whitespace and the pieces joined, and hasTitle is false when it is empty. A title in the
+// head counts, and one inside svg, or inside a skipped element other than the head, does not.
 //
 // For the inputs on which extraction fails (see ExtractErr), Extract panics with the
 // *AssertionError or *ValueError.
@@ -84,6 +85,12 @@ type htmlText struct {
 	title   []rune // empty means no title
 	inTitle bool
 	skip    int
+	// head counts the open head elements among the skip elements: a title in the head is
+	// the document's title, although the rest of the head is not text.
+	head int
+	// svg counts the open svg elements; a title inside one labels an image and is neither
+	// the document's title nor text.
+	svg     int
 	heading bool
 	// headingSpace is set while in a heading when whitespace has followed the last heading
 	// text written; it becomes one space before the next heading text.
@@ -107,6 +114,12 @@ func headingLevel(tag string) int {
 }
 
 func (h *htmlText) handleStarttag(tag string) {
+	switch tag {
+	case "head":
+		h.head++
+	case "svg":
+		h.svg++
+	}
 	switch {
 	case skipTags[tag]:
 		h.skip++
@@ -128,6 +141,12 @@ func (h *htmlText) handleStarttag(tag string) {
 }
 
 func (h *htmlText) handleEndtag(tag string) {
+	switch tag {
+	case "head":
+		h.head = max(0, h.head-1)
+	case "svg":
+		h.svg = max(0, h.svg-1)
+	}
 	switch {
 	case skipTags[tag]:
 		h.skip = max(0, h.skip-1)
@@ -143,11 +162,12 @@ func (h *htmlText) handleEndtag(tag string) {
 }
 
 func (h *htmlText) handleData(data []rune) {
-	if h.skip > 0 {
+	// A title is the document's outside svg, when every open skip element is a head.
+	if h.inTitle && h.svg == 0 && h.skip <= h.head {
+		h.title = append(h.title, stripSpace(data)...)
 		return
 	}
-	if h.inTitle {
-		h.title = append(h.title, stripSpace(data)...)
+	if h.skip > 0 || h.inTitle {
 		return
 	}
 	if h.heading {

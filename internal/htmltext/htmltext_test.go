@@ -179,6 +179,35 @@ func TestExtractSimple(t *testing.T) {
 	}
 }
 
+// TestTitleIsTheHeadTitleNotAnSVGLabel: the title inside <head> is the document's title,
+// although the rest of the head is not text; a <title> inside inline SVG labels an image and
+// is neither the title nor text; and a title in a template or noscript inside the head is not
+// the document's either.
+func TestTitleIsTheHeadTitleNotAnSVGLabel(t *testing.T) {
+	cases := []struct {
+		src       string
+		wantTitle string
+		wantHas   bool
+		wantLines []string
+	}{
+		{"<head><title>T</title></head><p>x</p>", "T", true, []string{"x"}},
+		{"<html><head><meta charset=\"utf-8\"><title> My Page </title><style>p{}</style></head><body><p>x</p></body></html>",
+			"My Page", true, []string{"x"}},
+		{"<head><title>Docs</title></head><body><button><svg><title>Search</title><path d=\"M0\"/></svg></button><p>x</p></body>",
+			"Docs", true, []string{"x"}},
+		{"<body><svg viewBox=\"0 0 1 1\"><title>Menu</title></svg><p>x</p></body>", "", false, []string{"x"}},
+		{"<head><template><title>X</title></template><noscript><title>N</title></noscript><title>T</title></head><p>x</p>",
+			"T", true, []string{"x"}},
+	}
+	for _, c := range cases {
+		lines, title, has, err := ExtractErr([]byte(c.src))
+		if err != nil || title != c.wantTitle || has != c.wantHas || !reflect.DeepEqual(lines, c.wantLines) {
+			t.Errorf("%q: got title %q %v, lines %q, %v; want title %q %v, lines %q",
+				c.src, title, has, lines, err, c.wantTitle, c.wantHas, c.wantLines)
+		}
+	}
+}
+
 // TestHeadingKeepsSpaceBetweenInlinePieces: whitespace between two pieces of heading text
 // that a tag or comment separates stays one space, and so does whitespace between pieces of
 // text after a heading that is never closed.
